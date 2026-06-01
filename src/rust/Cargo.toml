@@ -13,12 +13,6 @@ opendal = { version = "0.57", default-features = false, features = [
     "blocking",
     "executors-tokio",
     "reqwest-rustls-tls",
-    "services-fs",
-    "services-http",
-    "services-s3",
-    "services-gcs",
-    "services-azblob",
-    "services-gdrive",
     "layers-retry",
     "layers-timeout",
     "layers-concurrent-limit",
@@ -28,6 +22,16 @@ futures = "0.3"
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[features]
+default = ["fs", "http", "s3", "gcs", "azblob", "gdrive"]
+fs = ["opendal/services-fs"]
+http = ["opendal/services-http"]
+s3 = ["opendal/services-s3"]
+gcs = ["opendal/services-gcs"]
+azblob = ["opendal/services-azblob"]
+gdrive = ["opendal/services-gdrive"]
+cloud = ["s3", "gcs", "azblob", "gdrive"]
 
 [profile.release]
 panic = "abort"

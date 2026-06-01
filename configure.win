@@ -18,6 +18,64 @@ RUSTC_VERSION="$(rustc --version || true)"
 echo "using Rust package manager: '${CARGO_VERSION}'"
 echo "using Rust compiler: '${RUSTC_VERSION}'"
 
+append_feature() {
+  if [ -z "${CONFIGURE_FEATURES}" ]; then
+    CONFIGURE_FEATURES="$1"
+  else
+    CONFIGURE_FEATURES="${CONFIGURE_FEATURES} $1"
+  fi
+}
+
+CONFIGURE_FEATURES=""
+NO_DEFAULT_FEATURES=""
+
+for arg in "$@"; do
+  case "${arg}" in
+    --with-rust-features=*)
+      value="${arg#*=}"
+      value="$(printf '%s' "${value}" | tr ',' ' ')"
+      append_feature "${value}"
+      ;;
+    --without-default-rust-features)
+      NO_DEFAULT_FEATURES="--no-default-features"
+      ;;
+    --enable-fs)
+      append_feature "fs"
+      ;;
+    --enable-http)
+      append_feature "http"
+      ;;
+    --enable-s3)
+      append_feature "s3"
+      ;;
+    --enable-gcs)
+      append_feature "gcs"
+      ;;
+    --enable-azblob)
+      append_feature "azblob"
+      ;;
+    --enable-gdrive)
+      append_feature "gdrive"
+      ;;
+    --enable-cloud)
+      append_feature "cloud"
+      ;;
+    --help)
+      echo "Ropendal configure options:"
+      echo "  --with-rust-features=FEATURES   comma/space separated Cargo features"
+      echo "  --without-default-rust-features pass Cargo --no-default-features"
+      echo "  --enable-fs                     enable local filesystem service"
+      echo "  --enable-http                   enable HTTP service"
+      echo "  --enable-s3                     enable S3-compatible service"
+      echo "  --enable-gcs                    enable Google Cloud Storage service"
+      echo "  --enable-azblob                 enable Azure Blob service"
+      echo "  --enable-gdrive                 enable Google Drive service"
+      echo "  --enable-cloud                  enable S3, GCS, Azure Blob, and Google Drive"
+      exit 0
+      ;;
+  esac
+done
+
 if [ -n "${SAVVY_PROFILE}" ]; then
   PROFILE="${SAVVY_PROFILE}"
 elif [ "${DEBUG}" = "true" ]; then
@@ -26,8 +84,11 @@ else
   PROFILE=release
 fi
 
-if [ -n "${SAVVY_FEATURES}" ]; then
-  FEATURE_FLAGS="--features '${SAVVY_FEATURES}'"
+FEATURES="$(printf '%s %s' "${SAVVY_FEATURES}" "${CONFIGURE_FEATURES}" | xargs)"
+if [ -n "${FEATURES}" ]; then
+  FEATURE_FLAGS="${NO_DEFAULT_FEATURES} --features '${FEATURES}'"
+elif [ -n "${NO_DEFAULT_FEATURES}" ]; then
+  FEATURE_FLAGS="${NO_DEFAULT_FEATURES}"
 fi
 
 sed \

@@ -4,7 +4,10 @@
 # Ropendal
 
 Ropendal is a byte-oriented abstract filesystem interface for R backed
-by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/).
+by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The
+R/Rust interface is built with the
+[`savvy`](https://github.com/yutannihilation/savvy) crate, which
+generates the R wrappers and native registration used by the package.
 
 Ropendal currently exposes local filesystems, HTTP endpoints,
 S3-compatible services, and Google Drive as byte-addressable filesystem
@@ -27,6 +30,58 @@ without routing through R raw vectors.
 
 See `design/api-design.md` for the current API design notes and
 `design/STATUS.md` for the implementation/test checklist.
+
+## Installation
+
+Ropendal is intended to be installed from R-universe with CRAN as the
+fallback repository.
+
+``` r
+install.packages(
+  "Ropendal",
+  repos = c(
+    "https://sounkou-bioinfo.r-universe.dev",
+    "https://cloud.r-project.org"
+  )
+)
+```
+
+Source installs require a Rust toolchain. The default source build
+enables the currently wired OpenDAL service features for local
+filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure
+Blob, and Google Drive. Since the core is backed by the OpenDAL Rust
+crate, Ropendal can in principle grow to support any OpenDAL service;
+adding a new service still needs Ropendal-side configuration,
+credential, and test coverage.
+
+Source builds can select Cargo features with configure arguments,
+following the same pattern used in
+[Rzarrs](https://github.com/sounkou-bioinfo/Rzarrs).
+
+``` r
+# Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
+install.packages(
+  "Ropendal",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  type = "source",
+  configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
+)
+
+# Add the current cloud-service feature group explicitly.
+install.packages(
+  "Ropendal",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  type = "source",
+  configure.args = "--enable-cloud"
+)
+```
+
+Equivalent environment-variable control is also supported for source
+builds.
+
+``` bash
+SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
+```
 
 ## Local filesystem example
 

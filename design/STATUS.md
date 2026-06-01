@@ -47,7 +47,7 @@ GitHub Actions jobs:
 | GitHub Actions workflow | yes | no local | defined | separate R/C/MinIO/check jobs |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
 | Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
-| configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars` |
+| configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars`; source builds support Cargo feature selection via `SAVVY_FEATURES` and `--with-rust-features` |
 
 ## R API contracts
 

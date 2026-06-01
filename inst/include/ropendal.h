@@ -5,8 +5,8 @@
  * Public C API for Ropendal.
  *
  * This header is installed as inst/include/ropendal.h. It is a pure C interface:
- * it does not include R headers, does not mention SEXP, and does not require C
- * callers to use R's C API. Synchronous behavior is built by submitting an async
+ * it does not include R headers or R-specific object types, and does not require
+ * C callers to use R's C API. Synchronous behavior is built by submitting an async
  * operation and waiting on the returned ropendal_aio_t.
  *
  * Allocation and ownership follow one rule: any function that writes a non-NULL
