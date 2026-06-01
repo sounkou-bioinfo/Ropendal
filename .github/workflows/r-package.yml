@@ -1,0 +1,87 @@
+name: R package
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  r-api-tinytest:
+    name: R API tinytest (non-network)
+    runs-on: ubuntu-latest
+    env:
+      ROPENDAL_TEST_NETWORK: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::tinytest
+          needs: check
+      - name: Fast non-network tests
+        run: make test-fast
+
+  c-api-contract:
+    name: C API contract and CI-only tests
+    runs-on: ubuntu-latest
+    env:
+      ROPENDAL_TEST_CI: "true"
+      ROPENDAL_TEST_NETWORK: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::tinytest
+          needs: check
+      - name: Source header compile check
+        run: make test-c-api-header
+      - name: Installed native API contract tests
+        run: make test-ci
+
+  s3-minio:
+    name: Local MinIO S3-compatible tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::tinytest
+          needs: check
+      - name: Install MinIO and mc
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/minio https://dl.min.io/server/minio/release/linux-amd64/minio
+          sudo curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+          sudo chmod +x /usr/local/bin/minio /usr/local/bin/mc
+          minio --version
+          mc --version
+      - name: Writable S3-compatible tests against local MinIO
+        run: make test-s3-minio
+
+  r-cmd-check:
+    name: R CMD check (no CI-only/network tests)
+    runs-on: ubuntu-latest
+    env:
+      ROPENDAL_TEST_CI: "false"
+      ROPENDAL_TEST_NETWORK: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual")'

@@ -1,0 +1,302 @@
+# Refinement log and open API questions
+
+This project should preserve primitive orientation while allowing API details to evolve. When an ambiguity appears, record it here with a provisional resolution instead of burying it in conversation.
+
+Status labels:
+
+- `resolved`: decision accepted for now
+- `provisional`: usable but may change before first release
+- `open`: needs design/testing before implementation
+
+## Resolved / provisional decisions
+
+### R listing name
+
+Status: `resolved`
+
+Do not export `list()` or `$list`. Use `fs_ls()` and `fs_walk()`.
+
+### Range reads
+
+Status: `provisional`
+
+Do not add public `fs_read_range()` / `fs_readv()` initially. Make `fs_read()` vectorized over paths and per-path range lists. Keep the C API explicit with `read_aio`, `read_into_aio`, and `readv_into_aio` because native callers need buffer ownership.
+
+### Result shape
+
+Status: `provisional`
+
+Replace ambiguous `simplify = TRUE` with:
+
+```r
+result = c("auto", "flat", "nested")
+```
+
+Need tinytest contract coverage before implementation.
+
+### Errors
+
+Status: `provisional`
+
+Use errors as values, nanonext-like. Aio active bindings and synchronous primitives return `unresolvedValue`, success value, or `opendalErrorValue`; they do not throw for backend/filesystem failures. There is no `errors = "stop"` option. Hard errors still throw for invalid R arguments, serializer/deserializer exceptions, unsafe pointer misuse, internal bugs, or allocation failures.
+
+### CI-only tests
+
+Status: `resolved`
+
+Use env-gated tests for API contract linting and non-CRAN checks:
+
+```sh
+ROPENDAL_TEST_CI=true
+```
+
+Network/service tests remain separate:
+
+```sh
+ROPENDAL_TEST_NETWORK=true
+ROPENDAL_TEST_GDRIVE=true
+```
+
+## Open questions
+
+### Exact `opendalErrorValue` representation
+
+Status: `open`
+
+Likely a length-one integer code with S3 classes and attributes:
+
+- base classes: `opendalErrorValue`, `errorValue`
+- kind-specific class such as `opendalNotFoundValue`
+- attributes: `kind`, `message`, `operation`, `path`, `service`, `status`, redacted context
+
+Need finalize exact integer code mapping and print format.
+
+### Partial failures in vectorized reads
+
+Status: `open`
+
+Shape preservation is required. Each failed element becomes an `opendalErrorValue` in the corresponding output position. Open question: should vectorized execution continue after first failure by default, or cancel pending work for fail-fast resource control while still returning already-known error values?
+
+### Directory inputs to `fs_read()`
+
+Status: `resolved`
+
+Byte ranges apply to file reads only. Directory traversal belongs to `fs_ls()` / `fs_walk()`.
+
+### Text mode and ranges
+
+Status: `open`
+
+Partial text ranges can split multibyte characters. Options:
+
+1. allow and decode with replacement/warning
+2. require `mode = "raw"` for partial ranges
+3. allow only if caller sets explicit `encoding_errors`
+
+Default should probably reject partial `mode = "text"` unless specified.
+
+### Serialization mode and ranges
+
+Status: `resolved`
+
+Reject partial `mode = "serial"` by default. A serialized object must be read as a complete object unless a codec explicitly supports partial decode.
+
+### Credential model and precedence
+
+Status: `provisional`
+
+Core API is explicit and as stateless as possible. No hidden env-variable/provider-chain lookup in core constructors. Users provide credentials through explicit arguments or explicit credential/helper objects. Reader helpers may load env vars, profiles, stores, provider chains, gargle tokens, etc., but calling those helpers is the user's responsibility.
+
+This explicit model should serve as the base for plugins that implement provider chains or credential stores.
+
+### Monitor naming
+
+Status: `provisional`
+
+Use `cv_*`, `aio_notify()`, `aio_monitor()`, `read_monitor()`. Avoid `pipe_notify()` unless a future Ropendal concept really has pipes/connections.
+
+### Declarative capabilities and adapters
+
+Status: `provisional`
+
+The public API is uniform. Ropendal declares an effective capability profile for each filesystem handle and implements that profile in Rust/C using OpenDAL operations, layers, or Ropendal adapters.
+
+If Ropendal declares an operation supported, the corresponding R/C primitive should work with documented semantics. If it cannot be supported honestly, declare it unsupported and return `opendalUnsupportedValue` when called.
+
+`fs_capabilities(fs)` should report the declared Ropendal contract, with implementation diagnostics such as `native`, `opendal_layer`, or `ropendal_adapter`, plus semantic notes. Internal composition is not a user option.
+
+Do not silently weaken conditions, version IDs, metadata requirements, or consistency semantics. If the adapter cannot honor a request, return an error value.
+
+### Runtime ownership
+
+Status: `open`
+
+Need decide global shared Tokio runtime versus per-filesystem runtime. Current leaning: shared runtime with per-filesystem operator/layers and explicit global/service concurrency limits.
+
+### C ABI versioning
+
+Status: `provisional`
+
+All public option/result structs should start with `size_t struct_size`. C tests should enforce this. Need define behavior for unknown/larger/smaller struct sizes.
+
+### Path normalization and path identity
+
+Status: `resolved`
+
+All operation paths are relative to the configured root. Callers are responsible for requesting the correct logical path, and Ropendal normalizes path strings before dispatch:
+
+- collapse repeated slashes
+- remove `.` components
+- resolve `..` components without allowing escape above root
+- normalize directory paths to trailing `/` for directory-returning/listing APIs
+- return directory entries with trailing `/`; file entries do not have trailing `/`
+
+Path identity is the normalized OpenDAL logical path. `fs_read()` on a directory-like path resolves to an `opendalIsADirectoryValue` or service-specific error value.
+
+### Metadata schema
+
+Status: `resolved`
+
+Metadata shape is defined at the Rust/C layer and returned to R as generic lists, not forced into a data frame. Required common fields where available:
+
+- `path`
+- `type`
+- `size`
+- `etag`
+- `last_modified`
+- `version`
+
+Profiles may add fields. R helpers can later provide `as.data.frame()` for tabular consumers, but the primitive API returns lists because metadata is service-dependent.
+
+### Write semantics
+
+Status: `resolved`
+
+No overwrite by default. `fs_write()` creates a file/object and returns `opendalAlreadyExistsValue` if the target exists. Append is a distinct operation (`fs_append()`), supported only when the declared profile supports append. Replacement/overwrite is also distinct (`fs_replace()`) rather than hidden behind an overwrite flag.
+
+Directory hierarchy creation is not part of file write semantics. Use `fs_mkdir()` / directory APIs for directories. Whether parent creation is supported is part of the declared profile.
+
+### Vectorized write shape
+
+Status: `resolved`
+
+No recycling. Strict length matching for user-supplied vectors/lists. Defaults may expand internally, but explicit `path`, `data`, `offset`, and `size` vectors/lists must match the expected shape exactly. Length mismatches are hard R argument errors. Mixed success/backend failure returns preserve shape with `opendalErrorValue` elements.
+
+### Codec and serializer selection
+
+Status: `provisional`
+
+Use nanonext-like semantics for the core serializer API:
+
+```r
+serial_config(class, sfunc, ufunc)
+```
+
+`mode = "serial"` uses base R serialization with custom serialize/unserialize hooks. `sfunc` and `ufunc` are paired, and both R closures run only on the R thread.
+
+Clarification still needed only for the optional storage-format codec layer (`codec_config()`): whether it remains explicit-only or later supports extension/content-type selection. Core behavior should avoid hidden deserializer surprises.
+
+### Async cancellation semantics
+
+Status: `provisional`
+
+Mirror nanonext ergonomics where possible: `stop_aio()` silently requests cancellation and waits for the Aio handle to reach a terminal state. If cancellation wins, the Aio resolves to a cancellation error value, e.g. `opendalCancelledValue`.
+
+There are no guarantees about backend side effects unless the backend/profile primitive provides them. A remote request may already have completed or a write may already have been committed. For C `read_into_aio()`, caller-owned buffers must remain valid until the Aio reaches a terminal state.
+
+### Timeout and waiting semantics
+
+Status: `provisional`
+
+Operation timeouts are operation/backend behavior and resolve as error values if the package/profile/layer defines them. Wait timeouts are user convenience: `cv_until()` / `aio_wait(timeout)` control waiting and do not by themselves guarantee cancellation. Cancellation remains subject to the backend/profile semantics described above.
+
+### Warning policy
+
+Status: `provisional`
+
+Adapters may warn for whatever profile-specific reason is helpful, especially weaker consistency semantics, expensive adapter paths, or partial text decoding risk. Warnings are diagnostics only and must never be required for control flow. Backend/filesystem failures still resolve to error values.
+
+### Native C result model for vector reads
+
+Status: `provisional`
+
+Native C byte reads are buffer-oriented to avoid copies. For `read_into_aio()` and `readv_into_aio()`, the caller provides destination buffers and owns them. Ropendal fills those buffers asynchronously. The caller must keep buffers valid until the Aio reaches a terminal state.
+
+Need still define result inspection details:
+
+- flat result array in request order
+- per-request status and byte count
+- per-request error object or shared aggregate error
+- ownership/lifetime of result arrays
+
+### Native C API distribution
+
+Status: `resolved`
+
+`R_RegisterCCallable()` is not the goal. Ropendal should expose a pure C API and compile/provide a library so C consumers do not need to touch R's C API. The installed header must not include R headers. R-specific bridging can exist separately for the R package internals, but not as the core native consumer contract.
+
+### Thread safety and lifetime
+
+Status: `open`
+
+Need define whether `ropendal_fs_t`, `ropendal_aio_t`, `ropendal_cv_t`, and `ropendal_monitor_t` are thread-safe, and exactly how retain/release interacts with R GC and package unload.
+
+### Service profiles and adapter registry
+
+Status: `open`
+
+Need design the internal registry that maps a service/config to a declared Ropendal capability profile. This is where service-specific Rust/C adapters live, including Google Drive ergonomics.
+
+### Auth refresh and secret lifetime
+
+Status: `provisional`
+
+Core passes explicit credentials/config to Rust/OpenDAL. Refresh behavior should be delegated to OpenDAL/service support where available, e.g. Google Drive refresh-token handling, rather than reinvented in R. Secrets must be redacted in errors, `print()`, `str()`, README, tests, and profile diagnostics.
+
+### R/Rust responsibility boundary
+
+Status: `provisional`
+
+Keep `R/api.R` as a very thin public surface. R should define user-facing names,
+S7/S3 generics and interfaces, documentation, optional local credential-source
+objects, and README/test orchestration. Rust should own filesystem operation
+semantics, argument validation for operation calls, strict vector length checks,
+result shaping, S3 classes and attributes for returned values, capability values,
+and error-value construction.
+
+The transitional R helpers `.decorate_error()`, `.decorate_result()`, `.check_fs()`,
+and vectorized loops such as `.write_many()` should be removed once equivalent
+Rust methods return already-classed values and enforce the contract directly.
+Hard R errors remain appropriate only for R-side interface construction, explicit
+environment/file helper setup, and generic dispatch failures.
+
+### Credential provider interface
+
+Status: `open`
+
+A credential provider is a small explicit object/protocol that can materialize a
+service-specific OpenDAL config at filesystem construction time and can present a
+redacted summary for diagnostics. It is not an implicit global provider chain and
+not just an unclassed list of secrets.
+
+Proposed required behavior:
+
+- `credential_config(provider, service)` returns named scalar config values for
+  Rust/OpenDAL, with secrets only in the returned construction payload.
+- `credential_summary(provider)` returns a redacted classed value for printing,
+  capability diagnostics, and logs.
+- provider classes include direct token providers, refresh-token providers,
+  local `gdrive3` JSON/token-file providers, and explicit env providers.
+
+This can be expressed with S7 plus `s7contract`-style interfaces/traits while
+keeping Rust as the implementation owner for filesystem operations.
+
+### Capability values and interfaces
+
+Status: `open`
+
+`fs_capabilities()` should return a classed capability value built in Rust, not a
+plain nested list assembled in R. R-level interfaces such as `ReadableFs`,
+`WritableFs`, or `ListableFs` can be useful for consumers, but support is a
+runtime property of the handle/profile and must ultimately be enforced by Rust
+operation methods returning `opendalUnsupportedValue` where appropriate.

@@ -1,0 +1,69 @@
+url: https://sounkou-bioinfo.github.io/Ropendal/
+template:
+  bootstrap: 5
+
+reference:
+  - title: Filesystem construction and configuration
+    contents:
+      - opendal
+      - opendal_uri
+      - opt
+      - "opt<-"
+      - credentials_aws
+      - credentials_gdrive
+  - title: Filesystem primitives
+    contents:
+      - fs_info
+      - fs_capabilities
+      - fs_stat
+      - fs_exists
+      - fs_ls
+      - fs_read
+      - fs_write
+      - fs_replace
+      - fs_append
+      - fs_mkdir
+      - fs_delete
+      - fs_copy
+      - fs_rename
+  - title: Async Aio operations
+    contents:
+      - fs_read_aio
+      - fs_write_aio
+      - fs_replace_aio
+      - fs_append_aio
+      - fs_stat_aio
+      - fs_ls_aio
+      - call_aio
+      - collect_aio
+      - unresolved
+      - stop_aio
+      - race_aio
+      - cv
+      - cv_wait
+      - cv_until
+      - aio_monitor
+      - read_monitor
+  - title: Error values
+    contents:
+      - is_error_value
+      - ropendal_error
+      - error_kind
+      - error_message
+  - title: Serialization and codecs
+    contents:
+      - serial_config
+      - codec_config
+  - title: Native API
+    contents:
+      - ropendal-c-api
+
+articles:
+  - title: Design
+    navbar: ~
+    contents:
+      - abstract-filesystem
+      - async-aio
+      - serializers
+      - native-c-api
+      - credentials

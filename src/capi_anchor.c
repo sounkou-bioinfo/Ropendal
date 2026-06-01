@@ -1,0 +1,52 @@
+#include <stdint.h>
+#include "../inst/include/ropendal.h"
+
+typedef void (*ropendal_any_fn)(void);
+
+ropendal_any_fn ropendal_c_api_anchor[] = {
+    (ropendal_any_fn)ropendal_api_version,
+    (ropendal_any_fn)ropendal_fs_open,
+    (ropendal_any_fn)ropendal_fs_from_uri,
+    (ropendal_any_fn)ropendal_fs_retain,
+    (ropendal_any_fn)ropendal_fs_release,
+    (ropendal_any_fn)ropendal_read_aio,
+    (ropendal_any_fn)ropendal_read_into_aio,
+    (ropendal_any_fn)ropendal_readv_aio,
+    (ropendal_any_fn)ropendal_readv_into_aio,
+    (ropendal_any_fn)ropendal_write_aio,
+    (ropendal_any_fn)ropendal_replace_aio,
+    (ropendal_any_fn)ropendal_append_aio,
+    (ropendal_any_fn)ropendal_stat_aio,
+    (ropendal_any_fn)ropendal_ls_aio,
+    (ropendal_any_fn)ropendal_delete_aio,
+    (ropendal_any_fn)ropendal_copy_aio,
+    (ropendal_any_fn)ropendal_rename_aio,
+    (ropendal_any_fn)ropendal_mkdir_aio,
+    (ropendal_any_fn)ropendal_cv_alloc,
+    (ropendal_any_fn)ropendal_cv_release,
+    (ropendal_any_fn)ropendal_cv_wait,
+    (ropendal_any_fn)ropendal_cv_until,
+    (ropendal_any_fn)ropendal_cv_value,
+    (ropendal_any_fn)ropendal_cv_reset,
+    (ropendal_any_fn)ropendal_cv_signal,
+    (ropendal_any_fn)ropendal_aio_notify,
+    (ropendal_any_fn)ropendal_monitor_create,
+    (ropendal_any_fn)ropendal_monitor_add_aio,
+    (ropendal_any_fn)ropendal_monitor_read,
+    (ropendal_any_fn)ropendal_monitor_release,
+    (ropendal_any_fn)ropendal_aio_poll,
+    (ropendal_any_fn)ropendal_aio_wait,
+    (ropendal_any_fn)ropendal_aio_cancel,
+    (ropendal_any_fn)ropendal_aio_release,
+    (ropendal_any_fn)ropendal_aio_result_bytes,
+    (ropendal_any_fn)ropendal_aio_result_nread,
+    (ropendal_any_fn)ropendal_aio_result_entries,
+    (ropendal_any_fn)ropendal_aio_result_entry,
+    (ropendal_any_fn)ropendal_error_message,
+    (ropendal_any_fn)ropendal_error_kind,
+    (ropendal_any_fn)ropendal_error_operation,
+    (ropendal_any_fn)ropendal_error_path,
+    (ropendal_any_fn)ropendal_error_release,
+};
+
+uintptr_t ropendal_c_api_anchor_len = sizeof(ropendal_c_api_anchor) / sizeof(ropendal_c_api_anchor[0]);

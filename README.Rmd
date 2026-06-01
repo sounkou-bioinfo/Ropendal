@@ -1,0 +1,144 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+# Ropendal
+
+Ropendal is a byte-oriented abstract filesystem interface for R backed by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/).
+
+Ropendal currently exposes local filesystems, HTTP endpoints, S3-compatible services, and Google Drive as byte-addressable filesystem handles with explicit backend configuration and explicit credentials.
+
+It supports raw byte reads, range reads, writes, replacements, appends where supported, metadata, listing, path normalization, classed error values, read Aio handles, and a pure C API for direct byte access. The API is designed around filesystem primitives over bytes, byte ranges, and metadata; nanonext-like async Aio objects, condition variables, and monitors; errors-as-values resolution; explicit raw-vector serializers and deserializers; an async-first C API for native packages; and credential helpers including Google Drive and S3-compatible providers.
+
+See `design/api-design.md` for the current API design notes and `design/STATUS.md` for the implementation/test checklist.
+
+## Local filesystem example
+
+```{r local-fs-example}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-readme-example")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
+fs_read(fs, "data.bin")
+fs_read(fs, "data.bin", offset = 1, size = 2)
+
+fs_stat(fs, "data.bin")[c("path", "type", "size")]
+vapply(fs_ls(fs), `[[`, character(1), "path")
+```
+
+## Public S3-compatible endpoint example
+
+Public S3-compatible endpoints can be opened without credentials by explicitly
+skipping request signing and disabling ambient config loading. Private
+S3-compatible services should use an explicit credential provider such as
+`credentials_s3(access_key_id, secret_access_key)` rather than hidden ambient
+credential lookup. This example uses a public IDR OME-Zarr object store hosted
+by EMBL-EBI.
+
+```{r public-s3-example, eval = FALSE}
+# Public HTTPS/S3-compatible endpoint — no credentials needed.
+s3fs <- opendal(
+  "s3",
+  endpoint = "https://uk1s3.embassy.ebi.ac.uk",
+  bucket = "idr",
+  root = "/zarr/v0.4/idr0062A/6001240.zarr",
+  region = "us-east-1",
+  skip_signature = TRUE,
+  disable_config_load = TRUE
+)
+
+zarray <- rawToChar(fs_read(s3fs, "0/.zarray"))
+grepl('"dtype": "<u2"', zarray, fixed = TRUE)
+#> [1] TRUE
+
+fs_stat(s3fs, "0/.zarray")[c("path", "type", "size")]
+#> $path
+#> [1] "0/.zarray"
+#>
+#> $type
+#> [1] "file"
+#>
+#> $size
+#> [1] 417
+
+chunk_head <- fs_read(s3fs, "0/0/0/0/0", offset = 0, size = 16)
+length(chunk_head)
+#> [1] 16
+```
+
+HTTP endpoints are useful for read-only byte access too. Full reads and byte
+ranges work when the server returns byte-range responses.
+
+```{r http-endpoint-example}
+http_fs <- opendal(
+  "http",
+  endpoint = "https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr",
+  root = "/"
+)
+
+zarray_head <- rawToChar(fs_read(http_fs, "0/.zarray", offset = 0, size = 40))
+grepl('"chunks"', zarray_head, fixed = TRUE)
+
+fs_stat(http_fs, "0/.zarray")[c("path", "type", "size")]
+
+chunk_head <- fs_read(http_fs, "0/0/0/0/0", offset = 0, size = 16)
+length(chunk_head)
+```
+
+## Google Drive example
+
+Google Drive handles use explicit credentials. The README render can opt into a
+real Google Drive read by setting credential paths in the environment; `make rdm`
+sets local defaults for a `gdrive3` account directory when present.
+
+```{r gdrive-example, eval = file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
+gdrive_fs <- opendal(
+  "gdrive",
+  root = Sys.getenv("ROPENDAL_GDRIVE_ROOT", "Ropendal"),
+  auth = credentials_gdrive3(
+    secret_json = Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON"),
+    tokens_json = Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON")
+  )
+)
+
+gdrive_path <- Sys.getenv("ROPENDAL_GDRIVE_FILE", "map_catalog.txt")
+fs_stat(gdrive_fs, gdrive_path)[c("path", "type", "size")]
+
+catalog_head <- fs_read(gdrive_fs, gdrive_path, offset = 0, size = 80)
+length(catalog_head)
+```
+
+Filesystem failures are returned as values.
+
+```{r errors-as-values}
+err <- fs_write(fs, "data.bin", as.raw(9))
+is_error_value(err)
+error_kind(err)
+```
+
+Read operations can also return Aio handles.
+
+```{r aio-read}
+aio <- fs_read_aio(fs, "data.bin")
+poll_aio(aio)
+call_aio(aio)
+```
+
+## Development
+
+Common development and opt-in service test targets are listed by `make help`.
+
+```{bash make-help, comment = ""}
+make help
+```

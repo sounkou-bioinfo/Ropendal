@@ -1,0 +1,46 @@
+# R session / IDE state
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+.httr-oauth
+
+# R package build outputs
+*.Rcheck/
+*.tar.gz
+*.tgz
+.Rbuildignore.bak
+..Rcheck/
+
+# R generated docs/site outputs
+README.html
+pkgdown/
+docs/
+
+# Native build outputs
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+src/*.a
+src/Makevars
+src/Makevars.win
+src/symbols.rds
+
+# Rust build outputs
+src/rust/target/
+src/rust/vendor/
+**/target/
+
+# Tooling caches
+.cache/
+.cargo-check/
+.DS_Store
+
+# Local reference checkouts are large and not package source
+.sync/

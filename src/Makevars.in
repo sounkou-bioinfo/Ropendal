@@ -1,0 +1,36 @@
+TARGET = @TARGET@
+
+PROFILE = @PROFILE@
+FEATURE_FLAGS = @FEATURE_FLAGS@
+
+RUSTFLAGS =
+
+TARGET_DIR = $(CURDIR)/rust/target
+LIBDIR = $(TARGET_DIR)/$(TARGET)/$(subst dev,debug,$(PROFILE))
+STATLIB = $(LIBDIR)/libropendal.a
+PKG_LIBS = -L$(LIBDIR) -lropendal
+
+CARGO_BUILD_ARGS = --lib --profile $(PROFILE) $(FEATURE_FLAGS) --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
+
+all: $(SHLIB) clean_intermediate
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	if [ -f ./rust/vendor.tar.xz ]; then \
+	  tar xf ./rust/vendor.tar.xz -C ./rust; \
+	fi
+	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
+	  export CC="$(CC)" && \
+	  export CFLAGS="$(CFLAGS)" && \
+	  export RUSTFLAGS="$(RUSTFLAGS)" && \
+	  @BEFORE_CARGO_BUILD@ \
+	  cargo build $(CARGO_BUILD_ARGS)
+
+clean_intermediate: $(SHLIB)
+	rm -Rf $(TARGET_DIR)
+
+clean:
+	rm -Rf $(SHLIB) $(OBJECTS) $(STATLIB) ./rust/target
+
+.PHONY: all clean_intermediate clean
