@@ -2,14 +2,55 @@
 #define ROPENDAL_H
 
 /*
- * Public C API draft for Ropendal.
+ * Public C API for Ropendal.
  *
- * The API is pure C and async-first. It does not include R headers and does not
- * require callers to touch R's C API. Convenience synchronous behavior should be
- * built by submitting an aio and waiting on it.
+ * This header is installed as inst/include/ropendal.h. It is a pure C interface:
+ * it does not include R headers, does not mention SEXP, and does not require C
+ * callers to use R's C API. Synchronous behavior is built by submitting an async
+ * operation and waiting on the returned ropendal_aio_t.
  *
- * Callbacks may be invoked from worker threads. They MUST NOT call R's C API
- * unless the caller has independently arranged safe handoff to R's main thread.
+ * Allocation and ownership follow one rule: any function that writes a non-NULL
+ * handle through an out parameter transfers one ownership reference to the
+ * caller. ropendal_fs_open(), ropendal_fs_from_uri(), ropendal_cv_alloc(),
+ * ropendal_monitor_create(), and the *_aio() submission functions allocate such
+ * handles. The caller must eventually release each owned reference with the
+ * matching release function: ropendal_fs_release(), ropendal_cv_release(),
+ * ropendal_monitor_release(), or ropendal_aio_release(). ropendal_fs_retain()
+ * creates one additional filesystem reference that must also be released.
+ * Passing NULL to a release function is allowed and has no effect.
+ *
+ * Errors are also allocated values. When a function accepts ropendal_error_t
+ * **err and returns a non-OK status, it may store a newly allocated error in
+ * *err. The caller owns that error and must release it with
+ * ropendal_error_release(). Passing err == NULL is valid when the caller only
+ * needs the status code. Strings returned by ropendal_error_message(),
+ * ropendal_error_kind(), ropendal_error_operation(), and ropendal_error_path()
+ * are borrowed from the error object and become invalid after release.
+ *
+ * Input strings, config key/value arrays, and option structs are borrowed only
+ * for the duration of the call that receives them. Ropendal copies the data it
+ * needs before returning from a successful submission call. For write, replace,
+ * and append submissions, src bytes are copied before the function returns, so
+ * the caller may reuse or free src immediately after a successful call. For
+ * read_into and readv_into submissions, destination buffers remain owned by the
+ * caller and must stay valid and writable until the Aio reaches a terminal state
+ * and the caller has inspected the byte count/result.
+ *
+ * Result pointers returned by ropendal_aio_result_bytes(),
+ * ropendal_aio_result_entry(), ropendal_aio_result_entries(), and
+ * ropendal_monitor_read() are borrowed. They remain valid only while the owning
+ * Aio or monitor remains alive, and monitor event slices may be invalidated by a
+ * later monitor read.
+ *
+ * Every public option/result struct starts with struct_size. Callers should
+ * zero-initialize the struct and set struct_size = sizeof(struct_value). Fields
+ * left as zero or NULL mean "unset" unless the field documentation says
+ * otherwise. This lets newer Ropendal versions detect older callers safely.
+ *
+ * Callbacks and notifications may run on worker threads. They MUST NOT call R's
+ * C API unless the caller has independently arranged a safe handoff to R's main
+ * thread. Treat callbacks as completion notifications only; inspect results via
+ * ropendal_aio_wait(), ropendal_aio_poll(), and the result accessors.
  */
 
 #include <stddef.h>
@@ -181,7 +222,17 @@ typedef struct ropendal_entry {
   const char *version;
 } ropendal_entry_t;
 
-/* API / handle lifecycle */
+/*
+ * API / filesystem handle lifecycle.
+ *
+ * ropendal_api_version() returns the C ABI version supported by the loaded
+ * shared library. ropendal_fs_open() and ropendal_fs_from_uri() allocate a new
+ * filesystem handle with reference count 1 on success and store it in *out. The
+ * caller owns that reference. The scheme/config/uri strings are copied during
+ * the call and do not need to outlive it. A filesystem handle may be released
+ * after an Aio has been successfully submitted; the Aio keeps the native
+ * operator/runtime alive for its own work.
+ */
 uint32_t ropendal_api_version(void);
 ropendal_status_t ropendal_fs_open(const char *scheme,
                                    const ropendal_kv_t *config,
@@ -194,7 +245,16 @@ ropendal_status_t ropendal_fs_from_uri(const char *uri,
 void ropendal_fs_retain(ropendal_fs_t *fs);
 void ropendal_fs_release(ropendal_fs_t *fs);
 
-/* Async filesystem operations */
+/*
+ * Async filesystem operations.
+ *
+ * Each successful *_aio() call stores a newly allocated Aio in *out. The caller
+ * owns the Aio and must release it with ropendal_aio_release(), even after the
+ * operation has completed, failed, or been cancelled. Submission functions copy
+ * path strings and options before returning. Operations that are not implemented
+ * for the current C API or backend return ROPENDAL_UNSUPPORTED and do not
+ * allocate an Aio.
+ */
 ropendal_status_t ropendal_read_aio(ropendal_fs_t *fs,
                                     const ropendal_read_options_t *opts,
                                     ropendal_aio_t **out,
@@ -314,13 +374,27 @@ ropendal_status_t ropendal_monitor_read(ropendal_monitor_t *monitor,
                                         ropendal_error_t **err);
 void ropendal_monitor_release(ropendal_monitor_t *monitor);
 
-/* Aio lifecycle / completion */
+/*
+ * Aio lifecycle / completion.
+ *
+ * poll is non-blocking. wait blocks until terminal state; timeout_ms is reserved
+ * for bounded waits and may be ignored by early implementations. cancel requests
+ * cancellation, but remote I/O may already have happened. Releasing an Aio drops
+ * the handle and invalidates all borrowed result pointers from that Aio.
+ */
 ropendal_aio_status_t ropendal_aio_poll(ropendal_aio_t *aio);
 ropendal_status_t ropendal_aio_wait(ropendal_aio_t *aio, int timeout_ms, ropendal_error_t **err);
 void ropendal_aio_cancel(ropendal_aio_t *aio);
 void ropendal_aio_release(ropendal_aio_t *aio);
 
-/* Result extraction. Returned pointers are owned by the aio unless documented otherwise. */
+/*
+ * Result extraction.
+ *
+ * Result accessors wait for completion if needed. Byte and entry pointers are
+ * borrowed from the Aio and remain valid until ropendal_aio_release(aio). For
+ * read_into/readv_into operations, use ropendal_aio_result_nread() to learn how
+ * many bytes were written into caller-owned buffers.
+ */
 ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
                                             const uint8_t **data,
                                             size_t *len,
@@ -336,7 +410,12 @@ ropendal_status_t ropendal_aio_result_entry(ropendal_aio_t *aio,
                                             const ropendal_entry_t **entry,
                                             ropendal_error_t **err);
 
-/* Error inspection */
+/*
+ * Error inspection.
+ *
+ * Error strings are borrowed from err. Copy them if they must outlive
+ * ropendal_error_release(err). Releasing NULL is allowed.
+ */
 const char *ropendal_error_message(const ropendal_error_t *err);
 const char *ropendal_error_kind(const ropendal_error_t *err);
 const char *ropendal_error_operation(const ropendal_error_t *err);

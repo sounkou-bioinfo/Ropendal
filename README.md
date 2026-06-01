@@ -10,14 +10,20 @@ Ropendal currently exposes local filesystems, HTTP endpoints,
 S3-compatible services, and Google Drive as byte-addressable filesystem
 handles with explicit backend configuration and explicit credentials.
 
-It supports raw byte reads, range reads, writes, replacements, appends
-where supported, metadata, listing, path normalization, classed error
-values, read Aio handles, and a pure C API for direct byte access. The
-API is designed around filesystem primitives over bytes, byte ranges,
-and metadata; nanonext-like async Aio objects, condition variables, and
-monitors; errors-as-values resolution; explicit raw-vector serializers
-and deserializers; an async-first C API for native packages; and
-credential helpers including Google Drive and S3-compatible providers.
+The filesystem abstraction is deliberately opinionated. Handles use
+normalized paths relative to a configured root, primitive operations
+move bytes and byte ranges, backend failures resolve to classed error
+values, and credentials are supplied explicitly rather than discovered
+through hidden ambient provider chains.
+
+At the R level, Ropendal supports raw byte reads, range reads, writes,
+replacements, appends where supported, metadata, listing, path
+normalization, read Aio handles, and credential helpers including Google
+Drive and S3-compatible providers. At the native level, the package
+installs `inst/include/ropendal.h` and exports a pure C API from the
+package shared library so downstream native packages can submit async
+filesystem operations and read directly into caller-owned buffers
+without routing through R raw vectors.
 
 See `design/api-design.md` for the current API design notes and
 `design/STATUS.md` for the implementation/test checklist.
@@ -175,6 +181,24 @@ poll_aio(aio)
 call_aio(aio)
 #> [1] 01 02 03 04
 ```
+
+## Related work
+
+Apache OpenDAL supplies the Rust backend abstraction that Ropendal binds
+into R. The R [`objectstore`](https://github.com/Bisaloo/objectstore)
+package is related work for object-store access, and its
+[`store_filesystem.R`](https://github.com/Bisaloo/objectstore/blob/main/R/store_filesystem.R)
+implementation is a useful reference for filesystem-like surfaces in R.
+Ropendal takes a more opinionated byte-filesystem stance, with
+root-relative path normalization, explicit credentials,
+errors-as-values, async handles, and an exported native C API as part of
+the core contract.
+
+The async API is inspired by
+[`nanonext`](https://github.com/shikokuchuo/nanonext)’s Aio model:
+operations return handles, callers can poll or wait explicitly, and
+notification primitives are designed so background workers never call R
+APIs.
 
 ## Development
 

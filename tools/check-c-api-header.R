@@ -5,12 +5,19 @@ header <- if (length(args) >= 1L) args[[1L]] else file.path("inst", "include", "
 header <- normalizePath(header, winslash = "/", mustWork = TRUE)
 include_dir <- dirname(header)
 
-cc_candidates <- c(Sys.getenv("CC", unset = ""), Sys.which(c("cc", "gcc", "clang")))
-cc_candidates <- cc_candidates[nzchar(cc_candidates)]
-if (!length(cc_candidates)) {
-  stop("no C compiler found for C API header compile check test", call. = FALSE)
+cc_config <- system2(file.path(R.home("bin"), "R"), c("CMD", "config", "CC"), stdout = TRUE, stderr = TRUE)
+status <- attr(cc_config, "status")
+if (!is.null(status) && status != 0L) {
+  writeLines(cc_config)
+  stop("R CMD config CC failed for C API header compile check test", call. = FALSE)
 }
-cc <- cc_candidates[[1L]]
+cc_config <- trimws(paste(cc_config, collapse = " "))
+if (!nzchar(cc_config)) {
+  stop("R CMD config CC returned an empty compiler command", call. = FALSE)
+}
+cc <- strsplit(cc_config, "[[:space:]]+")[[1L]]
+cc_cmd <- cc[[1L]]
+cc_args <- cc[-1L]
 
 src <- tempfile("ropendal-header-compile-", fileext = ".c")
 obj <- tempfile("ropendal-header-compile-", fileext = ".o")
@@ -46,8 +53,8 @@ writeLines(c(
   ''
 ), src)
 
-cmd <- c("-std=c99", "-Wall", "-Wextra", "-Werror", "-I", include_dir, "-c", src, "-o", obj)
-out <- system2(cc, cmd, stdout = TRUE, stderr = TRUE)
+cmd <- c(cc_args, "-std=c99", "-Wall", "-Wextra", "-Werror", "-I", include_dir, "-c", src, "-o", obj)
+out <- system2(cc_cmd, cmd, stdout = TRUE, stderr = TRUE)
 status <- attr(out, "status")
 if (is.null(status)) status <- 0L
 if (status != 0L) {
