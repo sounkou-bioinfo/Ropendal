@@ -22,6 +22,7 @@ expect_match(header_text, "ropendal_fs_from_uri")
 expect_match(header_text, "ropendal_replace_aio")
 expect_match(header_text, "ropendal_append_aio")
 expect_match(header_text, "ropendal_readv_into_aio")
+expect_match(header_text, "ropendal_aio_result_readv")
 expect_match(header_text, "ropendal_exists_aio")
 expect_match(header_text, "ropendal_aio_result_bool")
 
@@ -49,6 +50,7 @@ if (length(cc_candidates) > 0L) {
     '  ropendal_read_request_t read_req = {0};',
     '  ropendal_read_into_request_t read_into_req = {0};',
     '  ropendal_readv_options_t readv_opts = {0};',
+    '  ropendal_readv_result_t readv_result = {0};',
     '  ropendal_write_options_t write_opts = {0};',
     '  ropendal_ls_options_t ls_opts = {0};',
     '  ropendal_delete_options_t delete_opts = {0};',
@@ -59,13 +61,14 @@ if (length(cc_candidates) > 0L) {
     '  read_req.struct_size = sizeof read_req;',
     '  read_into_req.struct_size = sizeof read_into_req;',
     '  readv_opts.struct_size = sizeof readv_opts;',
+    '  readv_result.struct_size = sizeof readv_result;',
     '  write_opts.struct_size = sizeof write_opts;',
     '  ls_opts.struct_size = sizeof ls_opts;',
     '  delete_opts.struct_size = sizeof delete_opts;',
     '  entry.struct_size = sizeof entry;',
     '  event.struct_size = sizeof event;',
     '  (void)kv; (void)read_opts; (void)read_req; (void)read_into_req;',
-    '  (void)readv_opts; (void)write_opts; (void)ls_opts; (void)delete_opts;',
+    '  (void)readv_opts; (void)readv_result; (void)write_opts; (void)ls_opts; (void)delete_opts;',
     '  (void)entry; (void)event;',
     '}'
   ), src)

@@ -125,7 +125,8 @@ Coverage:
 - `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
 - `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`
 - namespace mutations `ropendal_mkdir_aio()`, `ropendal_copy_aio()`, `ropendal_rename_aio()`, and `ropendal_delete_aio()`
-- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_aio()` result layout, per-request `readv` result/error reporting, and cancellation safety tests
+- `ropendal_aio_result_readv()` reports per-request `readv_into` success/failure status and byte counts
+- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_aio()` bytes result layout, and cancellation safety tests
 
 ### 90 CI-only API contract tests
 
@@ -225,6 +226,6 @@ Remaining important cases:
 - many async range reads into caller buffers (implemented for C `readv_into_aio()` happy path)
 - cancellation before completion
 - timeout wait
-- per-request failure in a vector read
+- per-request failure in a vector read (implemented for C `readv_into_aio()` roundtrip)
 - release order: aio before fs and fs before aio
 - monitor/notification flow using `ropendal_cv_*` and `ropendal_monitor_*`

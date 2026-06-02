@@ -934,6 +934,10 @@ ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
 ropendal_status_t ropendal_aio_result_nread(ropendal_aio_t *aio,
                                             size_t *nread,
                                             ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_readv(ropendal_aio_t *aio,
+                                            const ropendal_readv_result_t **results,
+                                            size_t *len,
+                                            ropendal_error_t **err);
 ropendal_status_t ropendal_aio_result_bool(ropendal_aio_t *aio,
                                            int *value,
                                            ropendal_error_t **err);
@@ -974,7 +978,7 @@ ropendal_status_t ropendal_readv_into_aio(ropendal_fs_t *fs,
 
 `readv`/`readv_into` also take `batch_concurrency`, which is independent of `part_concurrency`. This separation matters for native consumers: one package may need 64 independent range reads in flight but only 2 chunks per object, while another may need 1 object with 16 chunk reads.
 
-This is the important path for high-performance consumers: indexed file readers, genomics tools, Arrow/DuckDB bridges, Zarr-like arrays, etc. For `read_into` and `readv_into`, the caller owns the destination buffers and must keep them valid until the Aio reaches a terminal state. `readv_into` destination buffers must not overlap because requests may be filled concurrently. Ropendal writes bytes into those buffers to avoid R raw-vector copies. The current `readv_into` accessor reports total bytes via `ropendal_aio_result_nread()`; per-request lengths/errors remain reserved for a future result accessor.
+This is the important path for high-performance consumers: indexed file readers, genomics tools, Arrow/DuckDB bridges, Zarr-like arrays, etc. For `read_into` and `readv_into`, the caller owns the destination buffers and must keep them valid until the Aio reaches a terminal state. `readv_into` destination buffers must not overlap because requests may be filled concurrently. Ropendal writes bytes into those buffers to avoid R raw-vector copies. `ropendal_aio_result_nread()` reports total bytes copied across successful requests, and `ropendal_aio_result_readv()` returns borrowed per-request status, byte-count, and error details.
 
 ## Package build features
 

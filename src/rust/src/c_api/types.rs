@@ -73,6 +73,23 @@ pub struct ropendal_readv_options {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ropendal_readv_result {
+    pub(crate) struct_size: usize,
+    pub(crate) index: usize,
+    pub(crate) status: i32,
+    pub(crate) nread: usize,
+    pub(crate) kind: *const c_char,
+    pub(crate) message: *const c_char,
+    pub(crate) path: *const c_char,
+}
+
+// `ropendal_readv_result` pointers borrow from `CString`s owned by the same
+// `CReadvResultSet` outcome. The bytes are immutable and live until Aio release.
+unsafe impl Send for ropendal_readv_result {}
+unsafe impl Sync for ropendal_readv_result {}
+
+#[repr(C)]
 pub struct ropendal_write_options {
     pub(crate) struct_size: usize,
     pub(crate) path: *const c_char,
@@ -138,6 +155,12 @@ pub(crate) struct CEntrySet {
     _strings: Vec<CEntryStrings>,
 }
 
+pub(crate) struct CReadvResultSet {
+    pub(crate) results: Vec<ropendal_readv_result>,
+    pub(crate) total_nread: usize,
+    _strings: Vec<CReadvResultStrings>,
+}
+
 #[derive(Clone)]
 struct CEntryStrings {
     path: CString,
@@ -147,6 +170,25 @@ struct CEntryStrings {
     content_encoding: Option<CString>,
     last_modified: Option<CString>,
     version: Option<CString>,
+}
+
+#[derive(Clone)]
+struct CReadvResultStrings {
+    kind: CString,
+    message: CString,
+    path: CString,
+}
+
+pub(crate) enum CReadvTaskResult {
+    Ok {
+        index: usize,
+        path: String,
+        nread: usize,
+    },
+    Error {
+        index: usize,
+        info: super::error::CErrorInfo,
+    },
 }
 
 #[repr(i32)]
@@ -214,6 +256,67 @@ impl Clone for CEntrySet {
         }
         Self {
             entries,
+            _strings: strings,
+        }
+    }
+}
+
+impl Clone for CReadvResultSet {
+    fn clone(&self) -> Self {
+        let strings = self._strings.clone();
+        let mut results = self.results.clone();
+        for (result, result_strings) in results.iter_mut().zip(strings.iter()) {
+            result.kind = result_strings.kind.as_ptr();
+            result.message = result_strings.message.as_ptr();
+            result.path = result_strings.path.as_ptr();
+        }
+        Self {
+            results,
+            total_nread: self.total_nread,
+            _strings: strings,
+        }
+    }
+}
+
+impl CReadvResultSet {
+    pub(crate) fn from_task_results(mut values: Vec<CReadvTaskResult>) -> Self {
+        values.sort_by_key(|value| match value {
+            CReadvTaskResult::Ok { index, .. } => *index,
+            CReadvTaskResult::Error { index, .. } => *index,
+        });
+        let mut strings = Vec::with_capacity(values.len());
+        let mut results = Vec::with_capacity(values.len());
+        let mut total_nread = 0usize;
+        for value in values {
+            let (index, status, nread, kind, message, path) = match value {
+                CReadvTaskResult::Ok { index, path, nread } => {
+                    total_nread = total_nread.saturating_add(nread);
+                    (index, 0, nread, String::new(), String::new(), path)
+                }
+                CReadvTaskResult::Error { index, info } => {
+                    (index, info.status, 0, info.kind, info.message, info.path)
+                }
+            };
+            let result_strings = CReadvResultStrings {
+                kind: cstring_lossy(&kind),
+                message: cstring_lossy(&message),
+                path: cstring_lossy(&path),
+            };
+            let result = ropendal_readv_result {
+                struct_size: std::mem::size_of::<ropendal_readv_result>(),
+                index,
+                status,
+                nread,
+                kind: result_strings.kind.as_ptr(),
+                message: result_strings.message.as_ptr(),
+                path: result_strings.path.as_ptr(),
+            };
+            strings.push(result_strings);
+            results.push(result);
+        }
+        Self {
+            results,
+            total_nread,
             _strings: strings,
         }
     }
@@ -298,6 +401,7 @@ pub(crate) enum COutcome {
     Bool(bool),
     Entry(CEntrySet),
     Entries(CEntrySet),
+    Readv(CReadvResultSet),
     Error(super::error::CErrorInfo),
     Cancelled,
 }

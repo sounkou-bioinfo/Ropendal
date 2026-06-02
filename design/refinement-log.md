@@ -429,9 +429,9 @@ Implementation note: the R API now has `fs_stat_aio()`, `fs_stats_aio()`,
 `fs_append_aio()` over a generic `AioOutcome` that can materialize bytes, unit,
 bool, metadata, entries, many, errors, and cancellation. The C API now exposes
 async stat/exists/list/delete/copy/rename/mkdir operations plus bool/entry/entries
-result accessors, and `readv_into_aio()` for multiple caller-owned range buffers;
-richer per-request result structures and `readv_aio()` result layout remain
-planned.
+result accessors, and `readv_into_aio()` for multiple caller-owned range buffers.
+`ropendal_aio_result_readv()` exposes per-request status/byte-count/error details
+for `readv_into`; `readv_aio()` bytes result layout remains planned.
 
 ### Aio active binding contract
 

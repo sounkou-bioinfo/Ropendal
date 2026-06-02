@@ -9,7 +9,10 @@ use crate::ops::{ReadTuning, write_bytes};
 use crate::path::normalize_user_path;
 use crate::r_values::copy_buffer_to_slice;
 
-use super::{AioCallback, CEntrySet, CErrorInfo, c_error_from_opendal, c_str, set_c_error};
+use super::{
+    AioCallback, CEntrySet, CErrorInfo, CReadvResultSet, CReadvTaskResult, c_error_from_opendal,
+    c_str, set_c_error,
+};
 use super::{
     COutcome, ropendal_aio, ropendal_delete_options, ropendal_error, ropendal_fs,
     ropendal_ls_options, ropendal_read_into_request, ropendal_read_options, ropendal_read_request,
@@ -26,6 +29,7 @@ struct CReadParams {
 }
 
 struct CReadIntoTask {
+    index: usize,
     path: String,
     offset: u64,
     size: Option<u64>,
@@ -234,6 +238,7 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
     let op = native.op.clone();
     let runtime = native.runtime.clone();
     let task = CReadIntoTask {
+        index: 0,
         path,
         offset: opt.offset,
         size: if opt.has_size != 0 {
@@ -1085,6 +1090,7 @@ pub unsafe extern "C" fn ropendal_readv_into_aio(
             return 2;
         }
         tasks.push(CReadIntoTask {
+            index: i,
             path,
             offset: req.offset,
             size: if req.has_size != 0 {
@@ -1107,45 +1113,23 @@ pub unsafe extern "C" fn ropendal_readv_into_aio(
     let op = native.op.clone();
     let runtime = native.runtime.clone();
     let handle = runtime.spawn(async move {
-        let result = if tasks.is_empty() {
-            COutcome::Nread(0)
-        } else {
-            let values = stream::iter(tasks.into_iter())
-                .map(|task| {
-                    let op = op.clone();
-                    let params = params.clone();
-                    async move { c_read_into_task(op, task, params, "readv_into").await }
-                })
-                .buffer_unordered(concurrency)
-                .collect::<Vec<_>>()
-                .await;
-
-            let mut total = 0usize;
-            let mut first_error: Option<CErrorInfo> = None;
-            for value in values {
-                match value {
-                    Ok(n) => match total.checked_add(n) {
-                        Some(v) => total = v,
-                        None if first_error.is_none() => {
-                            first_error = Some(CErrorInfo {
-                                status: 2,
-                                kind: "InvalidArgument".to_string(),
-                                message: "readv byte count overflow".to_string(),
-                                operation: "readv_into".to_string(),
-                                path: String::new(),
-                            });
-                        }
-                        None => {}
-                    },
-                    Err(info) if first_error.is_none() => first_error = Some(info),
-                    Err(_) => {}
+        let values = stream::iter(tasks.into_iter())
+            .map(|task| {
+                let op = op.clone();
+                let params = params.clone();
+                let index = task.index;
+                let path = task.path.clone();
+                async move {
+                    match c_read_into_task(op, task, params, "readv_into").await {
+                        Ok(nread) => CReadvTaskResult::Ok { index, path, nread },
+                        Err(info) => CReadvTaskResult::Error { index, info },
+                    }
                 }
-            }
-            match first_error {
-                Some(info) => COutcome::Error(info),
-                None => COutcome::Nread(total),
-            }
-        };
+            })
+            .buffer_unordered(concurrency)
+            .collect::<Vec<_>>()
+            .await;
+        let result = COutcome::Readv(CReadvResultSet::from_task_results(values));
         if let Some(cb) = callback {
             cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }

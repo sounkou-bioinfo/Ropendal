@@ -38,10 +38,10 @@
  * buffers must not overlap because requests may be filled concurrently.
  *
  * Result pointers returned by ropendal_aio_result_bytes(),
- * ropendal_aio_result_entry(), ropendal_aio_result_entries(), and
- * ropendal_monitor_read() are borrowed. They remain valid only while the owning
- * Aio or monitor remains alive, and monitor event slices may be invalidated by a
- * later monitor read.
+ * ropendal_aio_result_readv(), ropendal_aio_result_entry(),
+ * ropendal_aio_result_entries(), and ropendal_monitor_read() are borrowed. They
+ * remain valid only while the owning Aio or monitor remains alive, and monitor
+ * event slices may be invalidated by a later monitor read.
  *
  * Every public option/result struct starts with struct_size. Callers should
  * zero-initialize the struct and set struct_size = sizeof(struct_value). Fields
@@ -171,6 +171,16 @@ typedef struct ropendal_readv_options {
   void *userdata;
 } ropendal_readv_options_t;
 
+typedef struct ropendal_readv_result {
+  size_t struct_size;
+  size_t index;
+  ropendal_status_t status;
+  size_t nread;
+  const char *kind;
+  const char *message;
+  const char *path;
+} ropendal_readv_result_t;
+
 typedef struct ropendal_write_options {
   size_t struct_size;
   const char *path;
@@ -279,8 +289,8 @@ ropendal_status_t ropendal_readv_aio(ropendal_fs_t *fs,
 /*
  * Each request owns dst and must keep it valid and non-overlapping until aio
  * reaches a terminal state. ropendal_aio_result_nread() returns the total bytes
- * copied across requests;
- * per-request result details are reserved for a future result accessor.
+ * copied across successful requests; ropendal_aio_result_readv() returns
+ * per-request status/byte-count details.
  */
 ropendal_status_t ropendal_readv_into_aio(ropendal_fs_t *fs,
                                           const ropendal_read_into_request_t *requests,
@@ -414,6 +424,10 @@ ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
                                             ropendal_error_t **err);
 ropendal_status_t ropendal_aio_result_nread(ropendal_aio_t *aio,
                                             size_t *nread,
+                                            ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_readv(ropendal_aio_t *aio,
+                                            const ropendal_readv_result_t **results,
+                                            size_t *len,
                                             ropendal_error_t **err);
 ropendal_status_t ropendal_aio_result_bool(ropendal_aio_t *aio,
                                            int *value,

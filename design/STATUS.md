@@ -103,14 +103,14 @@ GitHub Actions jobs:
 | `ropendal_fs_from_uri()` | yes | yes | no | symbol | not exercised yet |
 | async `read_aio()` | yes | yes | no | symbol | result bytes not exercised yet |
 | async `read_into_aio()` | yes | yes | no | yes | caller buffer roundtrip |
-| async `readv_into_aio()` | yes | yes | no | yes | installed-library roundtrip fills multiple caller-owned range buffers; per-request result details still planned |
+| async `readv_into_aio()` | yes | yes | no | yes | installed-library roundtrip fills multiple caller-owned range buffers and checks per-request success/failure result details |
 | `write_aio()` create | yes | yes | no | yes | roundtrip |
 | `replace_aio()` | yes | yes | no | symbol | planned test |
 | `append_aio()` | yes | partial | no | symbol | backend capability dependent |
 | `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
 | `cv` primitives | yes | partial | no | symbol | basic alloc/wait/signal exists |
 | monitor primitives | yes | unsupported stub | no | symbol | planned |
-| per-request `readv` result details | provisional | no | no | no | still needs final structs |
+| per-request `readv_into` result details | yes | yes | no | yes | `ropendal_readv_result_t` plus `ropendal_aio_result_readv()`; `readv_aio()` bytes result layout still planned |
 
 ## Next implementation milestones
 
@@ -119,7 +119,7 @@ GitHub Actions jobs:
 3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
 5. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
-6. Bring native C API parity up to the async operation contract: per-request `readv` result details, `readv_aio()` result layout, and broader service tests.
+6. Bring native C API parity up to the async operation contract: `readv_aio()` bytes result layout and broader service tests.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests by service profile and return classed capability values.
 9. Expand credential helpers beyond Google Drive and add more service coverage.

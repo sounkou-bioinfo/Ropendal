@@ -41,6 +41,7 @@ ropendal_any_fn ropendal_c_api_anchor[] = {
     (ropendal_any_fn)ropendal_aio_release,
     (ropendal_any_fn)ropendal_aio_result_bytes,
     (ropendal_any_fn)ropendal_aio_result_nread,
+    (ropendal_any_fn)ropendal_aio_result_readv,
     (ropendal_any_fn)ropendal_aio_result_bool,
     (ropendal_any_fn)ropendal_aio_result_entries,
     (ropendal_any_fn)ropendal_aio_result_entry,

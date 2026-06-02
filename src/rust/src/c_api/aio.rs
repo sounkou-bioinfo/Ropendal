@@ -1,7 +1,7 @@
 use std::ptr;
 
 use super::{CErrorInfo, set_c_error};
-use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error};
+use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error, ropendal_readv_result};
 
 fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
     unsafe {
@@ -124,7 +124,13 @@ pub unsafe extern "C" fn ropendal_aio_result_bytes(
             status
         }
         Ok(COutcome::Cancelled) => 7,
-        Ok(COutcome::Unit | COutcome::Bool(_) | COutcome::Entry(_) | COutcome::Entries(_)) => {
+        Ok(
+            COutcome::Unit
+            | COutcome::Bool(_)
+            | COutcome::Entry(_)
+            | COutcome::Entries(_)
+            | COutcome::Readv(_),
+        ) => {
             *data = ptr::null();
             *len = 0;
             0
@@ -155,6 +161,10 @@ pub unsafe extern "C" fn ropendal_aio_result_nread(
             *nread = bytes.len();
             0
         }
+        Ok(COutcome::Readv(set)) => {
+            *nread = set.total_nread;
+            0
+        }
         Ok(COutcome::Error(info)) => {
             let status = info.status;
             set_c_error(err, info);
@@ -163,6 +173,46 @@ pub unsafe extern "C" fn ropendal_aio_result_nread(
         Ok(COutcome::Cancelled) => 7,
         Ok(COutcome::Unit | COutcome::Bool(_) | COutcome::Entry(_) | COutcome::Entries(_)) => {
             *nread = 0;
+            0
+        }
+        Err(info) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ropendal_aio_result_readv(
+    aio: *mut ropendal_aio,
+    results: *mut *const ropendal_readv_result,
+    len: *mut usize,
+    err: *mut *mut ropendal_error,
+) -> i32 {
+    if results.is_null() || len.is_null() {
+        return 2;
+    }
+    match c_aio_finish(aio) {
+        Ok(COutcome::Readv(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Readv(ref set)) = *cached {
+                *results = set.results.as_ptr();
+                *len = set.results.len();
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Error(info)) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+        Ok(COutcome::Cancelled) => 7,
+        Ok(_) => {
+            *results = ptr::null();
+            *len = 0;
             0
         }
         Err(info) => {
