@@ -121,7 +121,7 @@ collect_aio(aio)
 call_aio(aio)
 stop_aio(aio)
 poll_aio(aio)
-unresolved()
+unresolved(x = NULL)
 is_error_value(x)
 error_kind(x)
 error_message(x)
@@ -228,4 +228,12 @@ values; read Aio handles; and a pure C API.
 Filesystem failures are returned as classed error values. Invalid arguments
 and internal runtime failures may signal R errors. Credential helpers return
 classed providers with redacted printing; pass them with \verb{auth =}.
+
+Aio handles expose read-only active bindings. \verb{$value} returns an
+\code{unresolvedValue} while the operation is pending and the resolved value or
+error value afterwards. \verb{$data} and \verb{$result} are aliases for \verb{$value}, while
+\verb{$state}, \verb{$resolved}, and \verb{$error} expose readiness and error inspection.
+\code{collect_aio()} waits and returns the value. \code{call_aio()} waits, updates the
+Aio, and returns the Aio invisibly. \code{unresolved()} constructs the unresolved
+sentinel; \code{unresolved(aio)} and \code{unresolved(value)} are predicates.
 }

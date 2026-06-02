@@ -160,12 +160,12 @@ bench::mark(
 #> # A tibble: 2 × 5
 #>   expression            min   median `itr/sec` mem_alloc
 #>   <bch:expr>       <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace   22.7ms   25.3ms      39.4        0B
-#> 2 paws_put           76.3ms   77.6ms      12.8    8.16MB
+#> 1 ropendal_replace   21.5ms   23.8ms      38.8        0B
+#> 2 paws_put           75.9ms   79.4ms      12.5    8.16MB
 
 bench::mark(
   ropendal_read = fs_read(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024),
-  ropendal_read_aio = call_aio(fs_read_aio(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024)),
+  ropendal_read_aio = collect_aio(fs_read_aio(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024)),
   paws_get = s3$get_object(Bucket = minio$bucket, Key = paws_key)$Body,
   iterations = 5,
   check = FALSE
@@ -173,9 +173,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression             min   median `itr/sec` mem_alloc
 #>   <bch:expr>        <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read       7.71ms   8.34ms     110.     8.01MB
-#> 2 ropendal_read_aio   8.82ms  10.64ms      88.3    8.03MB
-#> 3 paws_get           11.54ms  11.65ms      82.5    8.29MB
+#> 1 ropendal_read       6.12ms   6.63ms     153.     8.01MB
+#> 2 ropendal_read_aio   6.19ms   6.63ms     154.     8.06MB
+#> 3 paws_get           11.52ms  12.16ms      83.5    8.29MB
 
 restore_aws_env()
 cleanup_minio()

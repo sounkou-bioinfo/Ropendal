@@ -57,13 +57,14 @@ Supported operations
 Aio interface
 </summary>
 
-| abstraction              | status                                                                | role                                                     |
-|:-------------------------|:----------------------------------------------------------------------|:---------------------------------------------------------|
-| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions | nanonext-like handle for background Rust work            |
-| poll_aio()               | implemented                                                           | non-blocking readiness check                             |
-| collect_aio()/call_aio() | implemented                                                           | explicit wait and result collection                      |
-| stop_aio()               | implemented; needs race coverage                                      | explicit cancellation request                            |
-| native C Aio             | implemented for byte operations                                       | downstream native packages can submit async reads/writes |
+| abstraction              | status                                                                | role                                                                    |
+|:-------------------------|:----------------------------------------------------------------------|:------------------------------------------------------------------------|
+| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions | nanonext-like handle for background Rust work                           |
+| active bindings          | implemented                                                           | $value/$data/\$result plus $state/$resolved/\$error                     |
+| poll_aio()               | implemented                                                           | non-blocking readiness check                                            |
+| collect_aio()/call_aio() | implemented                                                           | collect returns value; call waits/updates and returns the Aio invisibly |
+| stop_aio()               | implemented; needs race coverage                                      | explicit cancellation request                                           |
+| native C Aio             | implemented for byte operations                                       | downstream native packages can submit async reads/writes                |
 
 </details>
 <details>
@@ -315,6 +316,7 @@ aio <- fs_read_aio(fs, "data.bin")
 poll_aio(aio)
 #> [1] "pending"
 call_aio(aio)
+aio$value
 #> [1] 01 02 03 04
 
 stat <- collect_aio(fs_stat_aio(fs, "data.bin"))

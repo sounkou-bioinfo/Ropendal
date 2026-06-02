@@ -163,7 +163,7 @@ bench::mark(
 
 bench::mark(
   ropendal_read = fs_read(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024),
-  ropendal_read_aio = call_aio(fs_read_aio(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024)),
+  ropendal_read_aio = collect_aio(fs_read_aio(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024)),
   paws_get = s3$get_object(Bucket = minio$bucket, Key = paws_key)$Body,
   iterations = 5,
   check = FALSE

@@ -1,7 +1,9 @@
 // methods and associated functions for OpendalAio
 SEXP savvy_OpendalAio_cancel__ffi(SEXP self__);
 SEXP savvy_OpendalAio_collect__ffi(SEXP self__);
+SEXP savvy_OpendalAio_error_value__ffi(SEXP self__);
 SEXP savvy_OpendalAio_poll__ffi(SEXP self__);
+SEXP savvy_OpendalAio_state_name__ffi(SEXP self__);
 
 // methods and associated functions for OpendalCredentialProvider
 SEXP savvy_OpendalCredentialProvider_config__ffi(SEXP self__, SEXP c_arg__service);

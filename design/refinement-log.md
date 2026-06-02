@@ -416,3 +416,24 @@ Implementation note: the R API now has `fs_stat_aio()`, `fs_stats_aio()`,
 `fs_copy_aio()`, `fs_rename_aio()`, `fs_write_aio()`, `fs_replace_aio()`, and
 `fs_append_aio()` over a generic `AioOutcome` that can materialize bytes, unit,
 bool, metadata, entries, many, errors, and cancellation.
+
+### Aio active binding contract
+
+Status: `implemented for R Aio wrappers`
+
+Generated `OpendalAio` environments are decorated with read-only active
+bindings:
+
+- `$value`: universal value binding; returns `unresolvedValue` while pending and
+  the resolved value/error after readiness or collection;
+- `$data`: alias for `$value` for read/stat/list/exists-style operations;
+- `$result`: alias for `$value` for unit/completion operations;
+- `$state`: native state string (`pending`, `ready`, `resolved`, `error`, or
+  `cancelled`) without materializing success payloads;
+- `$resolved`: logical predicate over state;
+- `$error`: error value if the Aio has resolved as an error, otherwise `NULL`.
+
+`call_aio()` now matches the intended nanonext-like shape: it waits/updates and
+returns the Aio invisibly. `collect_aio()` remains the value-returning helper.
+`unresolved()` remains the sentinel constructor when called with no argument and
+also acts as a predicate for Aios or returned values.

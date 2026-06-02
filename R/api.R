@@ -126,7 +126,7 @@
 #' call_aio(aio)
 #' stop_aio(aio)
 #' poll_aio(aio)
-#' unresolved()
+#' unresolved(x = NULL)
 #' is_error_value(x)
 #' error_kind(x)
 #' error_message(x)
@@ -136,6 +136,14 @@
 #' Filesystem failures are returned as classed error values. Invalid arguments
 #' and internal runtime failures may signal R errors. Credential helpers return
 #' classed providers with redacted printing; pass them with `auth =`.
+#'
+#' Aio handles expose read-only active bindings. `$value` returns an
+#' `unresolvedValue` while the operation is pending and the resolved value or
+#' error value afterwards. `$data` and `$result` are aliases for `$value`, while
+#' `$state`, `$resolved`, and `$error` expose readiness and error inspection.
+#' `collect_aio()` waits and returns the value. `call_aio()` waits, updates the
+#' Aio, and returns the Aio invisibly. `unresolved()` constructs the unresolved
+#' sentinel; `unresolved(aio)` and `unresolved(value)` are predicates.
 #' @return Filesystem handles, raw vectors, metadata lists, logical results,
 #'   Aio handles, or classed error values depending on the operation.
 NULL
@@ -350,7 +358,7 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         read_concurrency = NULL,
                         chunk_size = NULL,
                         coalesce_gap = NULL) {
-  fs$read_aio(
+  opendal_aio_with_bindings(fs$read_aio(
     path,
     offset,
     size,
@@ -360,7 +368,7 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
     read_concurrency,
     chunk_size,
     coalesce_gap
-  )
+  ))
 }
 
 #' @export
@@ -374,7 +382,9 @@ fs_write <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
                          write_concurrency = NULL, chunk_size = NULL) {
-  fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  opendal_aio_with_bindings(
+    fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  )
 }
 
 #' @export
@@ -388,7 +398,9 @@ fs_replace <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
                            write_concurrency = NULL, chunk_size = NULL) {
-  fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  opendal_aio_with_bindings(
+    fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  )
 }
 
 #' @export
@@ -402,7 +414,9 @@ fs_append <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_append_aio <- function(fs, path, data, batch_concurrency = NULL,
                           write_concurrency = NULL, chunk_size = NULL) {
-  fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  opendal_aio_with_bindings(
+    fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+  )
 }
 
 #' @export
@@ -492,7 +506,7 @@ fs_stat <- function(fs, path, batch_concurrency = NULL) {
 #' @export
 #' @noRd
 fs_stat_aio <- function(fs, path, batch_concurrency = NULL) {
-  fs$stat_aio(path, batch_concurrency)
+  opendal_aio_with_bindings(fs$stat_aio(path, batch_concurrency))
 }
 
 #' @export
@@ -516,7 +530,7 @@ fs_exists <- function(fs, path, batch_concurrency = NULL) {
 #' @export
 #' @noRd
 fs_exists_aio <- function(fs, path, batch_concurrency = NULL) {
-  fs$exists_aio(path, batch_concurrency)
+  opendal_aio_with_bindings(fs$exists_aio(path, batch_concurrency))
 }
 
 #' @export
@@ -528,7 +542,7 @@ fs_ls <- function(fs, path = "", recursive = FALSE) {
 #' @export
 #' @noRd
 fs_ls_aio <- function(fs, path = "", recursive = FALSE) {
-  fs$ls_aio(path, recursive)
+  opendal_aio_with_bindings(fs$ls_aio(path, recursive))
 }
 
 #' @export
@@ -540,7 +554,7 @@ fs_mkdir <- function(fs, path) {
 #' @export
 #' @noRd
 fs_mkdir_aio <- function(fs, path, batch_concurrency = NULL) {
-  fs$mkdir_aio(path, batch_concurrency)
+  opendal_aio_with_bindings(fs$mkdir_aio(path, batch_concurrency))
 }
 
 #' @export
@@ -552,7 +566,7 @@ fs_delete <- function(fs, path, recursive = FALSE, batch_concurrency = NULL) {
 #' @export
 #' @noRd
 fs_delete_aio <- function(fs, path, recursive = FALSE, batch_concurrency = NULL) {
-  fs$delete_aio(path, recursive, batch_concurrency)
+  opendal_aio_with_bindings(fs$delete_aio(path, recursive, batch_concurrency))
 }
 
 #' @export
@@ -562,7 +576,7 @@ fs_copy <- function(fs, from, to) fs$copy(from, to)
 #' @export
 #' @noRd
 fs_copy_aio <- function(fs, from, to, batch_concurrency = NULL) {
-  fs$copy_aio(from, to, batch_concurrency)
+  opendal_aio_with_bindings(fs$copy_aio(from, to, batch_concurrency))
 }
 
 #' @export
@@ -572,12 +586,54 @@ fs_rename <- function(fs, from, to) fs$rename(from, to)
 #' @export
 #' @noRd
 fs_rename_aio <- function(fs, from, to, batch_concurrency = NULL) {
-  fs$rename_aio(from, to, batch_concurrency)
+  opendal_aio_with_bindings(fs$rename_aio(from, to, batch_concurrency))
+}
+
+opendal_aio_with_bindings <- function(aio) {
+  for (name in c("value", "data", "result", "state", "resolved", "error")) {
+    if (!exists(name, envir = aio, inherits = FALSE)) {
+      makeActiveBinding(name, opendal_aio_binding(aio, name), aio)
+    }
+  }
+  aio
+}
+
+opendal_aio_binding <- function(aio, name) {
+  force(aio)
+  force(name)
+  function(value) {
+    if (nargs()) stop("$", name, " is read-only", call. = FALSE)
+    switch(name,
+      value = opendal_aio_value(aio),
+      data = opendal_aio_value(aio),
+      result = opendal_aio_value(aio),
+      state = aio$state_name(),
+      resolved = opendal_aio_resolved(aio),
+      error = aio$error_value()
+    )
+  }
+}
+
+opendal_aio_value <- function(aio) {
+  if (identical(aio$state_name(), "pending")) unresolved() else aio$collect()
+}
+
+opendal_aio_resolved <- function(aio) {
+  !identical(aio$state_name(), "pending")
+}
+
+savvy_wrap_OpendalAio_generated <- .savvy_wrap_OpendalAio
+.savvy_wrap_OpendalAio <- function(ptr) {
+  opendal_aio_with_bindings(savvy_wrap_OpendalAio_generated(ptr))
 }
 
 #' @export
 #' @noRd
-unresolved <- function() structure(NA, class = "unresolvedValue")
+unresolved <- function(x = NULL) {
+  if (missing(x)) return(structure(NA, class = "unresolvedValue"))
+  if (inherits(x, "OpendalAio")) return(!opendal_aio_resolved(x))
+  inherits(x, "unresolvedValue")
+}
 
 #' @export
 #' @noRd
@@ -587,7 +643,10 @@ collect_aio <- function(aio) {
 
 #' @export
 #' @noRd
-call_aio <- function(aio) collect_aio(aio)
+call_aio <- function(aio) {
+  collect_aio(aio)
+  invisible(aio)
+}
 
 #' @export
 #' @noRd

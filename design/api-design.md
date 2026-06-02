@@ -132,7 +132,7 @@ Active bindings:
 | `$value` | universal resolved value, success value, or error value |
 | `$data` | alias for `$value` on value-returning operations such as read/stat/ls/exists |
 | `$result` | alias for `$value` on unit/completion operations such as write/delete/copy/rename/mkdir |
-| `$state` | pending, ready, materialized, error, or cancelled |
+| `$state` | pending, ready, resolved, error, or cancelled |
 | `$resolved` | logical resolution state |
 | `$error` | error value or `NULL` |
 

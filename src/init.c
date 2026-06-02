@@ -50,8 +50,18 @@ SEXP savvy_OpendalAio_collect__impl(SEXP self__) {
     return handle_result(res);
 }
 
+SEXP savvy_OpendalAio_error_value__impl(SEXP self__) {
+    SEXP res = savvy_OpendalAio_error_value__ffi(self__);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalAio_poll__impl(SEXP self__) {
     SEXP res = savvy_OpendalAio_poll__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalAio_state_name__impl(SEXP self__) {
+    SEXP res = savvy_OpendalAio_state_name__ffi(self__);
     return handle_result(res);
 }
 
@@ -290,7 +300,9 @@ static const R_CallMethodDef CallEntries[] = {
 
     {"savvy_OpendalAio_cancel__impl", (DL_FUNC) &savvy_OpendalAio_cancel__impl, 1},
     {"savvy_OpendalAio_collect__impl", (DL_FUNC) &savvy_OpendalAio_collect__impl, 1},
+    {"savvy_OpendalAio_error_value__impl", (DL_FUNC) &savvy_OpendalAio_error_value__impl, 1},
     {"savvy_OpendalAio_poll__impl", (DL_FUNC) &savvy_OpendalAio_poll__impl, 1},
+    {"savvy_OpendalAio_state_name__impl", (DL_FUNC) &savvy_OpendalAio_state_name__impl, 1},
     {"savvy_OpendalCredentialProvider_config__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_config__impl, 2},
     {"savvy_OpendalCredentialProvider_gdrive__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive__impl, 5},
     {"savvy_OpendalCredentialProvider_gdrive3__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive3__impl, 3},

@@ -47,12 +47,13 @@ operation_progress <- data.frame(
 )
 
 aio_progress <- data.frame(
-  abstraction = c("OpendalAio", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
+  abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
   role = c(
     "nanonext-like handle for background Rust work",
+    "$value/$data/$result plus $state/$resolved/$error",
     "non-blocking readiness check",
-    "explicit wait and result collection",
+    "collect returns value; call waits/updates and returns the Aio invisibly",
     "explicit cancellation request",
     "downstream native packages can submit async reads/writes"
   )
@@ -255,6 +256,7 @@ Remote operations can also return Aio handles.
 aio <- fs_read_aio(fs, "data.bin")
 poll_aio(aio)
 call_aio(aio)
+aio$value
 
 stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
 stat$path

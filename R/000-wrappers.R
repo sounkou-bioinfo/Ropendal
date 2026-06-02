@@ -52,9 +52,21 @@ NULL
   }
 }
 
+`OpendalAio_error_value` <- function(self) {
+  function() {
+    .Call(savvy_OpendalAio_error_value__impl, `self`)
+  }
+}
+
 `OpendalAio_poll` <- function(self) {
   function() {
     .Call(savvy_OpendalAio_poll__impl, `self`)
+  }
+}
+
+`OpendalAio_state_name` <- function(self) {
+  function() {
+    .Call(savvy_OpendalAio_state_name__impl, `self`)
   }
 }
 
@@ -63,7 +75,9 @@ NULL
   e$.ptr <- ptr
   e$`cancel` <- `OpendalAio_cancel`(ptr)
   e$`collect` <- `OpendalAio_collect`(ptr)
+  e$`error_value` <- `OpendalAio_error_value`(ptr)
   e$`poll` <- `OpendalAio_poll`(ptr)
+  e$`state_name` <- `OpendalAio_state_name`(ptr)
 
   class(e) <- c("Ropendal::OpendalAio", "OpendalAio", "savvy_Ropendal__sealed")
   e
