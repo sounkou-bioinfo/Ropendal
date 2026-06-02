@@ -54,12 +54,17 @@ fs_info(fs)
 fs_capabilities(fs)
 fs_normalize_path(fs, path, directory = FALSE)
 fs_read(fs, path, offset = 0, size = NULL, end = NULL,
-        result = c("auto", "flat", "nested"), batch_concurrency = NULL)
+        result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+        read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
 fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
-            result = c("auto", "flat", "nested"), batch_concurrency = NULL)
-fs_write(fs, path, data)
-fs_replace(fs, path, data)
-fs_append(fs, path, data)
+            result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+            read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+fs_write(fs, path, data, batch_concurrency = NULL,
+         write_concurrency = NULL, chunk_size = NULL)
+fs_replace(fs, path, data, batch_concurrency = NULL,
+           write_concurrency = NULL, chunk_size = NULL)
+fs_append(fs, path, data, batch_concurrency = NULL,
+          write_concurrency = NULL, chunk_size = NULL)
 fs_stat(fs, path, batch_concurrency = NULL)
 fs_exists(fs, path, batch_concurrency = NULL)
 fs_ls(fs, path = "", recursive = FALSE)
@@ -132,8 +137,19 @@ and \code{client_secret}.}
 
 \item{result}{Requested result shape.}
 
-\item{batch_concurrency}{Optional maximum number of concurrent batch
-operations.}
+\item{batch_concurrency}{Optional maximum number of independent paths/ranges
+to process concurrently.}
+
+\item{read_concurrency}{Optional per-object OpenDAL read concurrency for large
+reads where the backend supports chunked/concurrent reads.}
+
+\item{write_concurrency}{Optional per-object OpenDAL write concurrency for
+large writes where the backend supports multipart/concurrent writes.}
+
+\item{chunk_size}{Optional read/write chunk size in bytes for OpenDAL's
+per-object transfer planning.}
+
+\item{coalesce_gap}{Optional byte gap for coalescing nearby read ranges.}
 
 \item{data}{Raw vector, or list of raw vectors for multiple paths.}
 

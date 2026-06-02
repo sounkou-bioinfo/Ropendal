@@ -85,8 +85,8 @@ SEXP savvy_OpendalCredentialProvider_summary__impl(SEXP self__) {
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_append__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data) {
-    SEXP res = savvy_OpendalFs_append__ffi(self__, c_arg__path, c_arg__data);
+SEXP savvy_OpendalFs_append__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_append__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
     return handle_result(res);
 }
 
@@ -140,13 +140,13 @@ SEXP savvy_OpendalFs_open__impl(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_read__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency) {
-    SEXP res = savvy_OpendalFs_read__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency);
+SEXP savvy_OpendalFs_read__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap) {
+    SEXP res = savvy_OpendalFs_read__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency, c_arg__read_concurrency, c_arg__chunk_size, c_arg__coalesce_gap);
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_read_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency) {
-    SEXP res = savvy_OpendalFs_read_aio__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency);
+SEXP savvy_OpendalFs_read_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap) {
+    SEXP res = savvy_OpendalFs_read_aio__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency, c_arg__read_concurrency, c_arg__chunk_size, c_arg__coalesce_gap);
     return handle_result(res);
 }
 
@@ -155,8 +155,8 @@ SEXP savvy_OpendalFs_rename__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to)
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_replace__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data) {
-    SEXP res = savvy_OpendalFs_replace__ffi(self__, c_arg__path, c_arg__data);
+SEXP savvy_OpendalFs_replace__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_replace__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
     return handle_result(res);
 }
 
@@ -165,8 +165,8 @@ SEXP savvy_OpendalFs_stat__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_write__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data) {
-    SEXP res = savvy_OpendalFs_write__ffi(self__, c_arg__path, c_arg__data);
+SEXP savvy_OpendalFs_write__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_write__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
     return handle_result(res);
 }
 
@@ -202,7 +202,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalCredentialProvider_s3__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_s3__impl, 5},
     {"savvy_OpendalCredentialProvider_schemes__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_schemes__impl, 1},
     {"savvy_OpendalCredentialProvider_summary__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_summary__impl, 1},
-    {"savvy_OpendalFs_append__impl", (DL_FUNC) &savvy_OpendalFs_append__impl, 3},
+    {"savvy_OpendalFs_append__impl", (DL_FUNC) &savvy_OpendalFs_append__impl, 6},
     {"savvy_OpendalFs_capabilities__impl", (DL_FUNC) &savvy_OpendalFs_capabilities__impl, 1},
     {"savvy_OpendalFs_copy__impl", (DL_FUNC) &savvy_OpendalFs_copy__impl, 3},
     {"savvy_OpendalFs_delete__impl", (DL_FUNC) &savvy_OpendalFs_delete__impl, 4},
@@ -213,12 +213,12 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_mkdir__impl", (DL_FUNC) &savvy_OpendalFs_mkdir__impl, 2},
     {"savvy_OpendalFs_normalize_path__impl", (DL_FUNC) &savvy_OpendalFs_normalize_path__impl, 3},
     {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 5},
-    {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 7},
-    {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 7},
+    {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 10},
+    {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 10},
     {"savvy_OpendalFs_rename__impl", (DL_FUNC) &savvy_OpendalFs_rename__impl, 3},
-    {"savvy_OpendalFs_replace__impl", (DL_FUNC) &savvy_OpendalFs_replace__impl, 3},
+    {"savvy_OpendalFs_replace__impl", (DL_FUNC) &savvy_OpendalFs_replace__impl, 6},
     {"savvy_OpendalFs_stat__impl", (DL_FUNC) &savvy_OpendalFs_stat__impl, 3},
-    {"savvy_OpendalFs_write__impl", (DL_FUNC) &savvy_OpendalFs_write__impl, 3},
+    {"savvy_OpendalFs_write__impl", (DL_FUNC) &savvy_OpendalFs_write__impl, 6},
     {"savvy_OpendalHttpFixture_endpoint__impl", (DL_FUNC) &savvy_OpendalHttpFixture_endpoint__impl, 1},
     {"savvy_OpendalHttpFixture_root__impl", (DL_FUNC) &savvy_OpendalHttpFixture_root__impl, 1},
     {"savvy_OpendalHttpFixture_start__impl", (DL_FUNC) &savvy_OpendalHttpFixture_start__impl, 1},

@@ -15,12 +15,31 @@ bytes <- as.raw(c(1, 2, 3, 4))
 expect_true(identical(fs_write(fs, "a.bin", bytes), TRUE))
 expect_equal(fs_read(fs, "a.bin"), bytes)
 expect_equal(fs_read(fs, "a.bin", offset = 1, size = 2), as.raw(c(2, 3)))
+expect_equal(
+  fs_read(
+    fs,
+    "a.bin",
+    read_concurrency = 1,
+    chunk_size = 2,
+    coalesce_gap = 1
+  ),
+  bytes
+)
 
 again <- fs_write(fs, "a.bin", as.raw(9))
 expect_true(is_error_value(again))
 expect_equal(error_kind(again), "AlreadyExists")
 
-expect_true(identical(fs_replace(fs, "a.bin", as.raw(c(9, 8))), TRUE))
+expect_true(identical(
+  fs_replace(
+    fs,
+    "a.bin",
+    as.raw(c(9, 8)),
+    write_concurrency = 1,
+    chunk_size = 2
+  ),
+  TRUE
+))
 expect_equal(fs_read(fs, "a.bin"), as.raw(c(9, 8)))
 
 stat <- fs_stat(fs, "a.bin")
@@ -47,6 +66,8 @@ expect_true(identical(fs_delete(fs, "dir/c.bin"), TRUE))
 
 expect_error(fs_read(fs, c("a.bin", "a.bin"), offset = 0))
 expect_error(fs_write(fs, c("x", "y"), as.raw(1)))
+expect_error(fs_read(fs, "a.bin", read_concurrency = -1))
+expect_error(fs_write(fs, "bad.bin", as.raw(1), write_concurrency = -1))
 
 aio <- fs_read_aio(fs, "a.bin")
 expect_true(inherits(aio, "OpendalAio"))

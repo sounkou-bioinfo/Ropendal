@@ -10,7 +10,7 @@ use crate::aio::{AioOutcome, OpendalAio};
 use crate::common::{build_runtime, init_registry, NativeFs};
 use crate::error::{kind_code, op_error_list, unsupported_value};
 use crate::metadata::metadata_list;
-use crate::ops::{read_bytes, write_bytes};
+use crate::ops::{read_bytes_with, write_bytes_with, ReadTuning, WriteTuning};
 use crate::path::{checked_u64, normalize_user_path};
 use crate::r_values::{bool_scalar, str_scalar, success_value};
 
@@ -130,6 +130,9 @@ impl OpendalFs {
         end: Option<Sexp>,
         result: Option<&str>,
         batch_concurrency: Option<f64>,
+        read_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+        coalesce_gap: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let result = result.unwrap_or("auto");
         match result {
@@ -137,7 +140,8 @@ impl OpendalFs {
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
         let requests = read_requests_from_options(path, offset, size, end)?;
-        self.read_requests(requests, result, batch_concurrency.unwrap_or(0.0))
+        let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
+        self.read_requests(requests, result, batch_concurrency.unwrap_or(0.0), tuning)
     }
 
     /// Submit asynchronous read(s).
@@ -150,6 +154,9 @@ impl OpendalFs {
         end: Option<Sexp>,
         result: Option<&str>,
         batch_concurrency: Option<f64>,
+        read_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+        coalesce_gap: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let result = result.unwrap_or("auto");
         match result {
@@ -157,18 +164,19 @@ impl OpendalFs {
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
         let requests = read_requests_from_options(path, offset, size, end)?;
+        let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
         let n = requests.len();
-        let concurrency = read_concurrency(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let op = self.inner.op.clone();
         let result = result.to_string();
         let handle = self.inner.runtime.spawn(async move {
             if n == 1 && result == "auto" {
-                return read_request_outcome(op, requests.into_iter().next().unwrap()).await;
+                return read_request_outcome(op, requests.into_iter().next().unwrap(), tuning).await;
             }
             let mut values = stream::iter(requests.into_iter().enumerate())
                 .map(|(i, req)| {
                     let op = op.clone();
-                    async move { (i, read_request_outcome(op, req).await) }
+                    async move { (i, read_request_outcome(op, req, tuning).await) }
                 })
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
@@ -181,20 +189,44 @@ impl OpendalFs {
 
     /// Write bytes to new path(s).
     /// @export
-    fn write(&self, path: StringSexp, data: Sexp) -> savvy::Result<savvy::Sexp> {
-        self.write_many_common(path, data, true, false, "write")
+    fn write(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<savvy::Sexp> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_common(path, data, true, false, "write", batch_concurrency.unwrap_or(0.0), tuning)
     }
 
     /// Replace bytes at path(s).
     /// @export
-    fn replace(&self, path: StringSexp, data: Sexp) -> savvy::Result<savvy::Sexp> {
-        self.write_many_common(path, data, false, false, "replace")
+    fn replace(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<savvy::Sexp> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_common(path, data, false, false, "replace", batch_concurrency.unwrap_or(0.0), tuning)
     }
 
     /// Append bytes to path(s).
     /// @export
-    fn append(&self, path: StringSexp, data: Sexp) -> savvy::Result<savvy::Sexp> {
-        self.write_many_common(path, data, false, true, "append")
+    fn append(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<savvy::Sexp> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_common(path, data, false, true, "append", batch_concurrency.unwrap_or(0.0), tuning)
     }
 
     /// Return metadata for path(s).
@@ -208,7 +240,7 @@ impl OpendalFs {
             return self.stat_one(path.iter().next().unwrap_or(""));
         }
 
-        let concurrency = read_concurrency(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<StatValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -263,7 +295,7 @@ impl OpendalFs {
             return self.exists_one(path.iter().next().unwrap_or(""));
         }
 
-        let concurrency = read_concurrency(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<ExistsValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -343,7 +375,7 @@ impl OpendalFs {
             return self.delete_one(path.iter().next().unwrap_or(""), recursive);
         }
 
-        let concurrency = read_concurrency(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<DeleteValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -566,6 +598,7 @@ impl OpendalFs {
         requests: Vec<ReadRequest>,
         result: &str,
         batch_concurrency: f64,
+        tuning: ReadTuning,
     ) -> savvy::Result<savvy::Sexp> {
         let n = requests.len();
         if n == 0 {
@@ -573,16 +606,20 @@ impl OpendalFs {
         }
         if n == 1 && result == "auto" {
             let req = requests.into_iter().next().unwrap();
-            return read_value_to_sexp(self.inner.runtime.block_on(read_request(self.inner.op.clone(), req)));
+            return read_value_to_sexp(self.inner.runtime.block_on(read_request(
+                self.inner.op.clone(),
+                req,
+                tuning,
+            )));
         }
 
-        let concurrency = read_concurrency(batch_concurrency, n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let op = self.inner.op.clone();
         let mut values = self.inner.runtime.block_on(async move {
             stream::iter(requests.into_iter().enumerate())
                 .map(|(i, req)| {
                     let op = op.clone();
-                    async move { (i, read_request(op, req).await) }
+                    async move { (i, read_request(op, req, tuning).await) }
                 })
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
@@ -604,6 +641,8 @@ impl OpendalFs {
         create_only: bool,
         append: bool,
         operation: &str,
+        batch_concurrency: f64,
+        tuning: WriteTuning,
     ) -> savvy::Result<savvy::Sexp> {
         let n = paths.len();
         let payloads = payloads_from_sexp(data, n)?;
@@ -612,14 +651,63 @@ impl OpendalFs {
         }
         if n == 1 {
             let path = paths.iter().next().unwrap_or("");
-            return self.write_common(path, payloads.into_iter().next().unwrap_or_default(), create_only, append, operation);
+            return self.write_common(
+                path,
+                payloads.into_iter().next().unwrap_or_default(),
+                create_only,
+                append,
+                operation,
+                tuning,
+            );
         }
-        let mut out = OwnedListSexp::new(n, false)?;
+
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
+        let mut requests = Vec::with_capacity(n);
+        let mut values: Vec<Option<WriteValue>> = (0..n).map(|_| None).collect();
         for (i, path) in paths.iter().enumerate() {
-            out.set_value(
-                i,
-                self.write_common(path, payloads[i].clone(), create_only, append, operation)?,
-            )?;
+            match normalize_user_path(path, false) {
+                Ok(path) => requests.push((i, path, payloads[i].clone())),
+                Err(e) => {
+                    values[i] = Some(WriteValue::Error {
+                        kind: "InvalidArgument".to_string(),
+                        code: 14,
+                        message: e,
+                        path: path.to_string(),
+                    });
+                }
+            }
+        }
+
+        let op = self.inner.op.clone();
+        let operation_owned = operation.to_string();
+        let async_values = self.inner.runtime.block_on(async move {
+            stream::iter(requests.into_iter())
+                .map(|(i, path, data)| {
+                    let op = op.clone();
+                    let operation = operation_owned.clone();
+                    async move {
+                        (
+                            i,
+                            write_request(op, path, data, create_only, append, &operation, tuning).await,
+                        )
+                    }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await
+        });
+        for (i, value) in async_values {
+            values[i] = Some(value);
+        }
+
+        let mut out = OwnedListSexp::new(n, false)?;
+        for (i, value) in values.into_iter().enumerate() {
+            out.set_value(i, write_value_to_sexp(value.unwrap_or(WriteValue::Error {
+                kind: "Unexpected".to_string(),
+                code: 1,
+                message: "missing write result".to_string(),
+                path: String::new(),
+            }), operation)?)?;
         }
         out.into()
     }
@@ -631,6 +719,7 @@ impl OpendalFs {
         create_only: bool,
         append: bool,
         operation: &str,
+        tuning: WriteTuning,
     ) -> savvy::Result<savvy::Sexp> {
         let path = match normalize_user_path(path, false) {
             Ok(p) => p,
@@ -644,7 +733,7 @@ impl OpendalFs {
         match self
             .inner
             .runtime
-            .block_on(write_bytes(op, path, data, create_only, append))
+            .block_on(write_bytes_with(op, path, data, create_only, append, tuning))
         {
             Ok(_) => success_value(),
             Err(e) => op_error_list(e, operation, &path_for_error),
@@ -696,6 +785,60 @@ fn stat_value_to_sexp(value: StatValue) -> savvy::Result<savvy::Sexp> {
             message,
             path,
         } => crate::error::error_list(&kind, code, &message, "stat", &path),
+    }
+}
+
+enum WriteValue {
+    Written,
+    Error {
+        kind: String,
+        code: i32,
+        message: String,
+        path: String,
+    },
+}
+
+async fn write_request(
+    op: Operator,
+    path: String,
+    data: Vec<u8>,
+    create_only: bool,
+    append: bool,
+    operation: &str,
+    tuning: WriteTuning,
+) -> WriteValue {
+    if append && !op.info().full_capability().write_can_append {
+        return WriteValue::Error {
+            kind: "Unsupported".to_string(),
+            code: kind_code(opendal::ErrorKind::Unsupported),
+            message: format!("{operation} is not supported by this backend"),
+            path,
+        };
+    }
+    let path_for_error = path.clone();
+    match write_bytes_with(op, path, data, create_only, append, tuning).await {
+        Ok(_) => WriteValue::Written,
+        Err(e) => {
+            let kind = e.kind();
+            WriteValue::Error {
+                kind: kind.into_static().to_string(),
+                code: kind_code(kind),
+                message: e.to_string(),
+                path: path_for_error,
+            }
+        }
+    }
+}
+
+fn write_value_to_sexp(value: WriteValue, operation: &str) -> savvy::Result<savvy::Sexp> {
+    match value {
+        WriteValue::Written => success_value(),
+        WriteValue::Error {
+            kind,
+            code,
+            message,
+            path,
+        } => crate::error::error_list(&kind, code, &message, operation, &path),
     }
 }
 
@@ -787,9 +930,9 @@ enum ReadValue {
     },
 }
 
-async fn read_request_outcome(op: Operator, req: ReadRequest) -> AioOutcome {
+async fn read_request_outcome(op: Operator, req: ReadRequest, tuning: ReadTuning) -> AioOutcome {
     let path_for_error = req.path.clone();
-    match read_bytes(op, req.path, req.offset, req.size).await {
+    match read_bytes_with(op, req.path, req.offset, req.size, tuning).await {
         Ok(bytes) => AioOutcome::Bytes(bytes),
         Err(e) => {
             let kind = e.kind();
@@ -804,9 +947,9 @@ async fn read_request_outcome(op: Operator, req: ReadRequest) -> AioOutcome {
     }
 }
 
-async fn read_request(op: Operator, req: ReadRequest) -> ReadValue {
+async fn read_request(op: Operator, req: ReadRequest, tuning: ReadTuning) -> ReadValue {
     let path_for_error = req.path.clone();
-    match read_bytes(op, req.path, req.offset, req.size).await {
+    match read_bytes_with(op, req.path, req.offset, req.size, tuning).await {
         Ok(bytes) => ReadValue::Bytes(bytes),
         Err(e) => {
             let kind = e.kind();
@@ -832,7 +975,7 @@ fn read_value_to_sexp(value: ReadValue) -> savvy::Result<savvy::Sexp> {
     }
 }
 
-fn read_concurrency(value: f64, n: usize) -> savvy::Result<usize> {
+fn batch_concurrency_limit(value: f64, n: usize) -> savvy::Result<usize> {
     if n == 0 {
         return Ok(1);
     }
@@ -845,6 +988,42 @@ fn read_concurrency(value: f64, n: usize) -> savvy::Result<usize> {
     } else {
         Ok((checked as usize).max(1).min(n))
     }
+}
+
+fn optional_usize(value: Option<f64>, name: &str) -> savvy::Result<Option<usize>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let checked = checked_u64(value, name)?;
+    if checked == 0 {
+        Ok(None)
+    } else if checked > usize::MAX as u64 {
+        Err(savvy::Error::new(&format!("{name} is too large")))
+    } else {
+        Ok(Some(checked as usize))
+    }
+}
+
+fn read_tuning(
+    read_concurrency: Option<f64>,
+    chunk_size: Option<f64>,
+    coalesce_gap: Option<f64>,
+) -> savvy::Result<ReadTuning> {
+    Ok(ReadTuning {
+        read_concurrency: optional_usize(read_concurrency, "read_concurrency")?,
+        chunk_size: optional_usize(chunk_size, "chunk_size")?,
+        coalesce_gap: optional_usize(coalesce_gap, "coalesce_gap")?,
+    })
+}
+
+fn write_tuning(
+    write_concurrency: Option<f64>,
+    chunk_size: Option<f64>,
+) -> savvy::Result<WriteTuning> {
+    Ok(WriteTuning {
+        write_concurrency: optional_usize(write_concurrency, "write_concurrency")?,
+        chunk_size: optional_usize(chunk_size, "chunk_size")?,
+    })
 }
 
 fn read_requests_from_options(

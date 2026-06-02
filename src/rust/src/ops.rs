@@ -1,5 +1,18 @@
-use opendal::options::WriteOptions;
+use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{Error, ErrorKind, Operator};
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ReadTuning {
+    pub(crate) read_concurrency: Option<usize>,
+    pub(crate) chunk_size: Option<usize>,
+    pub(crate) coalesce_gap: Option<usize>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct WriteTuning {
+    pub(crate) write_concurrency: Option<usize>,
+    pub(crate) chunk_size: Option<usize>,
+}
 
 pub(crate) async fn read_bytes(
     op: Operator,
@@ -7,15 +20,32 @@ pub(crate) async fn read_bytes(
     offset: u64,
     size: Option<u64>,
 ) -> Result<Vec<u8>, opendal::Error> {
-    let buf = match size {
-        Some(n) => op
-            .read_with(&path)
-            .range(offset..offset.saturating_add(n))
-            .await?,
-        None if offset == 0 => op.read(&path).await?,
-        None => op.read_with(&path).range(offset..).await?,
-    };
-    Ok(buf.to_vec())
+    read_bytes_with(op, path, offset, size, ReadTuning::default()).await
+}
+
+pub(crate) async fn read_bytes_with(
+    op: Operator,
+    path: String,
+    offset: u64,
+    size: Option<u64>,
+    tuning: ReadTuning,
+) -> Result<Vec<u8>, opendal::Error> {
+    let mut opts = ReadOptions::default();
+    if let Some(n) = size {
+        opts.range = (offset..offset.saturating_add(n)).into();
+    } else if offset != 0 {
+        opts.range = (offset..).into();
+    }
+    if let Some(concurrent) = tuning.read_concurrency {
+        opts.concurrent = concurrent;
+    }
+    if let Some(chunk_size) = tuning.chunk_size {
+        opts.chunk = Some(chunk_size);
+    }
+    if let Some(gap) = tuning.coalesce_gap {
+        opts.gap = Some(gap);
+    }
+    Ok(op.read_options(&path, opts).await?.to_vec())
 }
 
 pub(crate) async fn write_bytes(
@@ -24,6 +54,17 @@ pub(crate) async fn write_bytes(
     bytes: Vec<u8>,
     create_only: bool,
     append: bool,
+) -> Result<(), opendal::Error> {
+    write_bytes_with(op, path, bytes, create_only, append, WriteTuning::default()).await
+}
+
+pub(crate) async fn write_bytes_with(
+    op: Operator,
+    path: String,
+    bytes: Vec<u8>,
+    create_only: bool,
+    append: bool,
+    tuning: WriteTuning,
 ) -> Result<(), opendal::Error> {
     if create_only {
         match op.stat(&path).await {
@@ -40,6 +81,12 @@ pub(crate) async fn write_bytes(
     let mut opts = WriteOptions::default();
     opts.if_not_exists = create_only;
     opts.append = append;
+    if let Some(concurrent) = tuning.write_concurrency {
+        opts.concurrent = concurrent;
+    }
+    if let Some(chunk_size) = tuning.chunk_size {
+        opts.chunk = Some(chunk_size);
+    }
     op.write_options(&path, bytes, opts).await?;
     Ok(())
 }

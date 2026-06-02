@@ -146,8 +146,8 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 ### wrapper functions for OpendalFs
 
 `OpendalFs_append` <- function(self) {
-  function(`path`, `data`) {
-    .Call(savvy_OpendalFs_append__impl, `self`, `path`, `data`)
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .Call(savvy_OpendalFs_append__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
   }
 }
 
@@ -200,14 +200,14 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 }
 
 `OpendalFs_read` <- function(self) {
-  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL) {
-    .Call(savvy_OpendalFs_read__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`)
+  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL, `read_concurrency` = NULL, `chunk_size` = NULL, `coalesce_gap` = NULL) {
+    .Call(savvy_OpendalFs_read__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`, `read_concurrency`, `chunk_size`, `coalesce_gap`)
   }
 }
 
 `OpendalFs_read_aio` <- function(self) {
-  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL) {
-    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_read_aio__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`))
+  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL, `read_concurrency` = NULL, `chunk_size` = NULL, `coalesce_gap` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_read_aio__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`, `read_concurrency`, `chunk_size`, `coalesce_gap`))
   }
 }
 
@@ -218,8 +218,8 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 }
 
 `OpendalFs_replace` <- function(self) {
-  function(`path`, `data`) {
-    .Call(savvy_OpendalFs_replace__impl, `self`, `path`, `data`)
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .Call(savvy_OpendalFs_replace__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
   }
 }
 
@@ -230,8 +230,8 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 }
 
 `OpendalFs_write` <- function(self) {
-  function(`path`, `data`) {
-    .Call(savvy_OpendalFs_write__impl, `self`, `path`, `data`)
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .Call(savvy_OpendalFs_write__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
   }
 }
 

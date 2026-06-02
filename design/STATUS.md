@@ -58,10 +58,10 @@ GitHub Actions jobs:
 | declarative `fs_capabilities()` | yes | yes | no | no | shape exists; needs stronger tests |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
-| vectorized `fs_read()` shape | yes | partial | partial | partial | scalar and strict mismatch tested |
-| strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added |
+| vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
+| strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added; batch write now uses bounded async execution |
 | metadata as Rust/C-defined lists | yes | yes | yes | yes | stat/list tested |
-| `fs_write()` create-only | yes | yes | yes | yes | Rust checks existence before create |
+| `fs_write()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning |
 | `fs_replace()` replacement | yes | yes | yes | yes | local test |
 | `fs_append()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append |
 | `fs_ls()` | yes | yes | yes | yes | root entry filtered for local `fs`; public S3 and MinIO listing tested; HTTP currently unsupported by OpenDAL |
@@ -106,7 +106,7 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Keep `R/api.R` thin while finishing remaining public option surfaces (`mode`, content/options, concurrency knobs) in Rust/savvy rather than R loops/helpers.
+1. Continue I/O polishing: read/write iterators, serializer modes, and service-level concurrency layers. Per-call batch/read/write/chunk/coalesce tuning is now wired through Rust/OpenDAL.
 2. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 3. Expand `fs_read()` vector/list range handling in Rust, including nested result shapes and request-object/data-frame inputs.
 4. Implement native C `readv_into_aio()` result structs and tests.

@@ -40,8 +40,15 @@
 #' @param size Number of bytes to read, or `NULL` to read to EOF.
 #' @param end Exclusive byte end offset.
 #' @param result Requested result shape.
-#' @param batch_concurrency Optional maximum number of concurrent batch
-#'   operations.
+#' @param batch_concurrency Optional maximum number of independent paths/ranges
+#'   to process concurrently.
+#' @param read_concurrency Optional per-object OpenDAL read concurrency for large
+#'   reads where the backend supports chunked/concurrent reads.
+#' @param write_concurrency Optional per-object OpenDAL write concurrency for
+#'   large writes where the backend supports multipart/concurrent writes.
+#' @param chunk_size Optional read/write chunk size in bytes for OpenDAL's
+#'   per-object transfer planning.
+#' @param coalesce_gap Optional byte gap for coalescing nearby read ranges.
 #' @param data Raw vector, or list of raw vectors for multiple paths.
 #' @param recursive Whether to recurse for operations that support it.
 #' @param from,to Source and destination paths.
@@ -64,12 +71,17 @@
 #' fs_capabilities(fs)
 #' fs_normalize_path(fs, path, directory = FALSE)
 #' fs_read(fs, path, offset = 0, size = NULL, end = NULL,
-#'         result = c("auto", "flat", "nested"), batch_concurrency = NULL)
+#'         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+#'         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
 #' fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
-#'             result = c("auto", "flat", "nested"), batch_concurrency = NULL)
-#' fs_write(fs, path, data)
-#' fs_replace(fs, path, data)
-#' fs_append(fs, path, data)
+#'             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+#'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#' fs_write(fs, path, data, batch_concurrency = NULL,
+#'          write_concurrency = NULL, chunk_size = NULL)
+#' fs_replace(fs, path, data, batch_concurrency = NULL,
+#'            write_concurrency = NULL, chunk_size = NULL)
+#' fs_append(fs, path, data, batch_concurrency = NULL,
+#'           write_concurrency = NULL, chunk_size = NULL)
 #' fs_stat(fs, path, batch_concurrency = NULL)
 #' fs_exists(fs, path, batch_concurrency = NULL)
 #' fs_ls(fs, path = "", recursive = FALSE)
@@ -280,29 +292,64 @@ fs_normalize_path <- function(fs, path, directory = FALSE) {
 #' @noRd
 fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     result = c("auto", "flat", "nested"),
-                    batch_concurrency = NULL) {
-  fs$read(path, offset, size, end, match.arg(result), batch_concurrency)
+                    batch_concurrency = NULL,
+                    read_concurrency = NULL,
+                    chunk_size = NULL,
+                    coalesce_gap = NULL) {
+  fs$read(
+    path,
+    offset,
+    size,
+    end,
+    match.arg(result),
+    batch_concurrency,
+    read_concurrency,
+    chunk_size,
+    coalesce_gap
+  )
 }
 
 #' @export
 #' @noRd
 fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         result = c("auto", "flat", "nested"),
-                        batch_concurrency = NULL) {
-  fs$read_aio(path, offset, size, end, match.arg(result), batch_concurrency)
+                        batch_concurrency = NULL,
+                        read_concurrency = NULL,
+                        chunk_size = NULL,
+                        coalesce_gap = NULL) {
+  fs$read_aio(
+    path,
+    offset,
+    size,
+    end,
+    match.arg(result),
+    batch_concurrency,
+    read_concurrency,
+    chunk_size,
+    coalesce_gap
+  )
 }
 
 #' @export
 #' @noRd
-fs_write <- function(fs, path, data) fs$write(path, data)
+fs_write <- function(fs, path, data, batch_concurrency = NULL,
+                     write_concurrency = NULL, chunk_size = NULL) {
+  fs$write(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
 
 #' @export
 #' @noRd
-fs_replace <- function(fs, path, data) fs$replace(path, data)
+fs_replace <- function(fs, path, data, batch_concurrency = NULL,
+                       write_concurrency = NULL, chunk_size = NULL) {
+  fs$replace(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
 
 #' @export
 #' @noRd
-fs_append <- function(fs, path, data) fs$append(path, data)
+fs_append <- function(fs, path, data, batch_concurrency = NULL,
+                      write_concurrency = NULL, chunk_size = NULL) {
+  fs$append(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
 
 #' @export
 #' @noRd
