@@ -81,6 +81,11 @@
 #' @param page_size Maximum number of entries returned by one iterator page.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.
+#' @param cv Condition variable object from `cv()`.
+#' @param monitor Monitor handle from `aio_monitor()`.
+#' @param msec Milliseconds to wait for `cv_until()`.
+#' @param timeout Optional milliseconds to wait for `race_aio()`.
+#' @param interval Poll interval in seconds for R-thread wait helpers.
 #' @param x Object to inspect.
 #' @usage
 #' opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,

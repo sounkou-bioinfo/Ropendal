@@ -300,6 +300,16 @@ object or list of objects in serial mode.}
 
 \item{aio}{Aio handle.}
 
+\item{cv}{Condition variable object from \code{cv()}.}
+
+\item{monitor}{Monitor handle from \code{aio_monitor()}.}
+
+\item{msec}{Milliseconds to wait for \code{cv_until()}.}
+
+\item{timeout}{Optional milliseconds to wait for \code{race_aio()}.}
+
+\item{interval}{Poll interval in seconds for R-thread wait helpers.}
+
 \item{x}{Object to inspect.}
 }
 \value{
