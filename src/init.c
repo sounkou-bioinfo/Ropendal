@@ -90,6 +90,11 @@ SEXP savvy_OpendalFs_append__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__dat
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_append_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_append_aio__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_capabilities__impl(SEXP self__) {
     SEXP res = savvy_OpendalFs_capabilities__ffi(self__);
     return handle_result(res);
@@ -100,13 +105,28 @@ SEXP savvy_OpendalFs_copy__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to) {
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_copy_aio__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_copy_aio__ffi(self__, c_arg__from, c_arg__to, c_arg__batch_concurrency);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_delete__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__batch_concurrency) {
     SEXP res = savvy_OpendalFs_delete__ffi(self__, c_arg__path, c_arg__recursive, c_arg__batch_concurrency);
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_delete_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_delete_aio__ffi(self__, c_arg__path, c_arg__recursive, c_arg__batch_concurrency);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_exists__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency) {
     SEXP res = savvy_OpendalFs_exists__ffi(self__, c_arg__path, c_arg__batch_concurrency);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalFs_exists_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_exists_aio__ffi(self__, c_arg__path, c_arg__batch_concurrency);
     return handle_result(res);
 }
 
@@ -125,8 +145,18 @@ SEXP savvy_OpendalFs_ls__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursi
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_ls_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive) {
+    SEXP res = savvy_OpendalFs_ls_aio__ffi(self__, c_arg__path, c_arg__recursive);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_mkdir__impl(SEXP self__, SEXP c_arg__path) {
     SEXP res = savvy_OpendalFs_mkdir__ffi(self__, c_arg__path);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalFs_mkdir_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_mkdir_aio__ffi(self__, c_arg__path, c_arg__batch_concurrency);
     return handle_result(res);
 }
 
@@ -160,8 +190,18 @@ SEXP savvy_OpendalFs_rename__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to)
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_rename_aio__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_rename_aio__ffi(self__, c_arg__from, c_arg__to, c_arg__batch_concurrency);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_replace__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
     SEXP res = savvy_OpendalFs_replace__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalFs_replace_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_replace_aio__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
     return handle_result(res);
 }
 
@@ -170,8 +210,18 @@ SEXP savvy_OpendalFs_stat__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_stat_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency) {
+    SEXP res = savvy_OpendalFs_stat_aio__ffi(self__, c_arg__path, c_arg__batch_concurrency);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_write__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
     SEXP res = savvy_OpendalFs_write__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalFs_write_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_write_aio__ffi(self__, c_arg__path, c_arg__data, c_arg__batch_concurrency, c_arg__write_concurrency, c_arg__chunk_size);
     return handle_result(res);
 }
 
@@ -248,23 +298,33 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalCredentialProvider_schemes__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_schemes__impl, 1},
     {"savvy_OpendalCredentialProvider_summary__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_summary__impl, 1},
     {"savvy_OpendalFs_append__impl", (DL_FUNC) &savvy_OpendalFs_append__impl, 6},
+    {"savvy_OpendalFs_append_aio__impl", (DL_FUNC) &savvy_OpendalFs_append_aio__impl, 6},
     {"savvy_OpendalFs_capabilities__impl", (DL_FUNC) &savvy_OpendalFs_capabilities__impl, 1},
     {"savvy_OpendalFs_copy__impl", (DL_FUNC) &savvy_OpendalFs_copy__impl, 3},
+    {"savvy_OpendalFs_copy_aio__impl", (DL_FUNC) &savvy_OpendalFs_copy_aio__impl, 4},
     {"savvy_OpendalFs_delete__impl", (DL_FUNC) &savvy_OpendalFs_delete__impl, 4},
+    {"savvy_OpendalFs_delete_aio__impl", (DL_FUNC) &savvy_OpendalFs_delete_aio__impl, 4},
     {"savvy_OpendalFs_exists__impl", (DL_FUNC) &savvy_OpendalFs_exists__impl, 3},
+    {"savvy_OpendalFs_exists_aio__impl", (DL_FUNC) &savvy_OpendalFs_exists_aio__impl, 3},
     {"savvy_OpendalFs_from_uri__impl", (DL_FUNC) &savvy_OpendalFs_from_uri__impl, 1},
     {"savvy_OpendalFs_info__impl", (DL_FUNC) &savvy_OpendalFs_info__impl, 1},
     {"savvy_OpendalFs_ls__impl", (DL_FUNC) &savvy_OpendalFs_ls__impl, 3},
+    {"savvy_OpendalFs_ls_aio__impl", (DL_FUNC) &savvy_OpendalFs_ls_aio__impl, 3},
     {"savvy_OpendalFs_mkdir__impl", (DL_FUNC) &savvy_OpendalFs_mkdir__impl, 2},
+    {"savvy_OpendalFs_mkdir_aio__impl", (DL_FUNC) &savvy_OpendalFs_mkdir_aio__impl, 3},
     {"savvy_OpendalFs_normalize_path__impl", (DL_FUNC) &savvy_OpendalFs_normalize_path__impl, 3},
     {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 5},
     {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 10},
     {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 10},
     {"savvy_OpendalFs_read_iter__impl", (DL_FUNC) &savvy_OpendalFs_read_iter__impl, 7},
     {"savvy_OpendalFs_rename__impl", (DL_FUNC) &savvy_OpendalFs_rename__impl, 3},
+    {"savvy_OpendalFs_rename_aio__impl", (DL_FUNC) &savvy_OpendalFs_rename_aio__impl, 4},
     {"savvy_OpendalFs_replace__impl", (DL_FUNC) &savvy_OpendalFs_replace__impl, 6},
+    {"savvy_OpendalFs_replace_aio__impl", (DL_FUNC) &savvy_OpendalFs_replace_aio__impl, 6},
     {"savvy_OpendalFs_stat__impl", (DL_FUNC) &savvy_OpendalFs_stat__impl, 3},
+    {"savvy_OpendalFs_stat_aio__impl", (DL_FUNC) &savvy_OpendalFs_stat_aio__impl, 3},
     {"savvy_OpendalFs_write__impl", (DL_FUNC) &savvy_OpendalFs_write__impl, 6},
+    {"savvy_OpendalFs_write_aio__impl", (DL_FUNC) &savvy_OpendalFs_write_aio__impl, 6},
     {"savvy_OpendalFs_write_iter__impl", (DL_FUNC) &savvy_OpendalFs_write_iter__impl, 6},
     {"savvy_OpendalHttpFixture_endpoint__impl", (DL_FUNC) &savvy_OpendalHttpFixture_endpoint__impl, 1},
     {"savvy_OpendalHttpFixture_root__impl", (DL_FUNC) &savvy_OpendalHttpFixture_root__impl, 1},

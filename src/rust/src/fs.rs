@@ -6,7 +6,7 @@ use opendal::{Buffer, Metadata, Operator};
 use savvy::savvy;
 use savvy::{ListSexp, OwnedListSexp, Sexp, StringSexp, TypedSexp};
 
-use crate::aio::{AioOutcome, OpendalAio};
+use crate::aio::{AioOutcome, EntryOutcome, OpendalAio};
 use crate::common::{NativeFs, build_runtime, init_registry};
 use crate::error::{kind_code, op_error_list, unsupported_value};
 use crate::io_iter::{OpendalReadIter, OpendalWriteIter, checked_chunk_size, normalize_iter_path};
@@ -321,6 +321,72 @@ impl OpendalFs {
         )
     }
 
+    /// Submit asynchronous write(s) to new path(s).
+    /// @export
+    fn write_aio(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_aio_common(
+            path,
+            data,
+            true,
+            false,
+            "write",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
+    }
+
+    /// Submit asynchronous replacement write(s).
+    /// @export
+    fn replace_aio(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_aio_common(
+            path,
+            data,
+            false,
+            false,
+            "replace",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
+    }
+
+    /// Submit asynchronous append write(s).
+    /// @export
+    fn append_aio(
+        &self,
+        path: StringSexp,
+        data: Sexp,
+        batch_concurrency: Option<f64>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        self.write_many_aio_common(
+            path,
+            data,
+            false,
+            true,
+            "append",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
+    }
+
     /// Return metadata for path(s).
     /// @export
     fn stat(&self, path: StringSexp, batch_concurrency: Option<f64>) -> savvy::Result<savvy::Sexp> {
@@ -377,6 +443,55 @@ impl OpendalFs {
             )?;
         }
         out.into()
+    }
+
+    /// Submit asynchronous metadata request(s).
+    /// @export
+    fn stat_aio(
+        &self,
+        path: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        let mut requests = Vec::new();
+        for (i, p) in path.iter().enumerate() {
+            match normalize_user_path(p, false) {
+                Ok(p) => requests.push((i, p)),
+                Err(e) => values[i] = Some(invalid_argument_outcome("stat", p, e)),
+            }
+        }
+        let op = self.inner.op.clone();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                return stat_request_outcome(op, requests.into_iter().next().unwrap().1).await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, p)| {
+                    let op = op.clone();
+                    async move { (i, stat_request_outcome(op, p).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome("stat")))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 
     /// Check whether path(s) exist.
@@ -441,6 +556,55 @@ impl OpendalFs {
         out.into()
     }
 
+    /// Submit asynchronous existence check(s).
+    /// @export
+    fn exists_aio(
+        &self,
+        path: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        let mut requests = Vec::new();
+        for (i, p) in path.iter().enumerate() {
+            match normalize_user_path(p, false) {
+                Ok(p) => requests.push((i, p)),
+                Err(e) => values[i] = Some(invalid_argument_outcome("exists", p, e)),
+            }
+        }
+        let op = self.inner.op.clone();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                return exists_request_outcome(op, requests.into_iter().next().unwrap().1).await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, p)| {
+                    let op = op.clone();
+                    async move { (i, exists_request_outcome(op, p).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome("exists")))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
+    }
+
     /// Create a directory.
     /// @export
     fn mkdir(&self, path: &str) -> savvy::Result<savvy::Sexp> {
@@ -458,6 +622,55 @@ impl OpendalFs {
             Ok(_) => success_value(),
             Err(e) => op_error_list(e, "mkdir", &path_for_error),
         }
+    }
+
+    /// Submit asynchronous directory creation request(s).
+    /// @export
+    fn mkdir_aio(
+        &self,
+        path: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        let mut requests = Vec::new();
+        for (i, p) in path.iter().enumerate() {
+            match normalize_user_path(p, true) {
+                Ok(p) => requests.push((i, p)),
+                Err(e) => values[i] = Some(invalid_argument_outcome("mkdir", p, e)),
+            }
+        }
+        let op = self.inner.op.clone();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                return mkdir_request_outcome(op, requests.into_iter().next().unwrap().1).await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, p)| {
+                    let op = op.clone();
+                    async move { (i, mkdir_request_outcome(op, p).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome("mkdir")))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 
     /// Delete path(s).
@@ -524,6 +737,62 @@ impl OpendalFs {
         out.into()
     }
 
+    /// Submit asynchronous deletion request(s).
+    /// @export
+    fn delete_aio(
+        &self,
+        path: StringSexp,
+        recursive: Option<bool>,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let recursive = recursive.unwrap_or(false);
+        let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        let mut requests = Vec::new();
+        for (i, p) in path.iter().enumerate() {
+            match normalize_user_path(p, false) {
+                Ok(p) => requests.push((i, p)),
+                Err(e) => values[i] = Some(invalid_argument_outcome("delete", p, e)),
+            }
+        }
+        let op = self.inner.op.clone();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                return delete_request_outcome(
+                    op,
+                    requests.into_iter().next().unwrap().1,
+                    recursive,
+                )
+                .await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, p)| {
+                    let op = op.clone();
+                    async move { (i, delete_request_outcome(op, p, recursive).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome("delete")))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
+    }
+
     /// Copy path(s) with strict length matching.
     /// @export
     fn copy(&self, from: StringSexp, to: StringSexp) -> savvy::Result<savvy::Sexp> {
@@ -562,6 +831,40 @@ impl OpendalFs {
         out.into()
     }
 
+    /// Submit asynchronous copy request(s) with strict length matching.
+    /// @export
+    fn copy_aio(
+        &self,
+        from: StringSexp,
+        to: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        self.copy_or_rename_aio_common(
+            from,
+            to,
+            batch_concurrency.unwrap_or(0.0),
+            "copy",
+            copy_request_outcome,
+        )
+    }
+
+    /// Submit asynchronous rename request(s) with strict length matching.
+    /// @export
+    fn rename_aio(
+        &self,
+        from: StringSexp,
+        to: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        self.copy_or_rename_aio_common(
+            from,
+            to,
+            batch_concurrency.unwrap_or(0.0),
+            "rename",
+            rename_request_outcome,
+        )
+    }
+
     /// List entries under a directory.
     /// @export
     fn ls(&self, path: &str, recursive: bool) -> savvy::Result<savvy::Sexp> {
@@ -591,6 +894,28 @@ impl OpendalFs {
             }
             Err(e) => op_error_list(e, "ls", &path_for_error),
         }
+    }
+
+    /// Submit asynchronous listing request.
+    /// @export
+    fn ls_aio(&self, path: &str, recursive: bool) -> savvy::Result<OpendalAio> {
+        let path = match normalize_user_path(path, true) {
+            Ok(p) => p,
+            Err(e) => {
+                let path = path.to_string();
+                let handle = self
+                    .inner
+                    .runtime
+                    .spawn(async move { invalid_argument_outcome("ls", &path, e) });
+                return Ok(OpendalAio::new(self.inner.runtime.clone(), handle));
+            }
+        };
+        let op = self.inner.op.clone();
+        let handle = self
+            .inner
+            .runtime
+            .spawn(async move { ls_request_outcome(op, path, recursive).await });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 }
 
@@ -745,6 +1070,157 @@ impl OpendalFs {
             out.set_value(i, read_value_to_sexp(value)?)?;
         }
         out.into()
+    }
+
+    fn write_many_aio_common(
+        &self,
+        paths: StringSexp,
+        data: Sexp,
+        create_only: bool,
+        append: bool,
+        operation: &str,
+        batch_concurrency: f64,
+        tuning: WriteTuning,
+    ) -> savvy::Result<OpendalAio> {
+        let n = paths.len();
+        let payloads = payloads_from_sexp(data, n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
+        let mut requests = Vec::with_capacity(n);
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        for (i, path) in paths.iter().enumerate() {
+            match normalize_user_path(path, false) {
+                Ok(path) => requests.push((i, path, payloads[i].clone())),
+                Err(e) => values[i] = Some(invalid_argument_outcome(operation, path, e)),
+            }
+        }
+
+        let op = self.inner.op.clone();
+        let operation_owned = operation.to_string();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                let (_, path, data) = requests.into_iter().next().unwrap();
+                return write_request_outcome(
+                    op,
+                    path,
+                    data,
+                    create_only,
+                    append,
+                    &operation_owned,
+                    tuning,
+                )
+                .await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, path, data)| {
+                    let op = op.clone();
+                    let operation = operation_owned.clone();
+                    async move {
+                        (
+                            i,
+                            write_request_outcome(
+                                op,
+                                path,
+                                data,
+                                create_only,
+                                append,
+                                &operation,
+                                tuning,
+                            )
+                            .await,
+                        )
+                    }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome(&operation_owned)))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
+    }
+
+    fn copy_or_rename_aio_common<F, Fut>(
+        &self,
+        from: StringSexp,
+        to: StringSexp,
+        batch_concurrency: f64,
+        operation: &str,
+        submit: F,
+    ) -> savvy::Result<OpendalAio>
+    where
+        F: Fn(Operator, String, String) -> Fut + Copy + Send + Sync + 'static,
+        Fut: std::future::Future<Output = AioOutcome> + Send + 'static,
+    {
+        if from.len() != to.len() {
+            return Err(savvy::Error::new("from and to lengths must match"));
+        }
+        let n = from.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
+        let mut requests = Vec::with_capacity(n);
+        let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
+        for (i, (from_path, to_path)) in from.iter().zip(to.iter()).enumerate() {
+            let from_norm = match normalize_user_path(from_path, false) {
+                Ok(path) => path,
+                Err(e) => {
+                    values[i] = Some(invalid_argument_outcome(operation, from_path, e));
+                    continue;
+                }
+            };
+            let to_norm = match normalize_user_path(to_path, false) {
+                Ok(path) => path,
+                Err(e) => {
+                    values[i] = Some(invalid_argument_outcome(operation, to_path, e));
+                    continue;
+                }
+            };
+            requests.push((i, from_norm, to_norm));
+        }
+
+        let op = self.inner.op.clone();
+        let operation_owned = operation.to_string();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 0 {
+                return AioOutcome::Many(Vec::new());
+            }
+            if n == 1 {
+                if let Some(value) = values.into_iter().next().flatten() {
+                    return value;
+                }
+                let (_, from, to) = requests.into_iter().next().unwrap();
+                return submit(op, from, to).await;
+            }
+            let async_values = stream::iter(requests.into_iter())
+                .map(|(i, from, to)| {
+                    let op = op.clone();
+                    async move { (i, submit(op, from, to).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            for (i, value) in async_values {
+                values[i] = Some(value);
+            }
+            AioOutcome::Many(
+                values
+                    .into_iter()
+                    .map(|value| value.unwrap_or_else(|| unexpected_outcome(&operation_owned)))
+                    .collect(),
+            )
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 
     fn write_many_common(
@@ -1043,6 +1519,160 @@ fn exists_value_to_sexp(value: ExistsValue) -> savvy::Result<savvy::Sexp> {
             message,
             path,
         } => crate::error::error_list(&kind, code, &message, "exists", &path),
+    }
+}
+
+async fn stat_request_outcome(op: Operator, path: String) -> AioOutcome {
+    match stat_request(op, path).await {
+        StatValue::Metadata { path, meta } => AioOutcome::Metadata { path, meta },
+        StatValue::Error {
+            kind,
+            code,
+            message,
+            path,
+        } => AioOutcome::Error {
+            kind,
+            code,
+            message,
+            operation: "stat".to_string(),
+            path,
+        },
+    }
+}
+
+async fn exists_request_outcome(op: Operator, path: String) -> AioOutcome {
+    match exists_request(op, path).await {
+        ExistsValue::Exists(exists) => AioOutcome::Bool(exists),
+        ExistsValue::Error {
+            kind,
+            code,
+            message,
+            path,
+        } => AioOutcome::Error {
+            kind,
+            code,
+            message,
+            operation: "exists".to_string(),
+            path,
+        },
+    }
+}
+
+async fn mkdir_request_outcome(op: Operator, path: String) -> AioOutcome {
+    let path_for_error = path.clone();
+    match op.create_dir(&path).await {
+        Ok(_) => AioOutcome::Unit,
+        Err(e) => op_error_outcome(e, "mkdir", &path_for_error),
+    }
+}
+
+async fn delete_request_outcome(op: Operator, path: String, recursive: bool) -> AioOutcome {
+    match delete_request(op, path, recursive).await {
+        DeleteValue::Deleted => AioOutcome::Unit,
+        DeleteValue::Error {
+            kind,
+            code,
+            message,
+            path,
+        } => AioOutcome::Error {
+            kind,
+            code,
+            message,
+            operation: "delete".to_string(),
+            path,
+        },
+    }
+}
+
+async fn write_request_outcome(
+    op: Operator,
+    path: String,
+    data: Buffer,
+    create_only: bool,
+    append: bool,
+    operation: &str,
+    tuning: WriteTuning,
+) -> AioOutcome {
+    match write_request(op, path, data, create_only, append, operation, tuning).await {
+        WriteValue::Written => AioOutcome::Unit,
+        WriteValue::Error {
+            kind,
+            code,
+            message,
+            path,
+        } => AioOutcome::Error {
+            kind,
+            code,
+            message,
+            operation: operation.to_string(),
+            path,
+        },
+    }
+}
+
+async fn copy_request_outcome(op: Operator, from: String, to: String) -> AioOutcome {
+    let from_for_error = from.clone();
+    match op.copy(&from, &to).await {
+        Ok(_) => AioOutcome::Unit,
+        Err(e) => op_error_outcome(e, "copy", &from_for_error),
+    }
+}
+
+async fn rename_request_outcome(op: Operator, from: String, to: String) -> AioOutcome {
+    let from_for_error = from.clone();
+    match op.rename(&from, &to).await {
+        Ok(_) => AioOutcome::Unit,
+        Err(e) => op_error_outcome(e, "rename", &from_for_error),
+    }
+}
+
+async fn ls_request_outcome(op: Operator, path: String, recursive: bool) -> AioOutcome {
+    let path_for_error = path.clone();
+    let mut opts = ListOptions::default();
+    opts.recursive = recursive;
+    match op.list_options(&path, opts).await {
+        Ok(entries) => AioOutcome::Entries(
+            entries
+                .iter()
+                .filter(|entry| entry.path() != "/" && !entry.path().is_empty())
+                .map(|entry| EntryOutcome {
+                    path: entry.path().to_string(),
+                    meta: entry.metadata().clone(),
+                })
+                .collect(),
+        ),
+        Err(e) => op_error_outcome(e, "ls", &path_for_error),
+    }
+}
+
+fn op_error_outcome(e: opendal::Error, operation: &str, path: &str) -> AioOutcome {
+    let kind = e.kind();
+    AioOutcome::Error {
+        kind: kind.into_static().to_string(),
+        code: kind_code(kind),
+        message: e.to_string(),
+        operation: operation.to_string(),
+        path: path.to_string(),
+    }
+}
+
+fn invalid_argument_outcome(operation: &str, path: &str, message: String) -> AioOutcome {
+    AioOutcome::Error {
+        kind: "InvalidArgument".to_string(),
+        code: 14,
+        message,
+        operation: operation.to_string(),
+        path: path.to_string(),
+    }
+}
+
+fn unexpected_outcome(operation: &str) -> AioOutcome {
+    AioOutcome::Error {
+        kind: "Unexpected".to_string(),
+        code: 1,
+        message: format!("missing {operation} result"),
+        operation: operation.to_string(),
+        path: String::new(),
     }
 }
 

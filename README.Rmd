@@ -10,11 +10,11 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 # Ropendal
 
-Ropendal is a byte-oriented abstract filesystem interface for R backed by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The R/Rust interface is built with the [`savvy`](https://github.com/yutannihilation/savvy) crate, which generates the R wrappers and native registration used by the package.
+Ropendal is an abstract remote filesystem operation interface for R backed by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The R/Rust interface is built with the [`savvy`](https://github.com/yutannihilation/savvy) crate, which generates the R wrappers and native registration used by the package.
 
-The central abstraction is an `OpendalFs` handle: a root-relative, byte-addressable filesystem over local files, HTTP endpoints, S3-compatible services, Google Drive, and other OpenDAL-backed providers as support is added. Operations move raw bytes and byte ranges; backend failures resolve to classed error values; credentials are explicit rather than discovered through hidden ambient provider chains.
+The central abstraction is an `OpendalFs` handle: a root-relative, byte-addressable filesystem over local files, HTTP endpoints, S3-compatible services, Google Drive, and other OpenDAL-backed providers as support is added. Operations move raw bytes and byte ranges, but metadata and namespace operations such as stat, exists, listing, delete, copy, rename, and mkdir are remote I/O too; backend failures resolve to classed error values; credentials are explicit rather than discovered through hidden ambient provider chains.
 
-Aio handles are a core part of the interface. Reads can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes chunked read/write iterators for streaming-style transfer and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want direct async byte access.
+Aio handles are a core part of the interface. Reads, writes, metadata checks, listings, and namespace mutations can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes chunked read/write iterators for streaming-style transfer and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want direct async byte access.
 
 See `design/api-design.md` for API design notes and `design/STATUS.md` for the implementation/test checklist.
 
@@ -32,7 +32,7 @@ details_table <- function(title, data) {
 
 operation_progress <- data.frame(
   operation = c("read", "write", "stat/exists", "list", "mkdir/delete", "copy", "rename", "append"),
-  surface = c("sync, Aio, iterator", "sync, iterator", "sync", "sync", "sync", "sync", "sync", "sync, iterator"),
+  surface = c("sync, Aio, iterator", "sync, Aio, iterator", "sync, Aio", "sync, Aio", "sync, Aio", "sync, Aio", "sync, Aio", "sync, Aio, iterator"),
   status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "backend-dependent", "backend-dependent"),
   notes = c(
     "range reads, batch concurrency, iterators, seek/tell, per-object read tuning",
@@ -48,7 +48,7 @@ operation_progress <- data.frame(
 
 aio_progress <- data.frame(
   abstraction = c("OpendalAio", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
   role = c(
     "nanonext-like handle for background Rust work",
     "non-blocking readiness check",
@@ -73,7 +73,7 @@ read_progress <- data.frame(
 )
 
 write_progress <- data.frame(
-  function_or_path = c("fs_write()", "fs_replace()", "fs_append()", "fs_write_iter()", "write_iter_write()", "write_iter_close()", "fs_tell()", "C write/replace/append Aio"),
+  function_or_path = c("fs_write()/fs_write_aio()", "fs_replace()/fs_replace_aio()", "fs_append()/fs_append_aio()", "fs_write_iter()", "write_iter_write()", "write_iter_close()", "fs_tell()", "C write/replace/append Aio"),
   status = c("implemented", "implemented", "backend-dependent", "implemented", "implemented", "implemented", "implemented", "implemented"),
   tuning = c(
     "batch_concurrency, write_concurrency, chunk_size",
@@ -249,12 +249,21 @@ is_error_value(err)
 error_kind(err)
 ```
 
-Read operations can also return Aio handles.
+Remote operations can also return Aio handles.
 
 ```{r aio-read}
 aio <- fs_read_aio(fs, "data.bin")
 poll_aio(aio)
 call_aio(aio)
+
+stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
+stat$path
+stat$size
+collect_aio(fs_exists_aio(fs, "data.bin"))
+entry <- collect_aio(fs_ls_aio(fs))[[1]]
+entry$path
+entry$type
+collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
 ```
 
 ## Related work

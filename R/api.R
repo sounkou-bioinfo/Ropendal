@@ -9,9 +9,12 @@
 #' @aliases CredentialProvider opendal opendal_uri credentials_s3 credentials_gdrive
 #'   credentials_gdrive3 credential_schemes credential_config credential_summary
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio fs_read_iter
-#'   read_iter_next read_iter_collect fs_seek fs_tell fs_write fs_replace fs_append
-#'   fs_write_iter write_iter_write write_iter_close fs_stat fs_exists fs_ls fs_mkdir fs_delete fs_copy
-#'   fs_rename collect_aio call_aio stop_aio poll_aio unresolved is_error_value
+#'   read_iter_next read_iter_collect fs_seek fs_tell fs_write fs_write_aio
+#'   fs_replace fs_replace_aio fs_append fs_append_aio fs_write_iter
+#'   write_iter_write write_iter_close fs_stat fs_stat_aio fs_stats
+#'   fs_stats_aio fs_exists fs_exists_aio fs_ls fs_ls_aio fs_mkdir fs_mkdir_aio fs_delete
+#'   fs_delete_aio fs_copy fs_copy_aio fs_rename fs_rename_aio collect_aio
+#'   call_aio stop_aio poll_aio unresolved is_error_value
 #'   error_kind error_message error_operation error_path
 #' @param scheme OpenDAL service scheme.
 #' @param ... Named service configuration entries.
@@ -89,21 +92,36 @@
 #' fs_seek(iter, offset, whence = c("start", "current", "end"))
 #' fs_write(fs, path, data, batch_concurrency = NULL,
 #'          write_concurrency = NULL, chunk_size = NULL)
+#' fs_write_aio(fs, path, data, batch_concurrency = NULL,
+#'              write_concurrency = NULL, chunk_size = NULL)
 #' fs_replace(fs, path, data, batch_concurrency = NULL,
 #'            write_concurrency = NULL, chunk_size = NULL)
+#' fs_replace_aio(fs, path, data, batch_concurrency = NULL,
+#'                write_concurrency = NULL, chunk_size = NULL)
 #' fs_append(fs, path, data, batch_concurrency = NULL,
 #'           write_concurrency = NULL, chunk_size = NULL)
+#' fs_append_aio(fs, path, data, batch_concurrency = NULL,
+#'               write_concurrency = NULL, chunk_size = NULL)
 #' fs_write_iter(fs, path, create = TRUE, append = FALSE,
 #'               write_concurrency = NULL, chunk_size = NULL)
 #' write_iter_write(iter, data)
 #' write_iter_close(iter)
 #' fs_stat(fs, path, batch_concurrency = NULL)
+#' fs_stat_aio(fs, path, batch_concurrency = NULL)
+#' fs_stats(fs, path, batch_concurrency = NULL)
+#' fs_stats_aio(fs, path, batch_concurrency = NULL)
 #' fs_exists(fs, path, batch_concurrency = NULL)
+#' fs_exists_aio(fs, path, batch_concurrency = NULL)
 #' fs_ls(fs, path = "", recursive = FALSE)
+#' fs_ls_aio(fs, path = "", recursive = FALSE)
 #' fs_mkdir(fs, path)
+#' fs_mkdir_aio(fs, path, batch_concurrency = NULL)
 #' fs_delete(fs, path, recursive = FALSE, batch_concurrency = NULL)
+#' fs_delete_aio(fs, path, recursive = FALSE, batch_concurrency = NULL)
 #' fs_copy(fs, from, to)
+#' fs_copy_aio(fs, from, to, batch_concurrency = NULL)
 #' fs_rename(fs, from, to)
+#' fs_rename_aio(fs, from, to, batch_concurrency = NULL)
 #' collect_aio(aio)
 #' call_aio(aio)
 #' stop_aio(aio)
@@ -354,6 +372,13 @@ fs_write <- function(fs, path, data, batch_concurrency = NULL,
 
 #' @export
 #' @noRd
+fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
+                         write_concurrency = NULL, chunk_size = NULL) {
+  fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
+
+#' @export
+#' @noRd
 fs_replace <- function(fs, path, data, batch_concurrency = NULL,
                        write_concurrency = NULL, chunk_size = NULL) {
   fs$replace(path, data, batch_concurrency, write_concurrency, chunk_size)
@@ -361,9 +386,23 @@ fs_replace <- function(fs, path, data, batch_concurrency = NULL,
 
 #' @export
 #' @noRd
+fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
+                           write_concurrency = NULL, chunk_size = NULL) {
+  fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
+
+#' @export
+#' @noRd
 fs_append <- function(fs, path, data, batch_concurrency = NULL,
                       write_concurrency = NULL, chunk_size = NULL) {
   fs$append(path, data, batch_concurrency, write_concurrency, chunk_size)
+}
+
+#' @export
+#' @noRd
+fs_append_aio <- function(fs, path, data, batch_concurrency = NULL,
+                          write_concurrency = NULL, chunk_size = NULL) {
+  fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
 #' @export
@@ -452,8 +491,32 @@ fs_stat <- function(fs, path, batch_concurrency = NULL) {
 
 #' @export
 #' @noRd
+fs_stat_aio <- function(fs, path, batch_concurrency = NULL) {
+  fs$stat_aio(path, batch_concurrency)
+}
+
+#' @export
+#' @noRd
+fs_stats <- function(fs, path, batch_concurrency = NULL) {
+  fs_stat(fs, path, batch_concurrency)
+}
+
+#' @export
+#' @noRd
+fs_stats_aio <- function(fs, path, batch_concurrency = NULL) {
+  fs_stat_aio(fs, path, batch_concurrency)
+}
+
+#' @export
+#' @noRd
 fs_exists <- function(fs, path, batch_concurrency = NULL) {
   fs$exists(path, batch_concurrency)
+}
+
+#' @export
+#' @noRd
+fs_exists_aio <- function(fs, path, batch_concurrency = NULL) {
+  fs$exists_aio(path, batch_concurrency)
 }
 
 #' @export
@@ -464,8 +527,20 @@ fs_ls <- function(fs, path = "", recursive = FALSE) {
 
 #' @export
 #' @noRd
+fs_ls_aio <- function(fs, path = "", recursive = FALSE) {
+  fs$ls_aio(path, recursive)
+}
+
+#' @export
+#' @noRd
 fs_mkdir <- function(fs, path) {
   fs$mkdir(path)
+}
+
+#' @export
+#' @noRd
+fs_mkdir_aio <- function(fs, path, batch_concurrency = NULL) {
+  fs$mkdir_aio(path, batch_concurrency)
 }
 
 #' @export
@@ -476,11 +551,29 @@ fs_delete <- function(fs, path, recursive = FALSE, batch_concurrency = NULL) {
 
 #' @export
 #' @noRd
+fs_delete_aio <- function(fs, path, recursive = FALSE, batch_concurrency = NULL) {
+  fs$delete_aio(path, recursive, batch_concurrency)
+}
+
+#' @export
+#' @noRd
 fs_copy <- function(fs, from, to) fs$copy(from, to)
 
 #' @export
 #' @noRd
+fs_copy_aio <- function(fs, from, to, batch_concurrency = NULL) {
+  fs$copy_aio(from, to, batch_concurrency)
+}
+
+#' @export
+#' @noRd
 fs_rename <- function(fs, from, to) fs$rename(from, to)
+
+#' @export
+#' @noRd
+fs_rename_aio <- function(fs, from, to, batch_concurrency = NULL) {
+  fs$rename_aio(from, to, batch_concurrency)
+}
 
 #' @export
 #' @noRd

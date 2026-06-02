@@ -151,6 +151,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_append_aio` <- function(self) {
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_append_aio__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`))
+  }
+}
+
 `OpendalFs_capabilities` <- function(self) {
   function() {
     .Call(savvy_OpendalFs_capabilities__impl, `self`)
@@ -163,15 +169,33 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_copy_aio` <- function(self) {
+  function(`from`, `to`, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_copy_aio__impl, `self`, `from`, `to`, `batch_concurrency`))
+  }
+}
+
 `OpendalFs_delete` <- function(self) {
   function(`path`, `recursive` = NULL, `batch_concurrency` = NULL) {
     .Call(savvy_OpendalFs_delete__impl, `self`, `path`, `recursive`, `batch_concurrency`)
   }
 }
 
+`OpendalFs_delete_aio` <- function(self) {
+  function(`path`, `recursive` = NULL, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_delete_aio__impl, `self`, `path`, `recursive`, `batch_concurrency`))
+  }
+}
+
 `OpendalFs_exists` <- function(self) {
   function(`path`, `batch_concurrency` = NULL) {
     .Call(savvy_OpendalFs_exists__impl, `self`, `path`, `batch_concurrency`)
+  }
+}
+
+`OpendalFs_exists_aio` <- function(self) {
+  function(`path`, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_exists_aio__impl, `self`, `path`, `batch_concurrency`))
   }
 }
 
@@ -187,9 +211,21 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_ls_aio` <- function(self) {
+  function(`path`, `recursive`) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_ls_aio__impl, `self`, `path`, `recursive`))
+  }
+}
+
 `OpendalFs_mkdir` <- function(self) {
   function(`path`) {
     .Call(savvy_OpendalFs_mkdir__impl, `self`, `path`)
+  }
+}
+
+`OpendalFs_mkdir_aio` <- function(self) {
+  function(`path`, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_mkdir_aio__impl, `self`, `path`, `batch_concurrency`))
   }
 }
 
@@ -223,9 +259,21 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_rename_aio` <- function(self) {
+  function(`from`, `to`, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_rename_aio__impl, `self`, `from`, `to`, `batch_concurrency`))
+  }
+}
+
 `OpendalFs_replace` <- function(self) {
   function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
     .Call(savvy_OpendalFs_replace__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
+  }
+}
+
+`OpendalFs_replace_aio` <- function(self) {
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_replace_aio__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`))
   }
 }
 
@@ -235,9 +283,21 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_stat_aio` <- function(self) {
+  function(`path`, `batch_concurrency` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_stat_aio__impl, `self`, `path`, `batch_concurrency`))
+  }
+}
+
 `OpendalFs_write` <- function(self) {
   function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
     .Call(savvy_OpendalFs_write__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
+  }
+}
+
+`OpendalFs_write_aio` <- function(self) {
+  function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_write_aio__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`))
   }
 }
 
@@ -251,21 +311,31 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   e <- new.env(parent = emptyenv())
   e$.ptr <- ptr
   e$`append` <- `OpendalFs_append`(ptr)
+  e$`append_aio` <- `OpendalFs_append_aio`(ptr)
   e$`capabilities` <- `OpendalFs_capabilities`(ptr)
   e$`copy` <- `OpendalFs_copy`(ptr)
+  e$`copy_aio` <- `OpendalFs_copy_aio`(ptr)
   e$`delete` <- `OpendalFs_delete`(ptr)
+  e$`delete_aio` <- `OpendalFs_delete_aio`(ptr)
   e$`exists` <- `OpendalFs_exists`(ptr)
+  e$`exists_aio` <- `OpendalFs_exists_aio`(ptr)
   e$`info` <- `OpendalFs_info`(ptr)
   e$`ls` <- `OpendalFs_ls`(ptr)
+  e$`ls_aio` <- `OpendalFs_ls_aio`(ptr)
   e$`mkdir` <- `OpendalFs_mkdir`(ptr)
+  e$`mkdir_aio` <- `OpendalFs_mkdir_aio`(ptr)
   e$`normalize_path` <- `OpendalFs_normalize_path`(ptr)
   e$`read` <- `OpendalFs_read`(ptr)
   e$`read_aio` <- `OpendalFs_read_aio`(ptr)
   e$`read_iter` <- `OpendalFs_read_iter`(ptr)
   e$`rename` <- `OpendalFs_rename`(ptr)
+  e$`rename_aio` <- `OpendalFs_rename_aio`(ptr)
   e$`replace` <- `OpendalFs_replace`(ptr)
+  e$`replace_aio` <- `OpendalFs_replace_aio`(ptr)
   e$`stat` <- `OpendalFs_stat`(ptr)
+  e$`stat_aio` <- `OpendalFs_stat_aio`(ptr)
   e$`write` <- `OpendalFs_write`(ptr)
+  e$`write_aio` <- `OpendalFs_write_aio`(ptr)
   e$`write_iter` <- `OpendalFs_write_iter`(ptr)
 
   class(e) <- c("Ropendal::OpendalFs", "OpendalFs", "savvy_Ropendal__sealed")

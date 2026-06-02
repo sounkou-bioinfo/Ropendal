@@ -2,8 +2,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -26,9 +26,9 @@ impl OpendalHttpFixture {
     /// Start the internal HTTP fixture.
     /// @export
     fn start(root: &str) -> savvy::Result<Self> {
-        let root_path = PathBuf::from(root)
-            .canonicalize()
-            .map_err(|e| savvy::Error::new(&format!("cannot canonicalize HTTP fixture root: {e}")))?;
+        let root_path = PathBuf::from(root).canonicalize().map_err(|e| {
+            savvy::Error::new(&format!("cannot canonicalize HTTP fixture root: {e}"))
+        })?;
         if !root_path.is_dir() {
             return Err(savvy::Error::new("HTTP fixture root must be a directory"));
         }
@@ -116,16 +116,37 @@ fn handle_connection(stream: &mut TcpStream, root: &Path) -> std::io::Result<()>
     let req = String::from_utf8_lossy(&buf[..n]);
     let mut lines = req.lines();
     let Some(first) = lines.next() else {
-        return write_response(stream, 400, "Bad Request", &[], b"bad request", "text/plain");
+        return write_response(
+            stream,
+            400,
+            "Bad Request",
+            &[],
+            b"bad request",
+            "text/plain",
+        );
     };
     let parts = first.split_whitespace().collect::<Vec<_>>();
     if parts.len() < 3 {
-        return write_response(stream, 400, "Bad Request", &[], b"bad request", "text/plain");
+        return write_response(
+            stream,
+            400,
+            "Bad Request",
+            &[],
+            b"bad request",
+            "text/plain",
+        );
     }
     let method = parts[0];
     let uri = parts[1];
     if method != "GET" && method != "HEAD" {
-        return write_response(stream, 405, "Method Not Allowed", &[], b"method not allowed", "text/plain");
+        return write_response(
+            stream,
+            405,
+            "Method Not Allowed",
+            &[],
+            b"method not allowed",
+            "text/plain",
+        );
     }
 
     let range_header = lines.find_map(|line| {
@@ -176,12 +197,26 @@ fn handle_connection(stream: &mut TcpStream, root: &Path) -> std::io::Result<()>
                 "application/octet-stream",
             );
         }
-        return write_response(stream, 200, "OK", &[accept_ranges_header()], &bytes, "application/octet-stream");
+        return write_response(
+            stream,
+            200,
+            "OK",
+            &[accept_ranges_header()],
+            &bytes,
+            "application/octet-stream",
+        );
     };
 
     if start >= len {
         let header = format!("Content-Range: bytes */{len}\r\n");
-        return write_response(stream, 416, "Range Not Satisfied", &[header], b"range not satisfied", "text/plain");
+        return write_response(
+            stream,
+            416,
+            "Range Not Satisfied",
+            &[header],
+            b"range not satisfied",
+            "text/plain",
+        );
     }
 
     let end = end.min(len.saturating_sub(1));
@@ -294,7 +329,15 @@ fn write_response(
     body: &[u8],
     content_type: &str,
 ) -> std::io::Result<()> {
-    write_response_with_length(stream, code, reason, headers, body, body.len(), content_type)
+    write_response_with_length(
+        stream,
+        code,
+        reason,
+        headers,
+        body,
+        body.len(),
+        content_type,
+    )
 }
 
 fn write_response_with_length(

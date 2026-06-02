@@ -62,13 +62,14 @@ GitHub Actions jobs:
 | vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
 | strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added; batch write now uses bounded async execution |
 | metadata as Rust/C-defined lists | yes | yes | yes | yes | stat/list tested |
-| `fs_write()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning |
-| `fs_replace()` replacement | yes | yes | yes | yes | local test |
-| `fs_append()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append |
+| `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | pending | Rust checks existence before create; accepts batch/write transfer tuning; async local test added |
+| `fs_replace()` / `fs_replace_aio()` replacement | yes | yes | yes | pending | local sync and async tests |
+| `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append; async API wired |
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
 | `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
-| `fs_ls()` | yes | yes | yes | yes | root entry filtered for local `fs`; public S3 and MinIO listing tested; HTTP currently unsupported by OpenDAL |
-| `fs_copy()` / `fs_rename()` / `fs_delete()` | yes | yes | yes | yes | direct `fs$copy()` / `fs$rename()` / `fs$delete()` methods tested; MinIO covers S3 copy/delete and unsupported atomic rename error value |
+| `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | pending | metadata/existence sync plus async local tests; `fs_stats*` aliases vectorized `fs_stat*`; remote services should use async-first path |
+| `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | pending | root entry filtered for local `fs`; public S3 and MinIO listing tested for sync; async local test added; HTTP currently unsupported by OpenDAL |
+| `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | pending | direct sync methods tested; async local namespace tests added; MinIO covers S3 copy/delete and unsupported atomic rename error value |
 | `serial_config(class, sfunc, ufunc)` | yes | no | no | no | planned; README progress table added |
 | `codec_config()` explicit codec layer | provisional | no | no | no | planned; README progress table added |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
@@ -77,8 +78,9 @@ GitHub Actions jobs:
 
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
-| generic `OpendalAio` native result future | yes | partial | yes | yes | currently read-focused; target outcome includes bytes, unit, bool, metadata, entries, many, error, cancelled |
-| `_aio()` for metadata/namespace operations | yes | no | no | no | planned for stat, exists, ls, mkdir, delete, copy, rename; remote filesystems need async-first here too |
+| generic `OpendalAio` native result future | yes | yes | yes | pending | bytes, unit, bool, metadata, entries, many, error, cancelled outcome family implemented; active bindings still planned |
+| `_aio()` for metadata/namespace operations | yes | yes | yes | pending | stat/stats, exists, ls, mkdir, delete, copy, rename implemented and locally tested |
+| `_aio()` for writes | yes | yes | yes | pending | write, replace, append API implemented; local tests cover write/replace |
 | active bindings `$value` / `$data` / `$result` | yes | no | no | no | planned; `$value` is universal, `$data`/`$result` aliases |
 | `unresolved()` | yes | partial | no | no | exported sentinel constructor exists |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | yes | read Aio tested |
@@ -110,16 +112,16 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Generalize `OpendalAio` from read bytes to native operation futures: bytes, unit, bool, metadata, entries, many, error, and cancelled.
-2. Add async metadata and namespace APIs: `fs_stat_aio()`, `fs_exists_aio()`, `fs_ls_aio()`, `fs_mkdir_aio()`, `fs_delete_aio()`, `fs_copy_aio()`, and `fs_rename_aio()`.
-3. Add R async write APIs: `fs_write_aio()`, `fs_replace_aio()`, and `fs_append_aio()` with R input stabilized before background upload.
-4. Make the R Aio contract nanonext-like: active `$value`/`$data`/`$result`/state bindings, unresolved values while pending, `call_aio()` as wait/update, and `collect_aio()` as value-returning collection.
-5. Implement streaming namespace traversal: `fs_ls_iter()` and `fs_walk_iter()` with page size, prefetch, traversal fanout, limits, and continuation/backpressure semantics.
-6. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
-7. Continue I/O polishing: service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
-8. Implement serializers/deserializers only after the operation Aio substrate is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
-9. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
-10. Bring native C API parity up to the async operation contract: `readv_into_aio()`, metadata/entry/bool result accessors, and tests.
+1. Make the R Aio contract nanonext-like: active `$value`/`$data`/`$result`/state bindings, unresolved values while pending, `call_aio()` as wait/update, and `collect_aio()` as value-returning collection.
+2. Implement streaming namespace traversal: `fs_ls_iter()` and `fs_walk_iter()` with page size, prefetch, traversal fanout, limits, and continuation/backpressure semantics.
+3. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
+4. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, and read/write iterators are now wired through Rust/OpenDAL.
+5. Implement serializers/deserializers only after the operation Aio substrate is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
+6. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
+7. Bring native C API parity up to the async operation contract: `readv_into_aio()`, metadata/entry/bool result accessors, and tests.
+8. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
+9. Expand capability tests by service profile and return classed capability values.
+10. Expand credential helpers beyond Google Drive and add more service coverage.
 
 ## Deferred milestones
 

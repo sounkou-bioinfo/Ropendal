@@ -3,22 +3,26 @@
 
 # Ropendal
 
-Ropendal is a byte-oriented abstract filesystem interface for R backed
-by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The
-R/Rust interface is built with the
-[`savvy`](https://github.com/yutannihilation/savvy) crate, which
-generates the R wrappers and native registration used by the package.
+Ropendal is an abstract remote filesystem operation interface for R
+backed by the Rust crate of [Apache
+OpenDAL](https://opendal.apache.org/). The R/Rust interface is built
+with the [`savvy`](https://github.com/yutannihilation/savvy) crate,
+which generates the R wrappers and native registration used by the
+package.
 
 The central abstraction is an `OpendalFs` handle: a root-relative,
 byte-addressable filesystem over local files, HTTP endpoints,
 S3-compatible services, Google Drive, and other OpenDAL-backed providers
-as support is added. Operations move raw bytes and byte ranges; backend
-failures resolve to classed error values; credentials are explicit
-rather than discovered through hidden ambient provider chains.
+as support is added. Operations move raw bytes and byte ranges, but
+metadata and namespace operations such as stat, exists, listing, delete,
+copy, rename, and mkdir are remote I/O too; backend failures resolve to
+classed error values; credentials are explicit rather than discovered
+through hidden ambient provider chains.
 
-Aio handles are a core part of the interface. Reads can return
-nanonext-like handles that callers poll, collect, or cancel explicitly,
-while background Rust tasks never call R APIs. The package also exposes
+Aio handles are a core part of the interface. Reads, writes, metadata
+checks, listings, and namespace mutations can return nanonext-like
+handles that callers poll, collect, or cancel explicitly, while
+background Rust tasks never call R APIs. The package also exposes
 chunked read/write iterators for streaming-style transfer and installs
 `inst/include/ropendal.h`, a pure C API for downstream native packages
 that want direct async byte access.
@@ -39,13 +43,13 @@ Supported operations
 | operation    | surface             | status            | notes                                                                        |
 |:-------------|:--------------------|:------------------|:-----------------------------------------------------------------------------|
 | read         | sync, Aio, iterator | implemented       | range reads, batch concurrency, iterators, seek/tell, per-object read tuning |
-| write        | sync, iterator      | implemented       | create/replace, batch concurrency, iterators, tell, per-object write tuning  |
-| stat/exists  | sync                | implemented       | metadata and existence values                                                |
-| list         | sync                | implemented       | where provider supports listing                                              |
-| mkdir/delete | sync                | implemented       | root-relative path normalization                                             |
-| copy         | sync                | implemented       | direct provider copy                                                         |
-| rename       | sync                | backend-dependent | no silent S3-style emulation of atomic rename                                |
-| append       | sync, iterator      | backend-dependent | returns unsupported where OpenDAL reports no append capability               |
+| write        | sync, Aio, iterator | implemented       | create/replace, batch concurrency, iterators, tell, per-object write tuning  |
+| stat/exists  | sync, Aio           | implemented       | metadata and existence values                                                |
+| list         | sync, Aio           | implemented       | where provider supports listing                                              |
+| mkdir/delete | sync, Aio           | implemented       | root-relative path normalization                                             |
+| copy         | sync, Aio           | implemented       | direct provider copy                                                         |
+| rename       | sync, Aio           | backend-dependent | no silent S3-style emulation of atomic rename                                |
+| append       | sync, Aio, iterator | backend-dependent | returns unsupported where OpenDAL reports no append capability               |
 
 </details>
 <details>
@@ -53,13 +57,13 @@ Supported operations
 Aio interface
 </summary>
 
-| abstraction              | status                           | role                                                     |
-|:-------------------------|:---------------------------------|:---------------------------------------------------------|
-| OpendalAio               | implemented                      | nanonext-like handle for background Rust work            |
-| poll_aio()               | implemented                      | non-blocking readiness check                             |
-| collect_aio()/call_aio() | implemented                      | explicit wait and result collection                      |
-| stop_aio()               | implemented; needs race coverage | explicit cancellation request                            |
-| native C Aio             | implemented for byte operations  | downstream native packages can submit async reads/writes |
+| abstraction              | status                                                                | role                                                     |
+|:-------------------------|:----------------------------------------------------------------------|:---------------------------------------------------------|
+| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions | nanonext-like handle for background Rust work            |
+| poll_aio()               | implemented                                                           | non-blocking readiness check                             |
+| collect_aio()/call_aio() | implemented                                                           | explicit wait and result collection                      |
+| stop_aio()               | implemented; needs race coverage                                      | explicit cancellation request                            |
+| native C Aio             | implemented for byte operations                                       | downstream native packages can submit async reads/writes |
 
 </details>
 <details>
@@ -83,16 +87,16 @@ Read operations
 Write operations
 </summary>
 
-| function_or_path           | status            | tuning                                                           |
-|:---------------------------|:------------------|:-----------------------------------------------------------------|
-| fs_write()                 | implemented       | batch_concurrency, write_concurrency, chunk_size                 |
-| fs_replace()               | implemented       | same as fs_write()                                               |
-| fs_append()                | backend-dependent | same where append is supported                                   |
-| fs_write_iter()            | implemented       | one path returns a sink; many paths return a list of sinks       |
-| write_iter_write()         | implemented       | submit one raw chunk                                             |
-| write_iter_close()         | implemented       | finalize multipart/streaming write                               |
-| fs_tell()                  | implemented       | bytes submitted to write sink; seek is intentionally unsupported |
-| C write/replace/append Aio | implemented       | caller-owned input buffer                                        |
+| function_or_path              | status            | tuning                                                           |
+|:------------------------------|:------------------|:-----------------------------------------------------------------|
+| fs_write()/fs_write_aio()     | implemented       | batch_concurrency, write_concurrency, chunk_size                 |
+| fs_replace()/fs_replace_aio() | implemented       | same as fs_write()                                               |
+| fs_append()/fs_append_aio()   | backend-dependent | same where append is supported                                   |
+| fs_write_iter()               | implemented       | one path returns a sink; many paths return a list of sinks       |
+| write_iter_write()            | implemented       | submit one raw chunk                                             |
+| write_iter_close()            | implemented       | finalize multipart/streaming write                               |
+| fs_tell()                     | implemented       | bytes submitted to write sink; seek is intentionally unsupported |
+| C write/replace/append Aio    | implemented       | caller-owned input buffer                                        |
 
 </details>
 <details>
@@ -304,7 +308,7 @@ error_kind(err)
 #> [1] "AlreadyExists"
 ```
 
-Read operations can also return Aio handles.
+Remote operations can also return Aio handles.
 
 ``` r
 aio <- fs_read_aio(fs, "data.bin")
@@ -312,6 +316,21 @@ poll_aio(aio)
 #> [1] "pending"
 call_aio(aio)
 #> [1] 01 02 03 04
+
+stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
+stat$path
+#> [1] "data.bin"
+stat$size
+#> [1] 4
+collect_aio(fs_exists_aio(fs, "data.bin"))
+#> [1] TRUE
+entry <- collect_aio(fs_ls_aio(fs))[[1]]
+entry$path
+#> [1] "data.bin"
+entry$type
+#> [1] "file"
+collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
+#> [1] TRUE
 ```
 
 ## Related work

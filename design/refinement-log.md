@@ -376,7 +376,7 @@ ownership stay explicit.
 
 ### Async metadata and namespace operations
 
-Status: `provisional`
+Status: `implemented for R API; C metadata/entry parity still planned`
 
 The async-first contract applies to every operation that may perform backend I/O,
 not only byte reads/writes. On S3, Google Drive, HTTP-like remote services, and
@@ -410,3 +410,9 @@ entries, many, error, and cancelled states. R materialization of metadata/entrie
 still happens on the R thread. The C API should mirror this with R-free result
 accessors such as bool, entry, and entries result extraction, with returned
 pointers owned by the Aio until release.
+
+Implementation note: the R API now has `fs_stat_aio()`, `fs_stats_aio()`,
+`fs_exists_aio()`, `fs_ls_aio()`, `fs_mkdir_aio()`, `fs_delete_aio()`,
+`fs_copy_aio()`, `fs_rename_aio()`, `fs_write_aio()`, `fs_replace_aio()`, and
+`fs_append_aio()` over a generic `AioOutcome` that can materialize bytes, unit,
+bool, metadata, entries, many, errors, and cancellation.

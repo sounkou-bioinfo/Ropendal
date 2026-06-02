@@ -1,6 +1,6 @@
 use std::fs;
 
-use savvy::{savvy, OwnedListSexp, OwnedStringSexp};
+use savvy::{OwnedListSexp, OwnedStringSexp, savvy};
 use serde_json::Value;
 
 use crate::r_values::str_scalar;
@@ -133,7 +133,10 @@ fn build_s3_config(
     checked_scalar(secret_access_key, "secret_access_key")?;
     let mut out = vec![
         ("access_key_id".to_string(), access_key_id.to_string()),
-        ("secret_access_key".to_string(), secret_access_key.to_string()),
+        (
+            "secret_access_key".to_string(),
+            secret_access_key.to_string(),
+        ),
     ];
     if !session_token.is_empty() {
         out.push(("session_token".to_string(), session_token.to_string()));
@@ -151,8 +154,12 @@ fn build_gdrive_config(
     client_secret: &str,
 ) -> savvy::Result<Vec<(String, String)>> {
     match (!access_token.is_empty(), !refresh_token.is_empty()) {
-        (true, true) => Err(savvy::Error::new("use only one of access_token or refresh_token")),
-        (false, false) => Err(savvy::Error::new("access_token or refresh_token is required")),
+        (true, true) => Err(savvy::Error::new(
+            "use only one of access_token or refresh_token",
+        )),
+        (false, false) => Err(savvy::Error::new(
+            "access_token or refresh_token is required",
+        )),
         (true, false) => Ok(vec![("access_token".to_string(), access_token.to_string())]),
         (false, true) => {
             checked_scalar(client_id, "client_id")?;
@@ -278,7 +285,10 @@ mod tests {
     fn builds_s3_config() {
         let cfg = build_s3_config("access", "secret", "session", "region").unwrap();
         assert_eq!(cfg[0], ("access_key_id".to_string(), "access".to_string()));
-        assert_eq!(cfg[1], ("secret_access_key".to_string(), "secret".to_string()));
+        assert_eq!(
+            cfg[1],
+            ("secret_access_key".to_string(), "secret".to_string())
+        );
         assert_eq!(cfg[2], ("session_token".to_string(), "session".to_string()));
         assert_eq!(cfg[3], ("region".to_string(), "region".to_string()));
     }

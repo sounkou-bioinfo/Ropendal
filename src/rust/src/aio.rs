@@ -1,15 +1,29 @@
 use std::sync::{Arc, Mutex};
 
-use opendal::{Buffer, ErrorKind};
+use opendal::{Buffer, ErrorKind, Metadata};
 use savvy::savvy;
 use tokio::task::JoinHandle;
 
 use crate::error::{error_list, kind_code};
-use crate::r_values::{buffer_to_raw_sexp, str_scalar, success_value};
+use crate::metadata::metadata_list;
+use crate::r_values::{bool_scalar, buffer_to_raw_sexp, str_scalar, success_value};
+
+#[derive(Clone)]
+pub(crate) struct EntryOutcome {
+    pub(crate) path: String,
+    pub(crate) meta: Metadata,
+}
 
 #[derive(Clone)]
 pub(crate) enum AioOutcome {
     Bytes(Buffer),
+    Unit,
+    Bool(bool),
+    Metadata {
+        path: String,
+        meta: Metadata,
+    },
+    Entries(Vec<EntryOutcome>),
     Many(Vec<AioOutcome>),
     Error {
         kind: String,
@@ -24,6 +38,16 @@ pub(crate) enum AioOutcome {
 fn outcome_to_sexp(outcome: AioOutcome) -> savvy::Result<savvy::Sexp> {
     match outcome {
         AioOutcome::Bytes(bytes) => buffer_to_raw_sexp(bytes).map(|x| x.into()),
+        AioOutcome::Unit => success_value(),
+        AioOutcome::Bool(value) => bool_scalar(value)?.into(),
+        AioOutcome::Metadata { path, meta } => metadata_list(&path, &meta),
+        AioOutcome::Entries(entries) => {
+            let mut out = savvy::OwnedListSexp::new(entries.len(), false)?;
+            for (i, entry) in entries.into_iter().enumerate() {
+                out.set_value(i, metadata_list(&entry.path, &entry.meta)?)?;
+            }
+            out.into()
+        }
         AioOutcome::Many(values) => {
             let mut out = savvy::OwnedListSexp::new(values.len(), false)?;
             for (i, value) in values.into_iter().enumerate() {

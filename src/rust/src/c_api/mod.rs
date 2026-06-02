@@ -8,5 +8,5 @@ mod ops;
 mod sync;
 mod types;
 
-pub(crate) use error::{c_error_from_opendal, c_str, set_c_error, CErrorInfo};
+pub(crate) use error::{CErrorInfo, c_error_from_opendal, c_str, set_c_error};
 pub(crate) use types::*;

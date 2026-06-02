@@ -1,11 +1,11 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use opendal::Operator;
 
-use crate::common::{build_runtime, init_registry, NativeFs};
+use crate::common::{NativeFs, build_runtime, init_registry};
 
-use super::{c_error_from_opendal, c_str, set_c_error, CErrorInfo};
+use super::{CErrorInfo, c_error_from_opendal, c_str, set_c_error};
 use super::{ropendal_error, ropendal_fs, ropendal_kv};
 
 #[unsafe(no_mangle)]

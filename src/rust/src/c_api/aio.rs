@@ -2,8 +2,8 @@ use std::ptr;
 
 use opendal::ErrorKind;
 
-use super::{set_c_error, CErrorInfo};
-use super::{ropendal_aio, ropendal_error, COutcome};
+use super::{CErrorInfo, set_c_error};
+use super::{COutcome, ropendal_aio, ropendal_error};
 
 fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
     unsafe {

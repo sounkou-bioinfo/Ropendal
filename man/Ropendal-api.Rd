@@ -22,18 +22,30 @@
 \alias{fs_seek}
 \alias{fs_tell}
 \alias{fs_write}
+\alias{fs_write_aio}
 \alias{fs_replace}
+\alias{fs_replace_aio}
 \alias{fs_append}
+\alias{fs_append_aio}
 \alias{fs_write_iter}
 \alias{write_iter_write}
 \alias{write_iter_close}
 \alias{fs_stat}
+\alias{fs_stat_aio}
+\alias{fs_stats}
+\alias{fs_stats_aio}
 \alias{fs_exists}
+\alias{fs_exists_aio}
 \alias{fs_ls}
+\alias{fs_ls_aio}
 \alias{fs_mkdir}
+\alias{fs_mkdir_aio}
 \alias{fs_delete}
+\alias{fs_delete_aio}
 \alias{fs_copy}
+\alias{fs_copy_aio}
 \alias{fs_rename}
+\alias{fs_rename_aio}
 \alias{collect_aio}
 \alias{call_aio}
 \alias{stop_aio}
@@ -75,21 +87,36 @@ fs_tell(iter)
 fs_seek(iter, offset, whence = c("start", "current", "end"))
 fs_write(fs, path, data, batch_concurrency = NULL,
          write_concurrency = NULL, chunk_size = NULL)
+fs_write_aio(fs, path, data, batch_concurrency = NULL,
+             write_concurrency = NULL, chunk_size = NULL)
 fs_replace(fs, path, data, batch_concurrency = NULL,
            write_concurrency = NULL, chunk_size = NULL)
+fs_replace_aio(fs, path, data, batch_concurrency = NULL,
+               write_concurrency = NULL, chunk_size = NULL)
 fs_append(fs, path, data, batch_concurrency = NULL,
           write_concurrency = NULL, chunk_size = NULL)
+fs_append_aio(fs, path, data, batch_concurrency = NULL,
+              write_concurrency = NULL, chunk_size = NULL)
 fs_write_iter(fs, path, create = TRUE, append = FALSE,
               write_concurrency = NULL, chunk_size = NULL)
 write_iter_write(iter, data)
 write_iter_close(iter)
 fs_stat(fs, path, batch_concurrency = NULL)
+fs_stat_aio(fs, path, batch_concurrency = NULL)
+fs_stats(fs, path, batch_concurrency = NULL)
+fs_stats_aio(fs, path, batch_concurrency = NULL)
 fs_exists(fs, path, batch_concurrency = NULL)
+fs_exists_aio(fs, path, batch_concurrency = NULL)
 fs_ls(fs, path = "", recursive = FALSE)
+fs_ls_aio(fs, path = "", recursive = FALSE)
 fs_mkdir(fs, path)
+fs_mkdir_aio(fs, path, batch_concurrency = NULL)
 fs_delete(fs, path, recursive = FALSE, batch_concurrency = NULL)
+fs_delete_aio(fs, path, recursive = FALSE, batch_concurrency = NULL)
 fs_copy(fs, from, to)
+fs_copy_aio(fs, from, to, batch_concurrency = NULL)
 fs_rename(fs, from, to)
+fs_rename_aio(fs, from, to, batch_concurrency = NULL)
 collect_aio(aio)
 call_aio(aio)
 stop_aio(aio)
