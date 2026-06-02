@@ -38,6 +38,41 @@ pub struct ropendal_read_options {
 }
 
 #[repr(C)]
+pub struct ropendal_read_request {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) offset: u64,
+    pub(crate) size: u64,
+    pub(crate) has_size: i32,
+    pub(crate) content_length_hint: u64,
+    pub(crate) has_content_length_hint: i32,
+    pub(crate) version: *const c_char,
+}
+
+#[repr(C)]
+pub struct ropendal_read_into_request {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) offset: u64,
+    pub(crate) size: u64,
+    pub(crate) has_size: i32,
+    pub(crate) dst: *mut u8,
+    pub(crate) dst_len: usize,
+}
+
+#[repr(C)]
+pub struct ropendal_readv_options {
+    pub(crate) struct_size: usize,
+    pub(crate) batch_concurrency: usize,
+    pub(crate) part_concurrency: usize,
+    pub(crate) chunk_size: usize,
+    pub(crate) coalesce_gap: usize,
+    pub(crate) preserve_order: i32,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
 pub struct ropendal_write_options {
     pub(crate) struct_size: usize,
     pub(crate) path: *const c_char,

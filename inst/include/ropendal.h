@@ -34,7 +34,8 @@
  * the caller may reuse or free src immediately after a successful call. For
  * read_into and readv_into submissions, destination buffers remain owned by the
  * caller and must stay valid and writable until the Aio reaches a terminal state
- * and the caller has inspected the byte count/result.
+ * and the caller has inspected the byte count/result. readv_into destination
+ * buffers must not overlap because requests may be filled concurrently.
  *
  * Result pointers returned by ropendal_aio_result_bytes(),
  * ropendal_aio_result_entry(), ropendal_aio_result_entries(), and
@@ -275,7 +276,12 @@ ropendal_status_t ropendal_readv_aio(ropendal_fs_t *fs,
                                      ropendal_aio_t **out,
                                      ropendal_error_t **err);
 
-/* Each request owns dst and must keep it valid until aio reaches a terminal state. */
+/*
+ * Each request owns dst and must keep it valid and non-overlapping until aio
+ * reaches a terminal state. ropendal_aio_result_nread() returns the total bytes
+ * copied across requests;
+ * per-request result details are reserved for a future result accessor.
+ */
 ropendal_status_t ropendal_readv_into_aio(ropendal_fs_t *fs,
                                           const ropendal_read_into_request_t *requests,
                                           size_t n_requests,

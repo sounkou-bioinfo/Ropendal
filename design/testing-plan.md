@@ -120,12 +120,12 @@ Coverage:
 - pure C header compiles without R headers or `SEXP`
 - `ropendal_api_version()` and exported C symbols remain link-visible through the installed native library
 - pure C `ropendal_fs_open()` lifecycle contract
-- `ropendal_write_aio()` and `ropendal_read_into_aio()` fill caller-owned buffers
+- `ropendal_write_aio()`, `ropendal_read_into_aio()`, and `ropendal_readv_into_aio()` fill caller-owned buffers
 - `ropendal_exists_aio()` plus `ropendal_aio_result_bool()`
 - `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
 - `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`
 - namespace mutations `ropendal_mkdir_aio()`, `ropendal_copy_aio()`, `ropendal_rename_aio()`, and `ropendal_delete_aio()`
-- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_into_aio()`, per-request `readv` result/error reporting, and cancellation safety tests
+- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_aio()` result layout, per-request `readv` result/error reporting, and cancellation safety tests
 
 ### 90 CI-only API contract tests
 
@@ -222,7 +222,7 @@ Public option/result structs contain `struct_size` for ABI extensibility. Future
 
 Remaining important cases:
 
-- many async range reads into caller buffers
+- many async range reads into caller buffers (implemented for C `readv_into_aio()` happy path)
 - cancellation before completion
 - timeout wait
 - per-request failure in a vector read

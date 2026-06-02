@@ -21,6 +21,7 @@ expect_match(header_text, "ropendal_fs_open")
 expect_match(header_text, "ropendal_fs_from_uri")
 expect_match(header_text, "ropendal_replace_aio")
 expect_match(header_text, "ropendal_append_aio")
+expect_match(header_text, "ropendal_readv_into_aio")
 expect_match(header_text, "ropendal_exists_aio")
 expect_match(header_text, "ropendal_aio_result_bool")
 

@@ -1,17 +1,167 @@
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 use std::ptr;
 
-use opendal::options::{DeleteOptions, ListOptions};
+use futures::{StreamExt, stream};
+use opendal::options::{DeleteOptions, ListOptions, ReadOptions};
+use opendal::{Buffer, Operator};
 
-use crate::ops::{read_bytes, write_bytes};
+use crate::ops::{ReadTuning, write_bytes};
 use crate::path::normalize_user_path;
 use crate::r_values::copy_buffer_to_slice;
 
 use super::{AioCallback, CEntrySet, CErrorInfo, c_error_from_opendal, c_str, set_c_error};
 use super::{
     COutcome, ropendal_aio, ropendal_delete_options, ropendal_error, ropendal_fs,
-    ropendal_ls_options, ropendal_read_options, ropendal_write_options,
+    ropendal_ls_options, ropendal_read_into_request, ropendal_read_options, ropendal_read_request,
+    ropendal_readv_options, ropendal_write_options,
 };
+
+#[derive(Clone, Default)]
+struct CReadParams {
+    tuning: ReadTuning,
+    content_length_hint: Option<u64>,
+    version: Option<String>,
+    if_match: Option<String>,
+    if_none_match: Option<String>,
+}
+
+struct CReadIntoTask {
+    path: String,
+    offset: u64,
+    size: Option<u64>,
+    dst_addr: usize,
+    dst_len: usize,
+}
+
+fn c_optional_usize(value: usize) -> Option<usize> {
+    if value == 0 { None } else { Some(value) }
+}
+
+unsafe fn c_optional_string(
+    value: *const c_char,
+    operation: &str,
+    path: &str,
+) -> Result<Option<String>, CErrorInfo> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    match c_str(value) {
+        Ok(v) => Ok(Some(v)),
+        Err(mut e) => {
+            e.operation = operation.to_string();
+            e.path = path.to_string();
+            Err(e)
+        }
+    }
+}
+
+unsafe fn c_read_params_from_read_options(
+    opt: &ropendal_read_options,
+    operation: &str,
+    path: &str,
+) -> Result<CReadParams, CErrorInfo> {
+    Ok(CReadParams {
+        tuning: ReadTuning {
+            read_concurrency: c_optional_usize(opt.part_concurrency),
+            chunk_size: c_optional_usize(opt.chunk_size),
+            coalesce_gap: c_optional_usize(opt.coalesce_gap),
+        },
+        content_length_hint: if opt.has_content_length_hint != 0 {
+            Some(opt.content_length_hint)
+        } else {
+            None
+        },
+        version: c_optional_string(opt.version, operation, path)?,
+        if_match: c_optional_string(opt.if_match, operation, path)?,
+        if_none_match: c_optional_string(opt.if_none_match, operation, path)?,
+    })
+}
+
+fn c_read_params_from_readv_options(opt: Option<&ropendal_readv_options>) -> CReadParams {
+    match opt {
+        Some(opt) => CReadParams {
+            tuning: ReadTuning {
+                read_concurrency: c_optional_usize(opt.part_concurrency),
+                chunk_size: c_optional_usize(opt.chunk_size),
+                coalesce_gap: c_optional_usize(opt.coalesce_gap),
+            },
+            ..CReadParams::default()
+        },
+        None => CReadParams::default(),
+    }
+}
+
+async fn c_read_bytes_with(
+    op: Operator,
+    path: String,
+    offset: u64,
+    size: Option<u64>,
+    params: CReadParams,
+) -> Result<Buffer, opendal::Error> {
+    let mut opts = ReadOptions::default();
+    if let Some(n) = size {
+        opts.range = (offset..offset.saturating_add(n)).into();
+    } else if offset != 0 {
+        opts.range = (offset..).into();
+    }
+    opts.content_length_hint = params.content_length_hint;
+    opts.version = params.version;
+    opts.if_match = params.if_match;
+    opts.if_none_match = params.if_none_match;
+    if let Some(concurrent) = params.tuning.read_concurrency {
+        opts.concurrent = concurrent;
+    }
+    if let Some(chunk_size) = params.tuning.chunk_size {
+        opts.chunk = Some(chunk_size);
+    }
+    if let Some(gap) = params.tuning.coalesce_gap {
+        opts.gap = Some(gap);
+    }
+    op.read_options(&path, opts).await
+}
+
+async fn c_read_into_task(
+    op: Operator,
+    task: CReadIntoTask,
+    params: CReadParams,
+    operation: &'static str,
+) -> Result<usize, CErrorInfo> {
+    let path_for_error = task.path.clone();
+    match c_read_bytes_with(op, task.path, task.offset, task.size, params).await {
+        Ok(bytes) => {
+            if bytes.len() > task.dst_len {
+                Err(CErrorInfo {
+                    status: 2,
+                    kind: "InvalidArgument".to_string(),
+                    message: "destination buffer is smaller than result".to_string(),
+                    operation: operation.to_string(),
+                    path: path_for_error,
+                })
+            } else {
+                let n = bytes.len();
+                if n > 0 {
+                    unsafe {
+                        let dst =
+                            std::slice::from_raw_parts_mut(task.dst_addr as *mut u8, task.dst_len);
+                        copy_buffer_to_slice(bytes, &mut dst[..n]);
+                    }
+                }
+                Ok(n)
+            }
+        }
+        Err(e) => Err(c_error_from_opendal(e, operation, &path_for_error)),
+    }
+}
+
+fn c_batch_concurrency(value: usize, n: usize) -> usize {
+    if n == 0 {
+        1
+    } else if value == 0 {
+        n.min(16)
+    } else {
+        value.max(1).min(n)
+    }
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_read_into_aio(
@@ -60,7 +210,7 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
             return 2;
         }
     };
-    if opt.has_size != 0 && opt.size as usize > dst_len {
+    if opt.has_size != 0 && opt.size > dst_len as u64 {
         set_c_error(
             err,
             CErrorInfo {
@@ -73,39 +223,33 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
         );
         return 2;
     }
+    let params = match c_read_params_from_read_options(opt, "read_into", &path) {
+        Ok(v) => v,
+        Err(e) => {
+            set_c_error(err, e);
+            return 2;
+        }
+    };
     let native = (*fs).native.clone();
     let op = native.op.clone();
     let runtime = native.runtime.clone();
-    let offset = opt.offset;
-    let size = if opt.has_size != 0 {
-        Some(opt.size)
-    } else {
-        None
+    let task = CReadIntoTask {
+        path,
+        offset: opt.offset,
+        size: if opt.has_size != 0 {
+            Some(opt.size)
+        } else {
+            None
+        },
+        dst_addr: dst as usize,
+        dst_len,
     };
-    let dst_addr = dst as usize;
     let callback = opt.callback;
     let userdata_addr = opt.userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match read_bytes(op, path.clone(), offset, size).await {
-            Ok(bytes) => {
-                if bytes.len() > dst_len {
-                    COutcome::Error(CErrorInfo {
-                        status: 2,
-                        kind: "InvalidArgument".to_string(),
-                        message: "destination buffer is smaller than result".to_string(),
-                        operation: "read_into".to_string(),
-                        path,
-                    })
-                } else {
-                    let n = bytes.len();
-                    unsafe {
-                        let dst = std::slice::from_raw_parts_mut(dst_addr as *mut u8, dst_len);
-                        copy_buffer_to_slice(bytes, &mut dst[..n]);
-                    }
-                    COutcome::Nread(n)
-                }
-            }
-            Err(e) => COutcome::Error(c_error_from_opendal(e, "read_into", &path)),
+        let result = match c_read_into_task(op, task, params, "read_into").await {
+            Ok(n) => COutcome::Nread(n),
+            Err(info) => COutcome::Error(info),
         };
         if let Some(cb) = callback {
             cb(ptr::null_mut(), userdata_addr as *mut c_void);
@@ -155,6 +299,13 @@ pub unsafe extern "C" fn ropendal_read_aio(
             return 2;
         }
     };
+    let params = match c_read_params_from_read_options(opt, "read", &path) {
+        Ok(v) => v,
+        Err(e) => {
+            set_c_error(err, e);
+            return 2;
+        }
+    };
     let native = (*fs).native.clone();
     let op = native.op.clone();
     let runtime = native.runtime.clone();
@@ -165,7 +316,7 @@ pub unsafe extern "C" fn ropendal_read_aio(
         None
     };
     let handle = runtime.spawn(async move {
-        match read_bytes(op, path.clone(), offset, size).await {
+        match c_read_bytes_with(op, path.clone(), offset, size, params).await {
             Ok(bytes) => COutcome::Bytes(bytes.to_vec()),
             Err(e) => COutcome::Error(c_error_from_opendal(e, "read", &path)),
         }
@@ -846,15 +997,160 @@ pub unsafe extern "C" fn ropendal_mkdir_aio(
     )
 }
 
-macro_rules! unsupported_c_fn {
-    ($name:ident ( $($arg:ident : $typ:ty),* )) => {
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name($($arg:$typ),*) -> i32 {
-            $(let _ = $arg;)*
-            3
-        }
-    };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ropendal_readv_aio(
+    fs: *mut ropendal_fs,
+    requests: *const ropendal_read_request,
+    n_requests: usize,
+    opts: *const ropendal_readv_options,
+    out: *mut *mut ropendal_aio,
+    err: *mut *mut ropendal_error,
+) -> i32 {
+    let _ = (fs, requests, n_requests, opts);
+    if !out.is_null() {
+        *out = ptr::null_mut();
+    }
+    unsupported_option(
+        err,
+        "readv",
+        "",
+        "readv_aio result layout is not implemented; use readv_into_aio",
+    )
 }
 
-unsupported_c_fn!(ropendal_readv_aio(fs: *mut ropendal_fs, requests: *const c_void, n_requests: usize, opts: *const c_void, out: *mut *mut ropendal_aio, err: *mut *mut ropendal_error));
-unsupported_c_fn!(ropendal_readv_into_aio(fs: *mut ropendal_fs, requests: *const c_void, n_requests: usize, opts: *const c_void, out: *mut *mut ropendal_aio, err: *mut *mut ropendal_error));
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ropendal_readv_into_aio(
+    fs: *mut ropendal_fs,
+    requests: *const ropendal_read_into_request,
+    n_requests: usize,
+    opts: *const ropendal_readv_options,
+    out: *mut *mut ropendal_aio,
+    err: *mut *mut ropendal_error,
+) -> i32 {
+    if fs.is_null() || out.is_null() || (requests.is_null() && n_requests > 0) {
+        return invalid_ptr_error(err, "readv_into");
+    }
+
+    let mut tasks = Vec::with_capacity(n_requests);
+    for i in 0..n_requests {
+        let req = &*requests.add(i);
+        let path_raw = match c_str(req.path) {
+            Ok(v) => v,
+            Err(mut e) => {
+                e.operation = "readv_into".to_string();
+                set_c_error(err, e);
+                return 2;
+            }
+        };
+        let path = match normalize_user_path(&path_raw, false) {
+            Ok(p) => p,
+            Err(msg) => {
+                set_c_error(
+                    err,
+                    CErrorInfo {
+                        status: 2,
+                        kind: "InvalidArgument".to_string(),
+                        message: msg,
+                        operation: "readv_into".to_string(),
+                        path: path_raw,
+                    },
+                );
+                return 2;
+            }
+        };
+        if req.dst.is_null() {
+            set_c_error(
+                err,
+                CErrorInfo {
+                    status: 2,
+                    kind: "InvalidArgument".to_string(),
+                    message: "destination buffer pointer is null".to_string(),
+                    operation: "readv_into".to_string(),
+                    path,
+                },
+            );
+            return 2;
+        }
+        if req.has_size != 0 && req.size > req.dst_len as u64 {
+            set_c_error(
+                err,
+                CErrorInfo {
+                    status: 2,
+                    kind: "InvalidArgument".to_string(),
+                    message: "destination buffer is smaller than requested size".to_string(),
+                    operation: "readv_into".to_string(),
+                    path,
+                },
+            );
+            return 2;
+        }
+        tasks.push(CReadIntoTask {
+            path,
+            offset: req.offset,
+            size: if req.has_size != 0 {
+                Some(req.size)
+            } else {
+                None
+            },
+            dst_addr: req.dst as usize,
+            dst_len: req.dst_len,
+        });
+    }
+
+    let opt = if opts.is_null() { None } else { Some(&*opts) };
+    let params = c_read_params_from_readv_options(opt);
+    let callback = opt.map(|o| o.callback).unwrap_or(None);
+    let userdata_addr = opt.map(|o| o.userdata as usize).unwrap_or(0);
+    let concurrency =
+        c_batch_concurrency(opt.map(|o| o.batch_concurrency).unwrap_or(0), n_requests);
+    let native = (*fs).native.clone();
+    let op = native.op.clone();
+    let runtime = native.runtime.clone();
+    let handle = runtime.spawn(async move {
+        let result = if tasks.is_empty() {
+            COutcome::Nread(0)
+        } else {
+            let values = stream::iter(tasks.into_iter())
+                .map(|task| {
+                    let op = op.clone();
+                    let params = params.clone();
+                    async move { c_read_into_task(op, task, params, "readv_into").await }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+
+            let mut total = 0usize;
+            let mut first_error: Option<CErrorInfo> = None;
+            for value in values {
+                match value {
+                    Ok(n) => match total.checked_add(n) {
+                        Some(v) => total = v,
+                        None if first_error.is_none() => {
+                            first_error = Some(CErrorInfo {
+                                status: 2,
+                                kind: "InvalidArgument".to_string(),
+                                message: "readv byte count overflow".to_string(),
+                                operation: "readv_into".to_string(),
+                                path: String::new(),
+                            });
+                        }
+                        None => {}
+                    },
+                    Err(info) if first_error.is_none() => first_error = Some(info),
+                    Err(_) => {}
+                }
+            }
+            match first_error {
+                Some(info) => COutcome::Error(info),
+                None => COutcome::Nread(total),
+            }
+        };
+        if let Some(cb) = callback {
+            cb(ptr::null_mut(), userdata_addr as *mut c_void);
+        }
+        result
+    });
+    submit_handle(runtime, handle, out);
+    0
+}

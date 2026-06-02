@@ -83,7 +83,7 @@ Read operations
 | read_iter_next()                    | implemented | next chunk as raw bytes                                            |
 | read_iter_collect()                 | implemented | remaining chunks into one raw vector                               |
 | fs_seek()/fs_tell()                 | implemented | read iterator position within its read window                      |
-| C read_into_aio()                   | implemented | caller-owned output buffer                                         |
+| C read_into_aio()/readv_into_aio()  | implemented | caller-owned output buffer(s)                                      |
 
 </details>
 <details>

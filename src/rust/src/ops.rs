@@ -14,15 +14,6 @@ pub(crate) struct WriteTuning {
     pub(crate) chunk_size: Option<usize>,
 }
 
-pub(crate) async fn read_bytes(
-    op: Operator,
-    path: String,
-    offset: u64,
-    size: Option<u64>,
-) -> Result<Buffer, opendal::Error> {
-    read_bytes_with(op, path, offset, size, ReadTuning::default()).await
-}
-
 pub(crate) async fn read_bytes_with(
     op: Operator,
     path: String,
