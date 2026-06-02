@@ -80,5 +80,26 @@ tryCatch(
   finally = expect_true(identical(pending_fixture$stop(), TRUE))
 )
 
+cancel_fixture <- Ropendal:::OpendalHttpFixture$start(root, delay_ms = 1000)
+tryCatch(
+  {
+    cancel_fs <- opendal("http", endpoint = cancel_fixture$endpoint(), root = "/")
+    cancel_aio <- fs_read_aio(cancel_fs, "data.bin")
+    expect_equal(cancel_aio$state, "pending")
+    expect_true(unresolved(cancel_aio))
+    expect_true(identical(stop_aio(cancel_aio), TRUE))
+    expect_equal(cancel_aio$state, "cancelled")
+    expect_true(cancel_aio$resolved)
+    expect_false(unresolved(cancel_aio))
+    cancel_error <- cancel_aio$error
+    expect_true(is_error_value(cancel_error))
+    expect_equal(error_kind(cancel_error), "Cancelled")
+    cancel_value <- collect_aio(cancel_aio)
+    expect_true(is_error_value(cancel_value))
+    expect_equal(error_kind(cancel_value), "Cancelled")
+  },
+  finally = expect_true(identical(cancel_fixture$stop(), TRUE))
+)
+
 expect_true(identical(header_fixture$stop(), TRUE))
 expect_true(identical(fixture$stop(), TRUE))

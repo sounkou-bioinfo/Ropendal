@@ -166,6 +166,7 @@ typedef struct ropendal_readv_options {
   size_t part_concurrency;
   size_t chunk_size;
   size_t coalesce_gap;
+  /* Reserved; current result accessors report request order. */
   int preserve_order;
   ropendal_aio_callback_t callback;
   void *userdata;
@@ -279,6 +280,15 @@ ropendal_status_t ropendal_read_into_aio(ropendal_fs_t *fs,
                                          ropendal_aio_t **out,
                                          ropendal_error_t **err);
 
+/*
+ * Submit multiple independent range reads. Completion is a vector outcome:
+ * ropendal_aio_result_bytes() returns successful read payloads concatenated in
+ * request order, ropendal_aio_result_nread() returns the concatenated byte
+ * count, and ropendal_aio_result_readv() returns one per-request result in the
+ * same order. Byte offsets within the flattened payload are the cumulative
+ * nread values of previous result entries. Per-request backend failures do not
+ * fail the whole Aio; inspect each result status.
+ */
 ropendal_status_t ropendal_readv_aio(ropendal_fs_t *fs,
                                      const ropendal_read_request_t *requests,
                                      size_t n_requests,
@@ -290,7 +300,8 @@ ropendal_status_t ropendal_readv_aio(ropendal_fs_t *fs,
  * Each request owns dst and must keep it valid and non-overlapping until aio
  * reaches a terminal state. ropendal_aio_result_nread() returns the total bytes
  * copied across successful requests; ropendal_aio_result_readv() returns
- * per-request status/byte-count details.
+ * per-request status/byte-count details in request order. Per-request backend
+ * failures do not fail the whole Aio; inspect each result status.
  */
 ropendal_status_t ropendal_readv_into_aio(ropendal_fs_t *fs,
                                           const ropendal_read_into_request_t *requests,
@@ -416,7 +427,9 @@ void ropendal_aio_release(ropendal_aio_t *aio);
  * Result accessors wait for completion if needed. Byte and entry pointers are
  * borrowed from the Aio and remain valid until ropendal_aio_release(aio). For
  * read_into/readv_into operations, use ropendal_aio_result_nread() to learn how
- * many bytes were written into caller-owned buffers.
+ * many bytes were written into caller-owned buffers. For readv_aio(), bytes are
+ * the flattened successful payloads described above and result_readv() supplies
+ * the per-request lengths/statuses needed to split them.
  */
 ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
                                             const uint8_t **data,

@@ -28,6 +28,14 @@ struct CReadParams {
     if_none_match: Option<String>,
 }
 
+struct CReadTask {
+    index: usize,
+    path: String,
+    offset: u64,
+    size: Option<u64>,
+    params: CReadParams,
+}
+
 struct CReadIntoTask {
     index: usize,
     path: String,
@@ -1011,16 +1019,109 @@ pub unsafe extern "C" fn ropendal_readv_aio(
     out: *mut *mut ropendal_aio,
     err: *mut *mut ropendal_error,
 ) -> i32 {
-    let _ = (fs, requests, n_requests, opts);
-    if !out.is_null() {
-        *out = ptr::null_mut();
+    if fs.is_null() || out.is_null() || (requests.is_null() && n_requests > 0) {
+        return invalid_ptr_error(err, "readv");
     }
-    unsupported_option(
-        err,
-        "readv",
-        "",
-        "readv_aio result layout is not implemented; use readv_into_aio",
-    )
+
+    let opt = if opts.is_null() { None } else { Some(&*opts) };
+    let base_params = c_read_params_from_readv_options(opt);
+    let mut tasks = Vec::with_capacity(n_requests);
+    for i in 0..n_requests {
+        let req = &*requests.add(i);
+        let path_raw = match c_str(req.path) {
+            Ok(v) => v,
+            Err(mut e) => {
+                e.operation = "readv".to_string();
+                set_c_error(err, e);
+                return 2;
+            }
+        };
+        let path = match normalize_user_path(&path_raw, false) {
+            Ok(p) => p,
+            Err(msg) => {
+                set_c_error(
+                    err,
+                    CErrorInfo {
+                        status: 2,
+                        kind: "InvalidArgument".to_string(),
+                        message: msg,
+                        operation: "readv".to_string(),
+                        path: path_raw,
+                    },
+                );
+                return 2;
+            }
+        };
+        let mut params = base_params.clone();
+        params.content_length_hint = if req.has_content_length_hint != 0 {
+            Some(req.content_length_hint)
+        } else {
+            None
+        };
+        params.version = match c_optional_string(req.version, "readv", &path) {
+            Ok(v) => v,
+            Err(e) => {
+                set_c_error(err, e);
+                return 2;
+            }
+        };
+        tasks.push(CReadTask {
+            index: i,
+            path,
+            offset: req.offset,
+            size: if req.has_size != 0 {
+                Some(req.size)
+            } else {
+                None
+            },
+            params,
+        });
+    }
+
+    let callback = opt.map(|o| o.callback).unwrap_or(None);
+    let userdata_addr = opt.map(|o| o.userdata as usize).unwrap_or(0);
+    let concurrency =
+        c_batch_concurrency(opt.map(|o| o.batch_concurrency).unwrap_or(0), n_requests);
+    let native = (*fs).native.clone();
+    let op = native.op.clone();
+    let runtime = native.runtime.clone();
+    let handle = runtime.spawn(async move {
+        let values = stream::iter(tasks.into_iter())
+            .map(|task| {
+                let op = op.clone();
+                async move {
+                    let index = task.index;
+                    let path = task.path.clone();
+                    match c_read_bytes_with(op, task.path, task.offset, task.size, task.params)
+                        .await
+                    {
+                        Ok(bytes) => {
+                            let bytes = bytes.to_vec();
+                            CReadvTaskResult::Ok {
+                                index,
+                                path,
+                                nread: bytes.len(),
+                                bytes: Some(bytes),
+                            }
+                        }
+                        Err(e) => CReadvTaskResult::Error {
+                            index,
+                            info: c_error_from_opendal(e, "readv", &path),
+                        },
+                    }
+                }
+            })
+            .buffer_unordered(concurrency)
+            .collect::<Vec<_>>()
+            .await;
+        let result = COutcome::Readv(CReadvResultSet::from_task_results(values));
+        if let Some(cb) = callback {
+            cb(ptr::null_mut(), userdata_addr as *mut c_void);
+        }
+        result
+    });
+    submit_handle(runtime, handle, out);
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -1121,7 +1222,12 @@ pub unsafe extern "C" fn ropendal_readv_into_aio(
                 let path = task.path.clone();
                 async move {
                     match c_read_into_task(op, task, params, "readv_into").await {
-                        Ok(nread) => CReadvTaskResult::Ok { index, path, nread },
+                        Ok(nread) => CReadvTaskResult::Ok {
+                            index,
+                            path,
+                            nread,
+                            bytes: None,
+                        },
                         Err(info) => CReadvTaskResult::Error { index, info },
                     }
                 }

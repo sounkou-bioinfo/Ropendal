@@ -158,6 +158,7 @@ pub(crate) struct CEntrySet {
 pub(crate) struct CReadvResultSet {
     pub(crate) results: Vec<ropendal_readv_result>,
     pub(crate) total_nread: usize,
+    pub(crate) bytes: Vec<u8>,
     _strings: Vec<CReadvResultStrings>,
 }
 
@@ -184,6 +185,7 @@ pub(crate) enum CReadvTaskResult {
         index: usize,
         path: String,
         nread: usize,
+        bytes: Option<Vec<u8>>,
     },
     Error {
         index: usize,
@@ -273,6 +275,7 @@ impl Clone for CReadvResultSet {
         Self {
             results,
             total_nread: self.total_nread,
+            bytes: self.bytes.clone(),
             _strings: strings,
         }
     }
@@ -287,10 +290,19 @@ impl CReadvResultSet {
         let mut strings = Vec::with_capacity(values.len());
         let mut results = Vec::with_capacity(values.len());
         let mut total_nread = 0usize;
+        let mut bytes = Vec::new();
         for value in values {
             let (index, status, nread, kind, message, path) = match value {
-                CReadvTaskResult::Ok { index, path, nread } => {
+                CReadvTaskResult::Ok {
+                    index,
+                    path,
+                    nread,
+                    bytes: result_bytes,
+                } => {
                     total_nread = total_nread.saturating_add(nread);
+                    if let Some(result_bytes) = result_bytes {
+                        bytes.extend_from_slice(&result_bytes);
+                    }
                     (index, 0, nread, String::new(), String::new(), path)
                 }
                 CReadvTaskResult::Error { index, info } => {
@@ -317,6 +329,7 @@ impl CReadvResultSet {
         Self {
             results,
             total_nread,
+            bytes,
             _strings: strings,
         }
     }

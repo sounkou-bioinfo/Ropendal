@@ -48,7 +48,7 @@ operation_progress <- data.frame(
 
 aio_progress <- data.frame(
   abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte, metadata, entry/list, bool, and unit operations"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, and unit operations"),
   role = c(
     "nanonext-like handle for background Rust work",
     "$value/$data/$result plus $state/$resolved/$error",
@@ -60,7 +60,7 @@ aio_progress <- data.frame(
 )
 
 read_progress <- data.frame(
-  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_bytes()/fs_read_bytes_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_into_aio()/readv_into_aio()"),
+  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_bytes()/fs_read_bytes_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_aio()/read_into_aio()/readv_aio()/readv_into_aio()"),
   status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
   tuning = c(
     "batch_concurrency, read_concurrency, chunk_size, coalesce_gap",
@@ -70,7 +70,7 @@ read_progress <- data.frame(
     "next chunk as raw bytes",
     "remaining chunks into one raw vector",
     "read iterator position within its read window",
-    "caller-owned output buffer(s)"
+    "borrowed result bytes or caller-owned output buffers"
   )
 )
 
@@ -230,11 +230,12 @@ length(chunk_head)
 
 ## Google Drive example
 
-Google Drive handles use explicit credentials. The README render can opt into a
-real Google Drive read by setting credential paths in the environment; `make rdm`
-sets local defaults for a `gdrive3` account directory when present.
+Google Drive handles use explicit credentials. The README render does not supply
+or discover credentials. To run this chunk locally, set `ROPENDAL_README_GDRIVE=true`
+plus `ROPENDAL_GDRIVE_SECRET_JSON`, `ROPENDAL_GDRIVE_TOKENS_JSON`, and
+`ROPENDAL_GDRIVE_ROOT` in the environment before rendering.
 
-```{r gdrive-example, eval = file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
+```{r gdrive-example, eval = identical(Sys.getenv("ROPENDAL_README_GDRIVE"), "true") && file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
 gdrive_fs <- opendal(
   "gdrive",
   root = Sys.getenv("ROPENDAL_GDRIVE_ROOT", "Ropendal"),

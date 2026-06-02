@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, metadata/existence, listing, and namespace operations against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, read-vector, metadata/existence, listing, and namespace operations against the installed native library.
 
 ## CI matrix
 
@@ -86,7 +86,7 @@ GitHub Actions jobs:
 | active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | pending | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested by default, deterministic pending behavior tested with delayed local HTTP fixture |
 | `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
-| `stop_aio()` cancellation | yes | partial | no | no | cancel path exists; needs race tests |
+| `stop_aio()` / C Aio cancellation | yes | partial | no | yes | delayed HTTP fixture covers R pending-read cancellation; installed C roundtrip covers `ropendal_aio_cancel()`; broader race/service coverage still useful |
 | condition variables `cv_*` | yes | C-only partial | no | header only | planned for R |
 | `aio_monitor()` / `read_monitor()` | yes | no | no | no | planned |
 | `race_aio()` | yes | no | no | no | planned |
@@ -100,17 +100,18 @@ GitHub Actions jobs:
 | exported C symbols retained in installed library | yes | yes | no | yes | C anchor file references public C API |
 | opaque `ropendal_fs_t` / `ropendal_aio_t` | yes | yes | no | yes | roundtrip test |
 | `ropendal_fs_open()` | yes | yes | no | yes | local `fs` roundtrip |
-| `ropendal_fs_from_uri()` | yes | yes | no | symbol | not exercised yet |
-| async `read_aio()` | yes | yes | no | symbol | result bytes not exercised yet |
+| `ropendal_fs_from_uri()` | yes | yes | no | yes | local `fs://` roundtrip |
+| async `read_aio()` | yes | yes | no | yes | borrowed byte result roundtrip |
 | async `read_into_aio()` | yes | yes | no | yes | caller buffer roundtrip |
+| async `readv_aio()` | yes | yes | no | yes | installed-library roundtrip returns flattened borrowed bytes plus per-request success/failure details |
 | async `readv_into_aio()` | yes | yes | no | yes | installed-library roundtrip fills multiple caller-owned range buffers and checks per-request success/failure result details |
 | `write_aio()` create | yes | yes | no | yes | roundtrip |
-| `replace_aio()` | yes | yes | no | symbol | planned test |
-| `append_aio()` | yes | partial | no | symbol | backend capability dependent |
+| `replace_aio()` | yes | yes | no | yes | local `fs` roundtrip |
+| `append_aio()` | yes | partial | no | yes | local `fs` roundtrip; broader backend capability coverage remains service-dependent |
 | `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
-| `cv` primitives | yes | partial | no | symbol | basic alloc/wait/signal exists |
+| `cv` primitives | yes | partial | no | yes | installed C roundtrip covers alloc/value/signal/reset/timed wait |
 | monitor primitives | yes | unsupported stub | no | symbol | planned |
-| per-request `readv_into` result details | yes | yes | no | yes | `ropendal_readv_result_t` plus `ropendal_aio_result_readv()`; `readv_aio()` bytes result layout still planned |
+| per-request read-vector result details | yes | yes | no | yes | `ropendal_readv_result_t` plus `ropendal_aio_result_readv()` for both `readv_aio()` and `readv_into_aio()` |
 
 ## Next implementation milestones
 
@@ -119,7 +120,7 @@ GitHub Actions jobs:
 3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
 5. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
-6. Bring native C API parity up to the async operation contract: `readv_aio()` bytes result layout and broader service tests.
+6. Bring native C API parity up to the async operation contract with broader remote-service and cancellation-race coverage.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests by service profile and return classed capability values.
 9. Expand credential helpers beyond Google Drive and add more service coverage.

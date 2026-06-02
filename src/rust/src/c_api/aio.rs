@@ -124,13 +124,21 @@ pub unsafe extern "C" fn ropendal_aio_result_bytes(
             status
         }
         Ok(COutcome::Cancelled) => 7,
-        Ok(
-            COutcome::Unit
-            | COutcome::Bool(_)
-            | COutcome::Entry(_)
-            | COutcome::Entries(_)
-            | COutcome::Readv(_),
-        ) => {
+        Ok(COutcome::Readv(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Readv(ref set)) = *cached {
+                if set.bytes.is_empty() {
+                    *data = ptr::null();
+                } else {
+                    *data = set.bytes.as_ptr();
+                }
+                *len = set.bytes.len();
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Unit | COutcome::Bool(_) | COutcome::Entry(_) | COutcome::Entries(_)) => {
             *data = ptr::null();
             *len = 0;
             0

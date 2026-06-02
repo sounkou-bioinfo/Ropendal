@@ -59,14 +59,14 @@ Supported operations
 Aio interface
 </summary>
 
-| abstraction              | status                                                                | role                                                                    |
-|:-------------------------|:----------------------------------------------------------------------|:------------------------------------------------------------------------|
-| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions | nanonext-like handle for background Rust work                           |
-| active bindings          | implemented                                                           | $value/$data/\$result plus $state/$resolved/\$error                     |
-| poll_aio()               | implemented                                                           | non-blocking readiness check                                            |
-| collect_aio()/call_aio() | implemented                                                           | collect returns value; call waits/updates and returns the Aio invisibly |
-| stop_aio()               | implemented; needs race coverage                                      | explicit cancellation request                                           |
-| native C Aio             | implemented for byte, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
+| abstraction              | status                                                                             | role                                                                    |
+|:-------------------------|:-----------------------------------------------------------------------------------|:------------------------------------------------------------------------|
+| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions              | nanonext-like handle for background Rust work                           |
+| active bindings          | implemented                                                                        | $value/$data/\$result plus $state/$resolved/\$error                     |
+| poll_aio()               | implemented                                                                        | non-blocking readiness check                                            |
+| collect_aio()/call_aio() | implemented                                                                        | collect returns value; call waits/updates and returns the Aio invisibly |
+| stop_aio()               | implemented with delayed HTTP cancellation coverage                                | explicit cancellation request                                           |
+| native C Aio             | implemented for byte, read-vector, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
 
 </details>
 <details>
@@ -74,16 +74,16 @@ Aio interface
 Read operations
 </summary>
 
-| function_or_path                    | status      | tuning                                                             |
-|:------------------------------------|:------------|:-------------------------------------------------------------------|
-| fs_read()                           | implemented | batch_concurrency, read_concurrency, chunk_size, coalesce_gap      |
-| fs_read_aio()                       | implemented | same as fs_read()                                                  |
-| fs_read_bytes()/fs_read_bytes_aio() | implemented | Rust-owned OpendalBytes handles; explicit as.raw() materialization |
-| fs_read_iter()                      | implemented | one path returns a handle; many paths return a list of handles     |
-| read_iter_next()                    | implemented | next chunk as raw bytes                                            |
-| read_iter_collect()                 | implemented | remaining chunks into one raw vector                               |
-| fs_seek()/fs_tell()                 | implemented | read iterator position within its read window                      |
-| C read_into_aio()/readv_into_aio()  | implemented | caller-owned output buffer(s)                                      |
+| function_or_path                                          | status      | tuning                                                             |
+|:----------------------------------------------------------|:------------|:-------------------------------------------------------------------|
+| fs_read()                                                 | implemented | batch_concurrency, read_concurrency, chunk_size, coalesce_gap      |
+| fs_read_aio()                                             | implemented | same as fs_read()                                                  |
+| fs_read_bytes()/fs_read_bytes_aio()                       | implemented | Rust-owned OpendalBytes handles; explicit as.raw() materialization |
+| fs_read_iter()                                            | implemented | one path returns a handle; many paths return a list of handles     |
+| read_iter_next()                                          | implemented | next chunk as raw bytes                                            |
+| read_iter_collect()                                       | implemented | remaining chunks into one raw vector                               |
+| fs_seek()/fs_tell()                                       | implemented | read iterator position within its read window                      |
+| C read_aio()/read_into_aio()/readv_aio()/readv_into_aio() | implemented | borrowed result bytes or caller-owned output buffers               |
 
 </details>
 <details>
@@ -284,10 +284,11 @@ length(chunk_head)
 
 ## Google Drive example
 
-Google Drive handles use explicit credentials. The README render can opt
-into a real Google Drive read by setting credential paths in the
-environment; `make rdm` sets local defaults for a `gdrive3` account
-directory when present.
+Google Drive handles use explicit credentials. The README render does
+not supply or discover credentials. To run this chunk locally, set
+`ROPENDAL_README_GDRIVE=true` plus `ROPENDAL_GDRIVE_SECRET_JSON`,
+`ROPENDAL_GDRIVE_TOKENS_JSON`, and `ROPENDAL_GDRIVE_ROOT` in the
+environment before rendering.
 
 ``` r
 gdrive_fs <- opendal(
@@ -301,18 +302,9 @@ gdrive_fs <- opendal(
 
 gdrive_path <- Sys.getenv("ROPENDAL_GDRIVE_FILE", "map_catalog.txt")
 fs_stat(gdrive_fs, gdrive_path)[c("path", "type", "size")]
-#> $path
-#> [1] "map_catalog.txt"
-#> 
-#> $type
-#> [1] "file"
-#> 
-#> $size
-#> [1] 547
 
 catalog_head <- fs_read(gdrive_fs, gdrive_path, offset = 0, size = 80)
 length(catalog_head)
-#> [1] 80
 ```
 
 Filesystem failures are returned as values.
@@ -385,7 +377,7 @@ Common development targets:
   make test-s3-minio   start local MinIO and run writable S3-compatible tests
   make test-gdrive     run opt-in Google Drive tests using explicit env paths
   make test-ci         run C API checks and CI-only tinytest
-  make rdm             render README.md from README.Rmd
+  make rdm             render README.md from README.Rmd without private credentials
   make bench-minio-paws render development MinIO benchmark
   make check           build and run R CMD check --as-cran --no-manual
 make[1]: Leaving directory '/root/Ropendal'

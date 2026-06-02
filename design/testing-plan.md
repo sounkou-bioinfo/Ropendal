@@ -119,14 +119,15 @@ Coverage:
 
 - pure C header compiles without R headers or `SEXP`
 - `ropendal_api_version()` and exported C symbols remain link-visible through the installed native library
-- pure C `ropendal_fs_open()` lifecycle contract
-- `ropendal_write_aio()`, `ropendal_read_into_aio()`, and `ropendal_readv_into_aio()` fill caller-owned buffers
+- pure C `ropendal_fs_open()` and `ropendal_fs_from_uri()` lifecycle contract
+- `ropendal_write_aio()`, `ropendal_replace_aio()`, `ropendal_append_aio()`, `ropendal_read_aio()`, `ropendal_readv_aio()`, `ropendal_read_into_aio()`, and `ropendal_readv_into_aio()` cover borrowed byte results and caller-owned buffers
 - `ropendal_exists_aio()` plus `ropendal_aio_result_bool()`
 - `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
 - `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`
 - namespace mutations `ropendal_mkdir_aio()`, `ropendal_copy_aio()`, `ropendal_rename_aio()`, and `ropendal_delete_aio()`
-- `ropendal_aio_result_readv()` reports per-request `readv_into` success/failure status and byte counts
-- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_aio()` bytes result layout, and cancellation safety tests
+- `ropendal_aio_result_readv()` reports per-request `readv_aio`/`readv_into` success/failure status and byte counts
+- `ropendal_cv_alloc()`, `ropendal_cv_signal()`, `ropendal_cv_reset()`, `ropendal_cv_value()`, and timed wait lifecycle
+- still planned: broader cancellation race/service coverage
 
 ### 90 CI-only API contract tests
 
@@ -223,9 +224,9 @@ Public option/result structs contain `struct_size` for ABI extensibility. Future
 
 Remaining important cases:
 
-- many async range reads into caller buffers (implemented for C `readv_into_aio()` happy path)
-- cancellation before completion
+- many async range reads as borrowed bytes or into caller buffers (implemented for C `readv_aio()` and `readv_into_aio()` happy paths)
+- cancellation before completion (implemented for R `stop_aio()` with delayed HTTP fixture and C `ropendal_aio_cancel()` roundtrip; broader race coverage still useful)
 - timeout wait
-- per-request failure in a vector read (implemented for C `readv_into_aio()` roundtrip)
+- per-request failure in a vector read (implemented for C `readv_aio()` and `readv_into_aio()` roundtrips)
 - release order: aio before fs and fs before aio
 - monitor/notification flow using `ropendal_cv_*` and `ropendal_monitor_*`
