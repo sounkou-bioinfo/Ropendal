@@ -54,10 +54,6 @@ crate, Ropendal can in principle grow to support any OpenDAL service;
 adding a new service still needs Ropendal-side configuration,
 credential, and test coverage.
 
-Source builds can select Cargo features with configure arguments,
-following the same pattern used in
-[Rzarrs](https://github.com/sounkou-bioinfo/Rzarrs).
-
 ``` r
 # Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
 install.packages(
