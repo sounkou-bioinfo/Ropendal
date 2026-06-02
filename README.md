@@ -237,36 +237,16 @@ s3fs <- opendal(
 
 fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
 fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
-startsWith(fasta_head, ">chr1")
-#> [1] TRUE
+stopifnot(startsWith(fasta_head, ">chr1"))
 
 fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
-#> $path
-#> [1] "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
-#>
-#> $type
-#> [1] "file"
-#>
-#> $size
-#> [1] 3263683042
 
 vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
 fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
-#> $path
-#> [1] "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
-#>
-#> $type
-#> [1] "file"
-#>
-#> $size
-#> [1] 405302
 
 vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
 con <- gzcon(rawConnection(vcf_head_gz))
 readLines(con, n = 3)
-#> [1] "##fileformat=VCFv4.0"
-#> [2] "##FILTER=<ID=PASS,Description=\"All filters passed\">"
-#> [3] "##fileDate=20140627"
 close(con)
 ```
 
