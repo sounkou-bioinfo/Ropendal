@@ -11,9 +11,50 @@ The API borrows deliberately from `nanonext`:
 - `call_aio()` waits and updates the Aio object
 - `collect_aio()` returns the resolved value
 - `unresolved()` is suitable for polling/control flow
-- serializers are plug-and-play raw-vector codecs
+- serializers are explicit R object-to-byte materializers
 
 The `savvy-async-poc` pattern is useful for ALTREP-backed lazy vectors, but explicit Aio handles are the primary async abstraction.
+
+## Core constitution
+
+Ropendal's stable center is an async, capability-aware byte substrate over
+OpenDAL. The core should stay as small as possible:
+
+| Core value | Meaning |
+|---|---|
+| `OpendalFs` | capability-bearing OpenDAL operator handle plus runtime/config |
+| `OpendalAio` | one in-flight or resolved async operation |
+| `OpendalBytes` | planned immutable Rust-owned bytes exposed to R as a handle |
+| Request/options | normalized operation description, ranges, concurrency, and transfer tuning |
+
+Everything else is an adapter or materialization layer. R objects, `SEXP` values,
+R closures, and serializer/deserializer hooks must not enter Tokio/background
+work. Background work operates on owned bytes, metadata, native codec state,
+paths, options, and errors only.
+
+The package therefore uses three layers:
+
+1. **Byte future**: Rust/OpenDAL owns async I/O and resolves to owned bytes,
+   metadata, success, or error values.
+2. **Materializer**: R-thread conversion between bytes and R representations
+   such as `raw`, text, serialized R objects, matrix columns, or data frames.
+3. **Adapter**: convenience surfaces such as iterators, Aio active bindings,
+   future connection wrappers, promises/later integration, or package-specific
+   serializers.
+
+Read/write are intentionally asymmetric at the R boundary. Reads can complete
+into Rust-owned bytes first and materialize later. Writes from ordinary R values
+must serialize or copy into stable owned bytes before background upload. The
+planned `OpendalBytes` type provides the copy-minimized R-facing byte handle:
+remote bytes can be read into Rust-owned storage, passed around in R, converted
+to `raw` explicitly, or written back without routing through another R raw-vector
+payload.
+
+R connections are compatibility adapters, not the core abstraction. A future
+connection API should wrap read/write iterators so `readBin()`, `writeBin()`,
+`serialize(obj, con)`, and `unserialize(con)` can be useful, while preserving the
+same byte-future, multipart-finalization, range-read, and provider-error
+semantics.
 
 ## Avoid `list`
 
@@ -483,7 +524,10 @@ fs_delete(fs, path, recursive = FALSE, version = NULL)
 
 ## Serialization, deserialization, and codecs
 
-The filesystem core moves bytes. Object support is a layer above bytes and must be symmetric: every custom serializer has a matching deserializer.
+The filesystem core moves bytes. Object support is a materialization layer above bytes and must be symmetric: every custom serializer has a matching deserializer. Keep the names precise:
+
+- **serializers** convert R objects to/from bytes and may touch the R API;
+- **codecs** transform bytes to/from bytes and can be native/background-safe when implemented without R callbacks.
 
 ### Native modes
 
@@ -526,11 +570,12 @@ cfg <- serial_config(
 
 Rules:
 
-- `sfunc(object)` must return a raw vector.
-- `ufunc(raw)` is the deserializer and returns an R object.
-- R serializer and deserializer closures run on the R thread.
-- `fs_write_aio(..., mode = "serial")` serializes synchronously first, then uploads asynchronously.
-- `fs_read_aio(..., mode = "serial")` downloads asynchronously; `$data`/`collect_aio()` deserializes on the R thread after resolution.
+- `sfunc(object)` must return bytes (`raw` initially; later also `OpendalBytes` if useful).
+- `ufunc(raw_or_bytes)` is the deserializer and returns an R object.
+- R serializer and deserializer closures run only on the R thread.
+- `fs_write_aio(..., mode = "serial")` serializes on the R thread before submitting the async upload.
+- For vectorized serial writes, serialize one item on the R thread and submit its upload before serializing the next, so later R-thread serialization can overlap earlier background byte uploads without moving R objects into worker tasks.
+- `fs_read_aio(..., mode = "serial")` downloads asynchronously; `$data`/`collect_aio()` deserializes on the R thread after bytes resolve.
 - Passing `list()` to `opt(fs, "serial") <- list()` removes custom hooks, matching nanonext.
 
 Implementation note: for `mode = "serial"`, prefer an R serialization envelope with refhook-like custom serialization, not bare codec bytes. This lets the deserializer be chosen from the serialized stream, provided the same `serial_config()` is available at read time.
@@ -544,31 +589,30 @@ deserialize_raw(raw, config = opt(fs, "serial"))
 
 ### Named codecs
 
-Named codecs are different from `serial_config()`: they are storage-format codecs with explicit read-side selection by name, content type, extension, or sniffing. They also include both serializer and deserializer functions.
+Named codecs are different from `serial_config()`: they are storage-format byte transforms with explicit read-side selection by name, content type, extension, or sniffing. Built-in/native codecs should not call the R API and may run inside Rust async/background work. R-closure codecs, if ever allowed, must be treated like serializers and run on the R thread only.
 
 ```r
 codec <- codec_config(
-  name = "arrow_ipc",
-  class = "ArrowTabular",
-  sfunc = function(x) arrow::write_ipc_stream(x, raw()),
-  ufunc = function(x) arrow::read_ipc_stream(x),
-  content_type = "application/vnd.apache.arrow.stream",
-  extensions = c("arrow", "arrows"),
-  sniff = function(raw) startsWith(rawToChar(raw[1:6]), "ARROW")
+  name = "zstd",
+  encoder = "zstd",
+  decoder = "zstd",
+  content_encoding = "zstd",
+  extensions = "zst"
 )
 
 opt(fs, "codec") <- codec
 
-fs_write(fs, "table.arrow", tbl, mode = "codec", codec = "arrow_ipc")
-fs_read(fs, "table.arrow", mode = "codec", codec = "arrow_ipc")
+fs_write(fs, "x.bin.zst", raw_vec, mode = "raw", codec = "zstd")
+fs_read(fs, "x.bin.zst", mode = "raw", codec = "zstd")
 ```
 
 Core codec selection should be explicit to avoid hidden deserializer surprises:
 
 - `mode = "serial"` follows nanonext-like `serial_config(class, sfunc, ufunc)` semantics.
-- `mode = "codec"` requires an explicit `codec =` or an explicitly configured default codec on the filesystem handle.
+- `codec =` applies a bytes-to-bytes transform before write or after read; it does not decide R object classes.
 - No automatic extension/content-type/sniff selection in the core API initially. Those can be adapter/plugin policy later.
-- Do not silently fall back to R serialization in `mode = "codec"`; use `mode = "serial"` for base R serialization semantics.
+- Do not silently fall back to R serialization for codecs; use `mode = "serial"` for base R serialization semantics.
+- Native codecs can be shared with the C API because they are R-free byte transforms.
 
 For one-off reads, allow an explicit deserializer without registering a codec:
 

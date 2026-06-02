@@ -109,16 +109,16 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Continue I/O polishing: serializer modes and service-level concurrency layers. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
-2. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
-3. Expand `fs_read()` vector/list range handling in Rust, including nested result shapes and request-object/data-frame inputs.
-4. Implement native C `readv_into_aio()` result structs and tests.
-5. Add R active bindings for Aio result access.
-6. Add cancellation tests and completion notification tests.
-7. Expand capability tests by service profile and return classed capability values.
-8. Implement serializers/deserializers.
-9. Expand credential helpers beyond Google Drive and add more service coverage.
-10. Decide whether to add an HTTP listing adapter that parses an explicit index format.
+1. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
+2. Make the R Aio contract nanonext-like: active `$data`/`$result`/state bindings, unresolved values while pending, `call_aio()` as wait/update, and `collect_aio()` as value-returning collection.
+3. Add R async write APIs: `fs_write_aio()`, `fs_replace_aio()`, and `fs_append_aio()` with R input stabilized before background upload.
+4. Continue I/O polishing: service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
+5. Implement serializers/deserializers only after byte Aio is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
+6. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
+7. Implement native C `readv_into_aio()` result structs and tests.
+8. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
+9. Expand capability tests by service profile and return classed capability values.
+10. Expand credential helpers beyond Google Drive and add more service coverage.
 
 ## Deferred milestones
 
