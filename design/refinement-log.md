@@ -300,3 +300,76 @@ plain nested list assembled in R. R-level interfaces such as `ReadableFs`,
 `WritableFs`, or `ListableFs` can be useful for consumers, but support is a
 runtime property of the handle/profile and must ultimately be enforced by Rust
 operation methods returning `opendalUnsupportedValue` where appropriate.
+
+### Serializer, codec, and R API thread boundary
+
+Status: `provisional`
+
+Do not move `SEXP`, savvy `FunctionSexp`, R closures, or arbitrary R objects into
+Tokio/background tasks. Savvy-generated entrypoints run on the R thread; savvy's
+`Send`/`Sync` implementations for narrow items such as ALTREP class descriptors
+are not a license to call the R API concurrently. ALTREP callbacks are also R VM
+callbacks, not a general background scheduler.
+
+Split conversion into two layers:
+
+- **Serializers** are R object <-> raw-byte conversions. `serial_config(class,
+  sfunc, ufunc)` remains nanonext-like: `sfunc(object)` returns raw bytes and
+  `ufunc(raw)` returns an R object. These functions may touch R and must run only
+  on the R thread.
+- **Codecs** are raw-byte <-> raw-byte transforms. Built-in/native codecs may run
+  in Rust async/background work and can be exposed consistently to the C API.
+  R-closure codecs, if ever allowed, must be treated like serializers and run on
+  the R thread only.
+
+Async semantics should be future/phase based around bytes:
+
+- `fs_write(..., mode = "serial")` serializes on the R thread before submitting
+  the async upload. For vectorized writes, serialize one item on the R thread and
+  submit its upload before serializing the next, so uploads may overlap later
+  serialization without background tasks touching R.
+- `fs_read_aio(..., mode = "serial")` downloads bytes asynchronously. Collection
+  waits for bytes, then deserializes on the R thread before returning the final R
+  object. Polling may distinguish pending I/O from ready-bytes/pending-decode if
+  needed.
+- The C API remains byte-first. Native consumers own object serialization unless
+  they opt into pure byte codecs; the C API must not mention `SEXP` or R-specific
+  serializer objects.
+
+### Byte materialization, R connections, and read/write asymmetry
+
+Status: `provisional`
+
+There are three distinct layers that must not be conflated:
+
+1. **Byte future**: Rust/OpenDAL owns in-flight I/O and resolves to owned bytes,
+   or writes from bytes whose lifetime is independent of R's heap.
+2. **Materializer**: conversion between bytes and an R representation. Returning
+   an R `raw` vector, extracting bytes from a matrix column, or running
+   `serialize()` all touch the R API and must run on the R thread.
+3. **Adapter**: convenience surfaces such as iterators, Aio collection helpers,
+   and possible R connection wrappers.
+
+Read and write are inherently asymmetric at the R boundary. Reads can complete
+into Rust-owned bytes first and delay materialization into an R `raw` vector or R
+object until collection/access. Writes that start from ordinary R objects must
+first serialize or copy into stable owned bytes before background upload. A truly
+borrowed async write from R memory would require an explicit lifetime contract
+and is not safe for ordinary R vectors because of mutation and GC interaction.
+
+A future advanced R-facing byte object can make this explicit: e.g. an immutable
+`OpendalBytes` external-pointer/ALTREP-like value containing Rust-owned bytes,
+with `as.raw()` materialization when needed. Such an object can be passed back to
+Ropendal for writes without routing through another R raw-vector payload. If a
+user passes a normal R `raw`, matrix, character vector, or arbitrary object, the
+package still has to touch the R API on the R thread to copy or serialize.
+
+R's connection API is an adapter candidate, not the core abstraction. `readBin()`
+and `writeBin()` operate through a connection's synchronous callbacks; a
+non-blocking connection returns what is currently available, but it does not make
+R API calls safe on background threads. Ropendal can later expose read/write
+connections backed by `fs_read_iter()` and `fs_write_iter()` for compatibility,
+with `seek` mapped to range reads where possible and write `close()` mapped to
+multipart/finalize. The core API should remain byte futures plus iterators/Aio so
+provider errors, object-store range semantics, multipart finalization, and C API
+ownership stay explicit.
