@@ -57,11 +57,39 @@ expect_equal(error_kind(missing), "NotFound")
 expect_false(fs_exists(fs, "missing.bin"))
 expect_true(fs_exists(fs, "a.bin"))
 
+expect_true(identical(fs_mkdir(fs, "empty"), TRUE))
+expect_true(ls_iter_next(fs_ls_iter(fs, "empty", page_size = 2))$done)
+
 expect_true(identical(fs_mkdir(fs, "dir"), TRUE))
 expect_true(identical(fs_copy(fs, "a.bin", "dir/b.bin"), TRUE))
 expect_equal(fs_read(fs, "dir/b.bin"), as.raw(c(9, 8)))
 expect_true(identical(fs_rename(fs, "dir/b.bin", "dir/c.bin"), TRUE))
 expect_equal(fs_read(fs, "dir/c.bin"), as.raw(c(9, 8)))
+
+ls_iter <- fs_ls_iter(fs, "", page_size = 1)
+expect_true(inherits(ls_iter, "OpendalLsIter"))
+pages <- list()
+repeat {
+  page <- ls_iter_next(ls_iter)
+  if (page$done) break
+  expect_true(length(page$entries) > 0)
+  expect_true(length(page$entries) <= 1)
+  pages[[length(pages) + 1L]] <- page
+}
+ls_iter_paths <- unlist(lapply(pages, function(page) vapply(page$entries, `[[`, "", "path")))
+expect_true("a.bin" %in% ls_iter_paths)
+expect_true("dir/" %in% ls_iter_paths)
+expect_true(ls_iter_next(ls_iter)$done)
+
+walk_iter <- fs_walk_iter(fs, "", page_size = 2)
+walk_entries <- walk_iter_collect(walk_iter)
+walk_paths <- vapply(walk_entries, `[[`, "", "path")
+expect_true("dir/c.bin" %in% walk_paths)
+expect_true(walk_iter_next(walk_iter)$done)
+
+ls_iter_collect_paths <- vapply(ls_iter_collect(fs_ls_iter(fs)), `[[`, "", "path")
+expect_true("a.bin" %in% ls_iter_collect_paths)
+
 expect_true(identical(fs_delete(fs, "dir/c.bin"), TRUE))
 
 expect_error(fs_read(fs, c("a.bin", "a.bin"), offset = 0))

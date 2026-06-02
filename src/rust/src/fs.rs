@@ -9,7 +9,10 @@ use savvy::{ListSexp, OwnedListSexp, Sexp, StringSexp, TypedSexp};
 use crate::aio::{AioOutcome, EntryOutcome, OpendalAio};
 use crate::common::{NativeFs, build_runtime, init_registry};
 use crate::error::{kind_code, op_error_list, unsupported_value};
-use crate::io_iter::{OpendalReadIter, OpendalWriteIter, checked_chunk_size, normalize_iter_path};
+use crate::http_headers::apply_http_headers;
+use crate::io_iter::{
+    OpendalLsIter, OpendalReadIter, OpendalWriteIter, checked_chunk_size, normalize_iter_path,
+};
 use crate::metadata::metadata_list;
 use crate::ops::{ReadTuning, WriteTuning, read_bytes_with, write_bytes_with};
 use crate::path::{checked_u64, normalize_user_path};
@@ -32,8 +35,10 @@ impl OpendalFs {
         config: ListSexp,
         root: Option<&str>,
         auth_config: Option<ListSexp>,
+        headers: Option<ListSexp>,
     ) -> savvy::Result<Self> {
         let mut pairs = Vec::new();
+        let headers = header_pairs_from_list(headers)?;
         append_named_config(&mut pairs, config, "config")?;
         if let Some(auth_config) = auth_config {
             append_named_config(&mut pairs, auth_config, "auth")?;
@@ -44,15 +49,17 @@ impl OpendalFs {
                 pairs.push(("root".to_string(), root.to_string()));
             }
         }
-        Self::open_from_pairs(scheme, pairs)
+        Self::open_from_pairs(scheme, pairs, headers)
     }
 
     /// Open an OpenDAL filesystem from a URI.
     /// @export
-    fn from_uri(uri: &str) -> savvy::Result<Self> {
+    fn from_uri(uri: &str, headers: Option<ListSexp>) -> savvy::Result<Self> {
         init_registry();
+        let headers = header_pairs_from_list(headers)?;
         let op = Operator::from_uri(uri)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL URI: {e}")))?;
+        let op = apply_http_headers(op, headers)?;
         let info = op.info();
         let native = NativeFs {
             op,
@@ -917,13 +924,47 @@ impl OpendalFs {
             .spawn(async move { ls_request_outcome(op, path, recursive).await });
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
+
+    /// Create a streaming listing iterator.
+    /// @export
+    fn ls_iter(
+        &self,
+        path: &str,
+        recursive: Option<bool>,
+        page_size: Option<f64>,
+    ) -> savvy::Result<OpendalLsIter> {
+        let path = normalize_user_path(path, true)
+            .map_err(|e| savvy::Error::new(&format!("ls_iter: {e}")))?;
+        let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
+        OpendalLsIter::new(
+            self.inner.clone(),
+            path,
+            recursive.unwrap_or(false),
+            page_size,
+            "ls_iter",
+        )
+    }
+
+    /// Create a streaming recursive traversal iterator.
+    /// @export
+    fn walk_iter(&self, path: &str, page_size: Option<f64>) -> savvy::Result<OpendalLsIter> {
+        let path = normalize_user_path(path, true)
+            .map_err(|e| savvy::Error::new(&format!("walk_iter: {e}")))?;
+        let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
+        OpendalLsIter::new(self.inner.clone(), path, true, page_size, "walk_iter")
+    }
 }
 
 impl OpendalFs {
-    fn open_from_pairs(scheme: &str, config: Vec<(String, String)>) -> savvy::Result<Self> {
+    fn open_from_pairs(
+        scheme: &str,
+        config: Vec<(String, String)>,
+        headers: Vec<(String, String)>,
+    ) -> savvy::Result<Self> {
         init_registry();
         let op = Operator::via_iter(scheme, config)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL operator: {e}")))?;
+        let op = apply_http_headers(op, headers)?;
         let info = op.info();
         let native = NativeFs {
             op,
@@ -1870,6 +1911,40 @@ fn append_named_config(
         out.push((name.to_string(), config_value_to_string(value, name)?));
     }
     Ok(())
+}
+
+fn header_pairs_from_list(headers: Option<ListSexp>) -> savvy::Result<Vec<(String, String)>> {
+    let Some(headers) = headers else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for (name, value) in headers.iter() {
+        if name.is_empty() {
+            return Err(savvy::Error::new("all headers entries must be named"));
+        }
+        let value = match value.into_typed() {
+            TypedSexp::String(value) if value.len() == 1 => {
+                value.iter().next().unwrap_or("").to_string()
+            }
+            _ => {
+                return Err(savvy::Error::new(&format!(
+                    "HTTP header {name} must be a scalar string"
+                )));
+            }
+        };
+        out.push((name.to_string(), value));
+    }
+    Ok(out)
+}
+
+fn checked_page_size(value: f64, name: &str) -> savvy::Result<usize> {
+    let value = checked_u64(value, name)?;
+    if value == 0 {
+        return Err(savvy::Error::new(&format!(
+            "{name} must be greater than zero"
+        )));
+    }
+    usize::try_from(value).map_err(|_| savvy::Error::new(&format!("{name} is too large")))
 }
 
 fn config_value_to_string(value: Sexp, name: &str) -> savvy::Result<String> {

@@ -78,9 +78,10 @@ Do not export `list()` or expose `$list`. In R, `list` is too central and should
 ### Filesystem handle
 
 ```r
-fs <- opendal("s3", bucket = "bucket", root = "prefix", auth = credentials_aws())
-fs <- opendal_uri("s3://bucket/prefix?region=us-east-1", auth = credentials_aws())
+fs <- opendal("s3", bucket = "bucket", root = "prefix", auth = credentials_s3())
+fs <- opendal_uri("s3://bucket/prefix?region=us-east-1")
 fs <- opendal("gdrive", root = "folder", auth = credentials_gdrive())
+http_fs <- opendal("http", endpoint = "https://example.test/data", headers = list(Authorization = "Bearer ..."))
 ```
 
 Class:
@@ -372,25 +373,27 @@ single materialized R list. Provide both collectable and streaming forms:
 aio <- fs_ls_aio(fs, "prefix/", recursive = TRUE)
 entries <- collect_aio(aio)
 
-it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000, prefetch = 4)
-page <- ls_iter_next(it)
+it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000)
+page <- ls_iter_next(it)       # list(done = FALSE, entries = list(...))
+entries <- ls_iter_collect(it) # collect remaining pages
 
-walk <- fs_walk_iter(fs, "prefix/", recursive = TRUE, page_size = 1000)
-entry_or_page <- walk_iter_next(walk)
+walk <- fs_walk_iter(fs, "prefix/", page_size = 1000)
+page <- walk_iter_next(walk)
 ```
 
 Semantics:
 
 - `fs_ls()` / `fs_ls_aio()` collect a finite listing into an entries value or
   list of entries values.
-- `fs_ls_iter()` pages a listing and provides backpressure.
-- `fs_walk_iter()` recursively traverses and streams entries or pages.
-- `batch_concurrency` controls many independent roots/prefixes.
-- `list_concurrency` controls recursive traversal fanout where implemented.
-- `page_size` is the backend page request size where supported.
-- `prefetch` controls how many listing pages may be buffered ahead.
-- `limit` bounds materialized results for collectable listing APIs.
-- `start_after` or continuation-like options allow resuming object-store listings.
+- `fs_ls_iter()` pages a listing and provides caller-driven backpressure.
+- `fs_walk_iter()` recursively traverses and streams pages.
+- Current iterator pages return `list(done, entries)` and expose `*_next()` plus `*_collect()`.
+- `page_size` currently bounds the number of R entries yielded per iterator page; backend request sizing may remain service-specific.
+- Future `batch_concurrency` controls many independent roots/prefixes.
+- Future `list_concurrency` controls recursive traversal fanout where implemented.
+- Future `prefetch` controls how many listing pages may be buffered ahead.
+- Future `limit` bounds materialized results for collectable listing APIs.
+- Future `start_after` or continuation-like options allow resuming object-store listings.
 
 A lightweight `opendalEntries` value can wrap returned entries with
 `as.list()`/`as.data.frame()` adapters. Primitive errors remain per-root/per-page
@@ -681,12 +684,11 @@ In that case I/O is still async for `_aio`; only `deserialize(raw)` runs on the 
 Core constructors should be explicit and as stateless as possible: no hidden env-variable lookup, provider chain, profile search, or credential store access. Users provide credentials/config directly or by explicitly calling helper functions that return credential objects.
 
 ```r
-credentials_aws(
+credentials_s3(
   access_key_id,
   secret_access_key,
   session_token = NULL,
-  region = NULL,
-  endpoint = NULL
+  region = NULL
 )
 
 credentials_gcs(
@@ -711,6 +713,19 @@ credentials_gdrive(
 ```
 
 Credential helper/plugins may provide explicit readers such as `credentials_from_env()`, `credentials_from_file()`, provider chains, stores, or gargle integration, but the core API should not invoke them implicitly.
+
+HTTP(S) filesystems can also take explicit request headers:
+
+```r
+fs <- opendal(
+  "http",
+  endpoint = "https://example.test/data",
+  root = "/",
+  headers = list(Authorization = "Bearer ...", `X-Api-Key` = "...")
+)
+```
+
+Header values are treated as credential-bearing configuration: they are passed to the Rust/OpenDAL HTTP client layer, not printed in filesystem summaries, and not stored in package metadata or fixtures. They are currently restricted to OpenDAL `http`/`https` filesystem handles to avoid accidentally altering signed object-store requests.
 
 Google Drive maps directly to OpenDAL `gdrive` config:
 
@@ -743,7 +758,7 @@ OpenDAL layers should be configured at construction time.
 fs <- opendal(
   "s3",
   bucket = "bucket",
-  auth = credentials_aws(),
+  auth = credentials_s3(...),
   layers = list(
     layer_retry(max_times = 5),
     layer_timeout(seconds = 60),

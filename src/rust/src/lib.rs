@@ -5,6 +5,7 @@ mod credentials;
 mod error;
 mod fs;
 mod http_fixture;
+mod http_headers;
 mod io_iter;
 mod metadata;
 mod ops;

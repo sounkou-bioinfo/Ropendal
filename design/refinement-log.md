@@ -57,6 +57,18 @@ ROPENDAL_TEST_NETWORK=true
 ROPENDAL_TEST_GDRIVE=true
 ```
 
+### Streaming namespace iterators
+
+Status: `provisional`
+
+`fs_ls_iter()` and `fs_walk_iter()` use a Rust-backed `OpendalLsIter` that streams entries from OpenDAL and materializes only the requested R page on the R thread. `ls_iter_next()` / `walk_iter_next()` return `list(done, entries)`, and `*_collect()` collects remaining entries. The current `page_size` bounds R entries yielded per page; backend request pagination, prefetch, traversal fanout, and resumable continuation controls remain future refinements.
+
+### HTTP(S) explicit headers
+
+Status: `resolved`
+
+OpenDAL's HTTP service exposes built-in auth fields but not arbitrary headers in service config. Ropendal supports `headers = list(...)` on `opendal("http", ...)` and `opendal_uri("http(s)://...", headers = ...)` by installing an OpenDAL HTTP client layer that injects validated headers per request. Header support is intentionally restricted to HTTP(S) filesystem handles so it does not interfere with signed object-store requests. Header values are credential-bearing data and must not be printed or committed in metadata/fixtures.
+
 ## Open questions
 
 ### Exact `opendalErrorValue` representation

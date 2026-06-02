@@ -77,6 +77,8 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - read many paths with list-of-ranges
 - stat metadata
 - `fs_ls()` output columns and ordering rules
+- `fs_ls_iter()` empty-listing, paged listing, and collect behavior
+- `fs_walk_iter()` recursive traversal pages/collection
 - mkdir/delete/copy/rename
 - declarative capability profiles: supported operations, implementation source, and unsupported-operation error values
 
@@ -158,12 +160,13 @@ Service env vars:
 - Local writable S3-compatible endpoint: `ROPENDAL_TEST_S3_MINIO=true`; `make test-s3-minio` starts MinIO via `tools/run-minio-test.sh`, creates a bucket, and passes `ROPENDAL_S3_MINIO_ENDPOINT`, `ROPENDAL_S3_MINIO_BUCKET`, `ROPENDAL_S3_MINIO_REGION`, `ROPENDAL_S3_MINIO_ACCESS_KEY_ID`, `ROPENDAL_S3_MINIO_SECRET_ACCESS_KEY`, and `ROPENDAL_S3_MINIO_ROOT`. This target is suitable for CI because it needs no cloud credentials.
 - External S3 credentials, if added later: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, `AWS_REGION`, `ROPENDAL_TEST_S3_BUCKET`, `ROPENDAL_TEST_S3_PREFIX`.
 - GDrive: `make test-gdrive` passes `ROPENDAL_GDRIVE_SECRET_JSON`, `ROPENDAL_GDRIVE_TOKENS_JSON`, `ROPENDAL_GDRIVE_ROOT`, and `ROPENDAL_GDRIVE_FILE`; direct token/provider-chain helpers are intentionally not part of hidden core lookup.
-- HTTP: `ROPENDAL_TEST_HTTP=true`; local fixture tests use Ropendal's internal non-blocking Rust HTTP fixture
+- HTTP: `ROPENDAL_TEST_HTTP=true`; local fixture tests use Ropendal's internal non-blocking Rust HTTP fixture, including required request-header checks
 
 Coverage:
 
 - auth construction redacts secrets
 - public S3-compatible read/stat/list/range reads
+- HTTP fixture read/stat/range reads, unsupported listing value, and explicit `headers=` authentication path
 - local MinIO write/read/stat/list/copy/delete in an isolated prefix
 - unsupported S3-compatible atomic rename returns an error value rather than silent emulation
 - range reads

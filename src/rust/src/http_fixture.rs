@@ -8,6 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use savvy::savvy;
+use savvy::{ListSexp, Sexp, TypedSexp};
 
 use crate::r_values::{bool_scalar, str_scalar};
 
@@ -25,7 +26,8 @@ pub struct OpendalHttpFixture {
 impl OpendalHttpFixture {
     /// Start the internal HTTP fixture.
     /// @export
-    fn start(root: &str) -> savvy::Result<Self> {
+    fn start(root: &str, required_headers: Option<ListSexp>) -> savvy::Result<Self> {
+        let required_headers = parse_required_headers(required_headers)?;
         let root_path = PathBuf::from(root).canonicalize().map_err(|e| {
             savvy::Error::new(&format!("cannot canonicalize HTTP fixture root: {e}"))
         })?;
@@ -45,8 +47,11 @@ impl OpendalHttpFixture {
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
         let thread_root = root_path.clone();
+        let thread_required_headers = required_headers.clone();
 
-        let handle = thread::spawn(move || run_server(listener, thread_root, thread_stop));
+        let handle = thread::spawn(move || {
+            run_server(listener, thread_root, thread_required_headers, thread_stop)
+        });
 
         Ok(Self {
             root: root_path.to_string_lossy().to_string(),
@@ -92,12 +97,45 @@ impl OpendalHttpFixture {
     }
 }
 
-fn run_server(listener: TcpListener, root: PathBuf, stop: Arc<AtomicBool>) {
+fn parse_required_headers(headers: Option<ListSexp>) -> savvy::Result<Vec<(String, String)>> {
+    let Some(headers) = headers else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for (name, value) in headers.iter() {
+        if name.is_empty() {
+            return Err(savvy::Error::new(
+                "all required HTTP fixture headers must be named",
+            ));
+        }
+        let value = scalar_to_string(value, name)?;
+        out.push((name.to_string(), value));
+    }
+    Ok(out)
+}
+
+fn scalar_to_string(value: Sexp, name: &str) -> savvy::Result<String> {
+    match value.into_typed() {
+        TypedSexp::String(value) if value.len() == 1 => {
+            Ok(value.iter().next().unwrap_or("").to_string())
+        }
+        _ => Err(savvy::Error::new(&format!(
+            "required HTTP fixture header {name} must be a scalar string"
+        ))),
+    }
+}
+
+fn run_server(
+    listener: TcpListener,
+    root: PathBuf,
+    required_headers: Vec<(String, String)>,
+    stop: Arc<AtomicBool>,
+) {
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-                let _ = handle_connection(&mut stream, &root);
+                let _ = handle_connection(&mut stream, &root, &required_headers);
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(10));
@@ -107,7 +145,11 @@ fn run_server(listener: TcpListener, root: PathBuf, stop: Arc<AtomicBool>) {
     }
 }
 
-fn handle_connection(stream: &mut TcpStream, root: &Path) -> std::io::Result<()> {
+fn handle_connection(
+    stream: &mut TcpStream,
+    root: &Path,
+    required_headers: &[(String, String)],
+) -> std::io::Result<()> {
     let mut buf = [0_u8; 8192];
     let n = stream.read(&mut buf)?;
     if n == 0 {
@@ -149,14 +191,40 @@ fn handle_connection(stream: &mut TcpStream, root: &Path) -> std::io::Result<()>
         );
     }
 
-    let range_header = lines.find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        if key.eq_ignore_ascii_case("range") {
-            Some(value.trim().to_string())
-        } else {
-            None
+    let mut request_headers = Vec::new();
+    let mut range_header = None;
+    for line in lines {
+        if line.is_empty() {
+            break;
         }
-    });
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim().to_string();
+        let value = value.trim().to_string();
+        if key.eq_ignore_ascii_case("range") {
+            range_header = Some(value.clone());
+        }
+        request_headers.push((key, value));
+    }
+
+    if !required_headers
+        .iter()
+        .all(|(required_key, required_value)| {
+            request_headers.iter().any(|(key, value)| {
+                key.eq_ignore_ascii_case(required_key) && value == required_value
+            })
+        })
+    {
+        return write_response(
+            stream,
+            401,
+            "Unauthorized",
+            &[],
+            b"missing required header",
+            "text/plain",
+        );
+    }
 
     let path = match request_path(root, uri) {
         Some(path) => path,

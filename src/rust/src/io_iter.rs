@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
-use futures::SinkExt;
-use opendal::{Buffer, FuturesBytesSink, Operator};
+use futures::{SinkExt, TryStreamExt};
+use opendal::{Buffer, FuturesBytesSink, Lister, Operator};
 use savvy::savvy;
 use savvy::{OwnedListSexp, Sexp, TypedSexp};
 
 use crate::common::NativeFs;
-use crate::error::{error_list, op_error_list};
+use crate::error::{error_list, kind_code, op_error_list};
+use crate::metadata::metadata_list;
 use crate::ops::{ReadTuning, WriteTuning, read_bytes_with};
 use crate::path::normalize_user_path;
 use crate::r_values::{
@@ -222,6 +223,254 @@ impl OpendalReadIter {
         state.done = state.end.is_some_and(|end| state.position >= end);
         real_scalar(target as f64)?.into()
     }
+}
+
+/// Streaming listing iterator over one prefix.
+/// @export
+#[savvy]
+pub struct OpendalLsIter {
+    runtime: Arc<tokio::runtime::Runtime>,
+    path: String,
+    operation: String,
+    lister: Mutex<Option<Lister>>,
+    initial_error: Mutex<Option<InitialError>>,
+    done: Mutex<bool>,
+    page_size: usize,
+}
+
+struct InitialError {
+    kind: String,
+    code: i32,
+    message: String,
+}
+
+impl OpendalLsIter {
+    pub(crate) fn new(
+        inner: Arc<NativeFs>,
+        path: String,
+        recursive: bool,
+        page_size: usize,
+        operation: &str,
+    ) -> savvy::Result<Self> {
+        let mut opts = opendal::options::ListOptions::default();
+        opts.recursive = recursive;
+        let path_for_error = path.clone();
+        let runtime = inner.runtime.clone();
+        let op = inner.op.clone();
+        let lister_path = path.clone();
+        let lister = runtime.block_on(async move { op.lister_options(&lister_path, opts).await });
+        let (lister, initial_error) = match lister {
+            Ok(lister) => (Some(lister), None),
+            Err(e) => (
+                None,
+                Some(InitialError {
+                    kind: e.kind().to_string(),
+                    code: kind_code(e.kind()),
+                    message: e.to_string(),
+                }),
+            ),
+        };
+        Ok(Self {
+            runtime,
+            path: path_for_error,
+            operation: operation.to_string(),
+            lister: Mutex::new(lister),
+            initial_error: Mutex::new(initial_error),
+            done: Mutex::new(false),
+            page_size,
+        })
+    }
+
+    fn keep_entry(&self, path: &str) -> bool {
+        path != "/" && !path.is_empty() && path != self.path.as_str()
+    }
+}
+
+#[savvy]
+impl OpendalLsIter {
+    /// Return the next listing page as list(done, entries).
+    /// @export
+    fn next(&self) -> savvy::Result<savvy::Sexp> {
+        if *self
+            .done
+            .lock()
+            .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))?
+        {
+            return iter_entries_page(true, Vec::new());
+        }
+        if let Some(error) = self
+            .initial_error
+            .lock()
+            .map_err(|_| savvy::Error::new("listing iterator error lock poisoned"))?
+            .take()
+        {
+            *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+            return error_list(
+                &error.kind,
+                error.code,
+                &error.message,
+                &self.operation,
+                &self.path,
+            );
+        }
+
+        let mut lister =
+            {
+                let mut guard = self
+                    .lister
+                    .lock()
+                    .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+                match guard.take() {
+                    Some(lister) => lister,
+                    None => {
+                        *self.done.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator done lock poisoned")
+                        })? = true;
+                        return iter_entries_page(true, Vec::new());
+                    }
+                }
+            };
+
+        let mut entries = Vec::new();
+        let mut exhausted = false;
+        while entries.len() < self.page_size {
+            match self.runtime.block_on(lister.try_next()) {
+                Ok(Some(entry)) => {
+                    if self.keep_entry(entry.path()) {
+                        entries.push((entry.path().to_string(), entry.metadata().clone()));
+                    }
+                }
+                Ok(None) => {
+                    exhausted = true;
+                    break;
+                }
+                Err(e) => {
+                    let mut guard = self
+                        .lister
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+                    *guard = Some(lister);
+                    return op_error_list(e, &self.operation, &self.path);
+                }
+            }
+        }
+
+        if exhausted {
+            *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+        } else {
+            let mut guard = self
+                .lister
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+            *guard = Some(lister);
+        }
+
+        if exhausted && entries.is_empty() {
+            iter_entries_page(true, Vec::new())
+        } else {
+            iter_entries_page(false, entries)
+        }
+    }
+
+    /// Collect all remaining entries.
+    /// @export
+    fn collect(&self) -> savvy::Result<savvy::Sexp> {
+        if let Some(error) = self
+            .initial_error
+            .lock()
+            .map_err(|_| savvy::Error::new("listing iterator error lock poisoned"))?
+            .take()
+        {
+            *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+            return error_list(
+                &error.kind,
+                error.code,
+                &error.message,
+                &self.operation,
+                &self.path,
+            );
+        }
+
+        let mut all = Vec::new();
+        loop {
+            if *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))?
+            {
+                break;
+            }
+
+            let mut lister = {
+                let mut guard = self
+                    .lister
+                    .lock()
+                    .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+                match guard.take() {
+                    Some(lister) => lister,
+                    None => break,
+                }
+            };
+
+            let result = self.runtime.block_on(lister.try_next());
+            match result {
+                Ok(Some(entry)) => {
+                    if self.keep_entry(entry.path()) {
+                        all.push((entry.path().to_string(), entry.metadata().clone()));
+                    }
+                    let mut guard = self
+                        .lister
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+                    *guard = Some(lister);
+                }
+                Ok(None) => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    break;
+                }
+                Err(e) => {
+                    let mut guard = self
+                        .lister
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+                    *guard = Some(lister);
+                    return op_error_list(e, &self.operation, &self.path);
+                }
+            }
+        }
+        entries_list(all)
+    }
+}
+
+fn iter_entries_page(
+    done: bool,
+    entries: Vec<(String, opendal::Metadata)>,
+) -> savvy::Result<savvy::Sexp> {
+    let mut out = OwnedListSexp::new(2, true)?;
+    out.set_name_and_value(0, "done", bool_scalar(done)?)?;
+    out.set_name_and_value(1, "entries", entries_list(entries)?)?;
+    out.into()
+}
+
+fn entries_list(entries: Vec<(String, opendal::Metadata)>) -> savvy::Result<savvy::Sexp> {
+    let mut out = OwnedListSexp::new(entries.len(), false)?;
+    for (i, (path, meta)) in entries.into_iter().enumerate() {
+        out.set_value(i, metadata_list(&path, &meta)?)?;
+    }
+    out.into()
 }
 
 /// Chunked write sink for one object.

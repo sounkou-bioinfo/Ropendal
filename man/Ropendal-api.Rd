@@ -19,6 +19,12 @@
 \alias{fs_read_iter}
 \alias{read_iter_next}
 \alias{read_iter_collect}
+\alias{fs_ls_iter}
+\alias{fs_walk_iter}
+\alias{ls_iter_next}
+\alias{ls_iter_collect}
+\alias{walk_iter_next}
+\alias{walk_iter_collect}
 \alias{fs_seek}
 \alias{fs_tell}
 \alias{fs_write}
@@ -58,8 +64,9 @@
 \alias{error_path}
 \title{Ropendal filesystem API}
 \usage{
-opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL)
-opendal_uri(uri)
+opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
+        headers = NULL)
+opendal_uri(uri, headers = NULL)
 credentials_s3(access_key_id, secret_access_key,
                session_token = "", region = "", source = "direct")
 credentials_gdrive(access_token = "", refresh_token = "",
@@ -109,6 +116,12 @@ fs_exists(fs, path, batch_concurrency = NULL)
 fs_exists_aio(fs, path, batch_concurrency = NULL)
 fs_ls(fs, path = "", recursive = FALSE)
 fs_ls_aio(fs, path = "", recursive = FALSE)
+fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000)
+fs_walk_iter(fs, path = "", page_size = 1000)
+ls_iter_next(iter)
+ls_iter_collect(iter)
+walk_iter_next(iter)
+walk_iter_collect(iter)
 fs_mkdir(fs, path)
 fs_mkdir_aio(fs, path, batch_concurrency = NULL)
 fs_delete(fs, path, recursive = FALSE, batch_concurrency = NULL)
@@ -138,6 +151,10 @@ error_path(x)
 \item{config}{Named list of service configuration entries.}
 
 \item{auth}{Explicit credential provider.}
+
+\item{headers}{Named scalar character list/vector of HTTP headers for
+\code{http}/\code{https} filesystems; values may contain credentials and are not
+printed by Ropendal.}
 
 \item{uri}{OpenDAL URI.}
 
@@ -198,7 +215,7 @@ per-object transfer planning.}
 
 \item{data}{Raw vector, or list of raw vectors for multiple paths.}
 
-\item{iter}{Read or write iterator handle.}
+\item{iter}{Read, write, listing, or walking iterator handle.}
 
 \item{whence}{Seek origin for read iterators: iterator \code{start}, \code{current}, or \code{end}.}
 
@@ -207,6 +224,8 @@ per-object transfer planning.}
 \item{append}{Whether a write iterator should append rather than replace.}
 
 \item{recursive}{Whether to recurse for operations that support it.}
+
+\item{page_size}{Maximum number of entries returned by one iterator page.}
 
 \item{from, to}{Source and destination paths.}
 

@@ -231,6 +231,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_ls_iter` <- function(self) {
+  function(`path`, `recursive` = NULL, `page_size` = NULL) {
+    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_ls_iter__impl, `self`, `path`, `recursive`, `page_size`))
+  }
+}
+
 `OpendalFs_mkdir` <- function(self) {
   function(`path`) {
     .Call(savvy_OpendalFs_mkdir__impl, `self`, `path`)
@@ -303,6 +309,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_walk_iter` <- function(self) {
+  function(`path`, `page_size` = NULL) {
+    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_walk_iter__impl, `self`, `path`, `page_size`))
+  }
+}
+
 `OpendalFs_write` <- function(self) {
   function(`path`, `data`, `batch_concurrency` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
     .Call(savvy_OpendalFs_write__impl, `self`, `path`, `data`, `batch_concurrency`, `write_concurrency`, `chunk_size`)
@@ -336,6 +348,7 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   e$`info` <- `OpendalFs_info`(ptr)
   e$`ls` <- `OpendalFs_ls`(ptr)
   e$`ls_aio` <- `OpendalFs_ls_aio`(ptr)
+  e$`ls_iter` <- `OpendalFs_ls_iter`(ptr)
   e$`mkdir` <- `OpendalFs_mkdir`(ptr)
   e$`mkdir_aio` <- `OpendalFs_mkdir_aio`(ptr)
   e$`normalize_path` <- `OpendalFs_normalize_path`(ptr)
@@ -348,6 +361,7 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   e$`replace_aio` <- `OpendalFs_replace_aio`(ptr)
   e$`stat` <- `OpendalFs_stat`(ptr)
   e$`stat_aio` <- `OpendalFs_stat_aio`(ptr)
+  e$`walk_iter` <- `OpendalFs_walk_iter`(ptr)
   e$`write` <- `OpendalFs_write`(ptr)
   e$`write_aio` <- `OpendalFs_write_aio`(ptr)
   e$`write_iter` <- `OpendalFs_write_iter`(ptr)
@@ -363,12 +377,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 
 ### associated functions for OpendalFs
 
-`OpendalFs`$`from_uri` <- function(`uri`) {
-  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_from_uri__impl, `uri`))
+`OpendalFs`$`from_uri` <- function(`uri`, `headers` = NULL) {
+  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_from_uri__impl, `uri`, `headers`))
 }
 
-`OpendalFs`$`open` <- function(`scheme`, `dots`, `config`, `root` = NULL, `auth_config` = NULL) {
-  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_open__impl, `scheme`, `dots`, `config`, `root`, `auth_config`))
+`OpendalFs`$`open` <- function(`scheme`, `dots`, `config`, `root` = NULL, `auth_config` = NULL, `headers` = NULL) {
+  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_open__impl, `scheme`, `dots`, `config`, `root`, `auth_config`, `headers`))
 }
 
 
@@ -417,8 +431,8 @@ class(`OpendalFs`) <- c("Ropendal::OpendalFs__bundle", "savvy_Ropendal__sealed")
 
 ### associated functions for OpendalHttpFixture
 
-`OpendalHttpFixture`$`start` <- function(`root`) {
-  .savvy_wrap_OpendalHttpFixture(.Call(savvy_OpendalHttpFixture_start__impl, `root`))
+`OpendalHttpFixture`$`start` <- function(`root`, `required_headers` = NULL) {
+  .savvy_wrap_OpendalHttpFixture(.Call(savvy_OpendalHttpFixture_start__impl, `root`, `required_headers`))
 }
 
 
@@ -427,6 +441,46 @@ class(`OpendalHttpFixture`) <- c("Ropendal::OpendalHttpFixture__bundle", "savvy_
 #' @export
 `print.Ropendal::OpendalHttpFixture__bundle` <- function(x, ...) {
   cat('Ropendal::OpendalHttpFixture\n')
+}
+
+### wrapper functions for OpendalLsIter
+
+`OpendalLsIter_collect` <- function(self) {
+  function() {
+    .Call(savvy_OpendalLsIter_collect__impl, `self`)
+  }
+}
+
+`OpendalLsIter_next` <- function(self) {
+  function() {
+    .Call(savvy_OpendalLsIter_next__impl, `self`)
+  }
+}
+
+`.savvy_wrap_OpendalLsIter` <- function(ptr) {
+  e <- new.env(parent = emptyenv())
+  e$.ptr <- ptr
+  e$`collect` <- `OpendalLsIter_collect`(ptr)
+  e$`next` <- `OpendalLsIter_next`(ptr)
+
+  class(e) <- c("Ropendal::OpendalLsIter", "OpendalLsIter", "savvy_Ropendal__sealed")
+  e
+}
+
+
+#' Streaming listing iterator over one prefix.
+#' @export
+`OpendalLsIter` <- new.env(parent = emptyenv())
+
+### associated functions for OpendalLsIter
+
+
+
+class(`OpendalLsIter`) <- c("Ropendal::OpendalLsIter__bundle", "savvy_Ropendal__sealed")
+
+#' @export
+`print.Ropendal::OpendalLsIter__bundle` <- function(x, ...) {
+  cat('Ropendal::OpendalLsIter\n')
 }
 
 ### wrapper functions for OpendalReadIter

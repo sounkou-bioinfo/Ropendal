@@ -30,5 +30,34 @@ expect_true(grepl("nested.bin", dir_index, fixed = TRUE))
 listing <- fs_ls(fs)
 expect_true(is_error_value(listing))
 expect_equal(error_kind(listing), "Unsupported")
+listing_page <- ls_iter_next(fs_ls_iter(fs))
+expect_true(is_error_value(listing_page))
+expect_equal(error_kind(listing_page), "Unsupported")
+walk_entries <- walk_iter_collect(fs_walk_iter(fs))
+expect_true(is_error_value(walk_entries))
+expect_equal(error_kind(walk_entries), "Unsupported")
+
+header_fixture <- Ropendal:::OpendalHttpFixture$start(
+  root,
+  list(Authorization = "Bearer ropendal-test", `X-Ropendal-Test` = "fixture")
+)
+header_fs <- opendal(
+  "http",
+  endpoint = header_fixture$endpoint(),
+  root = "/",
+  headers = list(Authorization = "Bearer ropendal-test", `X-Ropendal-Test` = "fixture")
+)
+expect_equal(fs_read(header_fs, "data.bin"), bytes)
+expect_equal(fs_read(header_fs, "data.bin", offset = 1, size = 2), as.raw(c(2, 3)))
+expect_equal(fs_stat(header_fs, "data.bin")$size, length(bytes))
+header_uri_fs <- opendal_uri(
+  header_fixture$endpoint(),
+  headers = list(Authorization = "Bearer ropendal-test", `X-Ropendal-Test` = "fixture")
+)
+expect_equal(fs_read(header_uri_fs, "data.bin"), bytes)
+missing_header_fs <- opendal("http", endpoint = header_fixture$endpoint(), root = "/")
+missing_header <- fs_read(missing_header_fs, "data.bin")
+expect_true(is_error_value(missing_header))
+expect_true(identical(header_fixture$stop(), TRUE))
 
 expect_true(identical(fixture$stop(), TRUE))

@@ -9,7 +9,8 @@
 #' @aliases CredentialProvider opendal opendal_uri credentials_s3 credentials_gdrive
 #'   credentials_gdrive3 credential_schemes credential_config credential_summary
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio fs_read_iter
-#'   read_iter_next read_iter_collect fs_seek fs_tell fs_write fs_write_aio
+#'   read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
+#'   ls_iter_collect walk_iter_next walk_iter_collect fs_seek fs_tell fs_write fs_write_aio
 #'   fs_replace fs_replace_aio fs_append fs_append_aio fs_write_iter
 #'   write_iter_write write_iter_close fs_stat fs_stat_aio fs_stats
 #'   fs_stats_aio fs_exists fs_exists_aio fs_ls fs_ls_aio fs_mkdir fs_mkdir_aio fs_delete
@@ -21,6 +22,9 @@
 #' @param root Root path/prefix for the service.
 #' @param config Named list of service configuration entries.
 #' @param auth Explicit credential provider.
+#' @param headers Named scalar character list/vector of HTTP headers for
+#'   `http`/`https` filesystems; values may contain credentials and are not
+#'   printed by Ropendal.
 #' @param uri OpenDAL URI.
 #' @param access_key_id,secret_access_key S3-compatible access key fields.
 #' @param session_token Optional S3-compatible session token.
@@ -54,17 +58,19 @@
 #'   per-object transfer planning.
 #' @param coalesce_gap Optional byte gap for coalescing nearby read ranges.
 #' @param data Raw vector, or list of raw vectors for multiple paths.
-#' @param iter Read or write iterator handle.
+#' @param iter Read, write, listing, or walking iterator handle.
 #' @param whence Seek origin for read iterators: iterator `start`, `current`, or `end`.
 #' @param create Whether a write iterator should create only and fail if the target exists.
 #' @param append Whether a write iterator should append rather than replace.
 #' @param recursive Whether to recurse for operations that support it.
+#' @param page_size Maximum number of entries returned by one iterator page.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.
 #' @param x Object to inspect.
 #' @usage
-#' opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL)
-#' opendal_uri(uri)
+#' opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
+#'         headers = NULL)
+#' opendal_uri(uri, headers = NULL)
 #' credentials_s3(access_key_id, secret_access_key,
 #'                session_token = "", region = "", source = "direct")
 #' credentials_gdrive(access_token = "", refresh_token = "",
@@ -114,6 +120,12 @@
 #' fs_exists_aio(fs, path, batch_concurrency = NULL)
 #' fs_ls(fs, path = "", recursive = FALSE)
 #' fs_ls_aio(fs, path = "", recursive = FALSE)
+#' fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000)
+#' fs_walk_iter(fs, path = "", page_size = 1000)
+#' ls_iter_next(iter)
+#' ls_iter_collect(iter)
+#' walk_iter_next(iter)
+#' walk_iter_collect(iter)
 #' fs_mkdir(fs, path)
 #' fs_mkdir_aio(fs, path, batch_concurrency = NULL)
 #' fs_delete(fs, path, recursive = FALSE, batch_concurrency = NULL)
@@ -211,19 +223,25 @@ credential_summary <- S7::new_generic(
 
 #' @export
 #' @noRd
-opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NULL) {
+opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
+                    headers = NULL) {
+  if (!is.null(headers)) headers <- as.list(headers)
   OpendalFs$open(
     scheme,
     list(...),
     config,
     root,
-    if (is.null(auth)) NULL else credential_config(auth, scheme)
+    if (is.null(auth)) NULL else credential_config(auth, scheme),
+    headers
   )
 }
 
 #' @export
 #' @noRd
-opendal_uri <- function(uri) OpendalFs$from_uri(uri)
+opendal_uri <- function(uri, headers = NULL) {
+  if (!is.null(headers)) headers <- as.list(headers)
+  OpendalFs$from_uri(uri, headers)
+}
 
 #' @export
 #' @noRd
@@ -547,6 +565,34 @@ fs_ls_aio <- function(fs, path = "", recursive = FALSE) {
 
 #' @export
 #' @noRd
+fs_ls_iter <- function(fs, path = "", recursive = FALSE, page_size = 1000) {
+  fs$ls_iter(path, recursive, page_size)
+}
+
+#' @export
+#' @noRd
+fs_walk_iter <- function(fs, path = "", page_size = 1000) {
+  fs$walk_iter(path, page_size)
+}
+
+#' @export
+#' @noRd
+ls_iter_next <- function(iter) iter[["next"]]()
+
+#' @export
+#' @noRd
+ls_iter_collect <- function(iter) iter$collect()
+
+#' @export
+#' @noRd
+walk_iter_next <- function(iter) iter[["next"]]()
+
+#' @export
+#' @noRd
+walk_iter_collect <- function(iter) iter$collect()
+
+#' @export
+#' @noRd
 fs_mkdir <- function(fs, path) {
   fs$mkdir(path)
 }
@@ -679,6 +725,13 @@ print.OpendalAio <- function(x, ...) {
 #' @noRd
 print.OpendalReadIter <- function(x, ...) {
   cat("<opendal read iterator>\n")
+  invisible(x)
+}
+
+#' @export
+#' @noRd
+print.OpendalLsIter <- function(x, ...) {
+  cat("<opendal listing iterator>\n")
   invisible(x)
 }
 

@@ -23,7 +23,8 @@ Aio handles are a core part of the interface. Reads, writes, metadata
 checks, listings, and namespace mutations can return nanonext-like
 handles that callers poll, collect, or cancel explicitly, while
 background Rust tasks never call R APIs. The package also exposes
-chunked read/write iterators for streaming-style transfer and installs
+chunked read/write iterators plus paged listing/walking iterators for
+streaming-style transfer and namespace traversal, and installs
 `inst/include/ropendal.h`, a pure C API for downstream native packages
 that want direct async byte access.
 
@@ -45,7 +46,7 @@ Supported operations
 | read         | sync, Aio, iterator | implemented       | range reads, batch concurrency, iterators, seek/tell, per-object read tuning |
 | write        | sync, Aio, iterator | implemented       | create/replace, batch concurrency, iterators, tell, per-object write tuning  |
 | stat/exists  | sync, Aio           | implemented       | metadata and existence values                                                |
-| list         | sync, Aio           | implemented       | where provider supports listing                                              |
+| list         | sync, Aio, iterator | implemented       | collectable or paged where provider supports listing                         |
 | mkdir/delete | sync, Aio           | implemented       | root-relative path normalization                                             |
 | copy         | sync, Aio           | implemented       | direct provider copy                                                         |
 | rename       | sync, Aio           | backend-dependent | no silent S3-style emulation of atomic rename                                |
@@ -108,7 +109,7 @@ Supported providers
 | provider               | status                                      | credentials                                         |
 |:-----------------------|:--------------------------------------------|:----------------------------------------------------|
 | fs                     | implemented/tested                          | none                                                |
-| http                   | implemented/tested read-only                | none                                                |
+| http                   | implemented/tested read-only                | optional explicit headers                           |
 | s3-compatible          | implemented/tested with public S3 and MinIO | explicit credentials_s3() or unsigned public config |
 | gdrive                 | implemented/opt-in tested                   | explicit credentials_gdrive()/credentials_gdrive3() |
 | gcs                    | feature wired                               | planned explicit provider                           |
@@ -194,6 +195,13 @@ fs_stat(fs, "data.bin")[c("path", "type", "size")]
 #> [1] 4
 vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "data.bin"
+
+it <- fs_ls_iter(fs, page_size = 1)
+page <- ls_iter_next(it)
+page$done
+#> [1] FALSE
+vapply(page$entries, `[[`, character(1), "path")
+#> [1] "data.bin"
 ```
 
 ## Public S3-compatible endpoint example
@@ -238,7 +246,10 @@ length(chunk_head)
 ```
 
 HTTP endpoints are useful for read-only byte access too. Full reads and
-byte ranges work when the server returns byte-range responses.
+byte ranges work when the server returns byte-range responses. For
+authenticated HTTP(S) endpoints, pass explicit request headers such as
+`headers = list(Authorization = "Bearer ...")`; Ropendal does not print
+these header values.
 
 ``` r
 http_fs <- opendal(

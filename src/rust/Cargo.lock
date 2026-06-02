@@ -1855,6 +1855,7 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "futures",
+ "http",
  "opendal",
  "savvy",
  "serde",

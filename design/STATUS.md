@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations and read/write iterators are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, and the pure C API has a compiled roundtrip test against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has a compiled roundtrip test against the installed native library.
 
 ## CI matrix
 
@@ -23,7 +23,7 @@ Ropendal currently has a working implementation through the Apache OpenDAL Rust 
 | Installed C API contract lint | `make test-ci` | no | yes | implemented/tested-ci |
 | R CMD check | `R CMD check --no-manual` | yes | yes | implemented in workflow |
 | Network/service tests | `make test-network` | no | opt-in | implemented for S3/HTTP/GDrive; broader services planned |
-| Local HTTP fixture tests | `make test-http` | no | opt-in | implemented with internal Rust fixture |
+| Local HTTP fixture tests | `make test-http` | no | opt-in | implemented with internal Rust fixture, including required-header authentication coverage |
 | Public S3-compatible tests | `make test-s3` | no | opt-in network | implemented with EMBL-EBI IDR public object store |
 | Local MinIO S3-compatible tests | `make test-s3-minio` | no | CI/local service | implemented; starts MinIO with `minio`/`mc`; wired into GitHub Actions |
 | Google Drive tests | `make test-gdrive` | no | opt-in with secrets | implemented with explicit env paths |
@@ -47,7 +47,7 @@ GitHub Actions jobs:
 | Development MinIO benchmark | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; ignored from package build |
 | GitHub Actions workflow | yes | no local | defined | separate R/C/MinIO/check jobs |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
-| Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
+| Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `http_headers`, `io_iter`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
 | configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars`; source builds support Cargo feature selection via `SAVVY_FEATURES` and `--with-rust-features` |
 
 ## R API contracts
@@ -55,7 +55,7 @@ GitHub Actions jobs:
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
 | Rust-backed filesystem handle `OpendalFs` | yes | yes | yes | yes | local `fs`; no ad hoc `opendalFs` / `abstractFs` mutation |
-| `opendal()` / `opendal_uri()` constructors | yes | yes | partial | partial | `opendal("fs", root=)` and public S3 config tested; `opendal_uri()` still needs coverage |
+| `opendal()` / `opendal_uri()` constructors | yes | yes | partial | partial | `opendal("fs", root=)` and public S3 config tested; `opendal_uri()` still needs coverage; HTTP(S) `headers=` supported for explicit request headers |
 | declarative `fs_capabilities()` | yes | yes | no | no | shape exists; needs stronger tests |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
@@ -67,6 +67,7 @@ GitHub Actions jobs:
 | `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append; async API wired |
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
 | `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
+| `fs_ls_iter()` / `fs_walk_iter()` streaming namespace traversal | yes | yes | yes | no | Rust-backed `OpendalLsIter` with `page_size`, `*_next()`, and `*_collect()`; empty listing, paged root listing, and recursive local walk tested |
 | `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | pending | metadata/existence sync plus async local tests; `fs_stats*` aliases vectorized `fs_stat*`; remote services should use async-first path |
 | `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | pending | root entry filtered for local `fs`; public S3 and MinIO listing tested for sync; async local test added; HTTP currently unsupported by OpenDAL |
 | `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | pending | direct sync methods tested; async local namespace tests added; MinIO covers S3 copy/delete and unsupported atomic rename error value |
@@ -112,9 +113,9 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Implement streaming namespace traversal: `fs_ls_iter()` and `fs_walk_iter()` with page size, prefetch, traversal fanout, limits, and continuation/backpressure semantics.
+1. Add prefetch, traversal fanout, limits, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them.
 2. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
-3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, and read/write iterators are now wired through Rust/OpenDAL.
+3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, and read/write/listing/walking iterators are now wired through Rust/OpenDAL.
 4. Implement serializers/deserializers only after the operation Aio substrate is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
 5. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
 6. Bring native C API parity up to the async operation contract: `readv_into_aio()`, metadata/entry/bool result accessors, and tests.
