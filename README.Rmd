@@ -175,38 +175,55 @@ Public S3-compatible endpoints can be opened without credentials by explicitly
 skipping request signing and disabling ambient config loading. Private
 S3-compatible services should use an explicit credential provider such as
 `credentials_s3(access_key_id, secret_access_key)` rather than hidden ambient
-credential lookup. This example uses a public IDR OME-Zarr object store hosted
-by EMBL-EBI.
+credential lookup. This example uses the public 1000 Genomes AWS S3 bucket to
+range-read the beginning of a large reference FASTA and inspect a small VCF
+object without downloading an entire genome-scale file.
 
 ```{r public-s3-example, eval = FALSE}
-# Public HTTPS/S3-compatible endpoint — no credentials needed.
+# Public AWS S3 bucket — no credentials needed.
 s3fs <- opendal(
   "s3",
-  endpoint = "https://uk1s3.embassy.ebi.ac.uk",
-  bucket = "idr",
-  root = "/zarr/v0.4/idr0062A/6001240.zarr",
+  endpoint = "https://s3.amazonaws.com",
+  bucket = "1000genomes",
+  root = "/",
   region = "us-east-1",
   skip_signature = TRUE,
   disable_config_load = TRUE
 )
 
-zarray <- rawToChar(fs_read(s3fs, "0/.zarray"))
-grepl('"dtype": "<u2"', zarray, fixed = TRUE)
+fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
+fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
+startsWith(fasta_head, ">chr1")
 #> [1] TRUE
 
-fs_stat(s3fs, "0/.zarray")[c("path", "type", "size")]
+fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
 #> $path
-#> [1] "0/.zarray"
+#> [1] "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
 #>
 #> $type
 #> [1] "file"
 #>
 #> $size
-#> [1] 417
+#> [1] 3263683042
 
-chunk_head <- fs_read(s3fs, "0/0/0/0/0", offset = 0, size = 16)
-length(chunk_head)
-#> [1] 16
+vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
+fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
+#> $path
+#> [1] "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
+#>
+#> $type
+#> [1] "file"
+#>
+#> $size
+#> [1] 405302
+
+vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
+con <- gzcon(rawConnection(vcf_head_gz))
+readLines(con, n = 3)
+#> [1] "##fileformat=VCFv4.0"
+#> [2] "##FILTER=<ID=PASS,Description=\"All filters passed\">"
+#> [3] "##fileDate=20140627"
+close(con)
 ```
 
 HTTP endpoints are useful for read-only byte access too. Full reads and byte
