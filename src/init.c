@@ -150,6 +150,11 @@ SEXP savvy_OpendalFs_read_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__o
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_read_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__chunk_size, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__read_concurrency, SEXP c_arg__coalesce_gap) {
+    SEXP res = savvy_OpendalFs_read_iter__ffi(self__, c_arg__path, c_arg__chunk_size, c_arg__offset, c_arg__size, c_arg__read_concurrency, c_arg__coalesce_gap);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_rename__impl(SEXP self__, SEXP c_arg__from, SEXP c_arg__to) {
     SEXP res = savvy_OpendalFs_rename__ffi(self__, c_arg__from, c_arg__to);
     return handle_result(res);
@@ -170,6 +175,11 @@ SEXP savvy_OpendalFs_write__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__data
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_write_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__create, SEXP c_arg__append, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size) {
+    SEXP res = savvy_OpendalFs_write_iter__ffi(self__, c_arg__path, c_arg__create, c_arg__append, c_arg__write_concurrency, c_arg__chunk_size);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalHttpFixture_endpoint__impl(SEXP self__) {
     SEXP res = savvy_OpendalHttpFixture_endpoint__ffi(self__);
     return handle_result(res);
@@ -187,6 +197,41 @@ SEXP savvy_OpendalHttpFixture_start__impl(SEXP c_arg__root) {
 
 SEXP savvy_OpendalHttpFixture_stop__impl(SEXP self__) {
     SEXP res = savvy_OpendalHttpFixture_stop__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalReadIter_collect__impl(SEXP self__) {
+    SEXP res = savvy_OpendalReadIter_collect__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalReadIter_next__impl(SEXP self__) {
+    SEXP res = savvy_OpendalReadIter_next__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalReadIter_seek__impl(SEXP self__, SEXP c_arg__offset, SEXP c_arg__whence) {
+    SEXP res = savvy_OpendalReadIter_seek__ffi(self__, c_arg__offset, c_arg__whence);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalReadIter_tell__impl(SEXP self__) {
+    SEXP res = savvy_OpendalReadIter_tell__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalWriteIter_close__impl(SEXP self__) {
+    SEXP res = savvy_OpendalWriteIter_close__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalWriteIter_tell__impl(SEXP self__) {
+    SEXP res = savvy_OpendalWriteIter_tell__ffi(self__);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalWriteIter_write__impl(SEXP self__, SEXP c_arg__data) {
+    SEXP res = savvy_OpendalWriteIter_write__ffi(self__, c_arg__data);
     return handle_result(res);
 }
 
@@ -215,14 +260,23 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 5},
     {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 10},
     {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 10},
+    {"savvy_OpendalFs_read_iter__impl", (DL_FUNC) &savvy_OpendalFs_read_iter__impl, 7},
     {"savvy_OpendalFs_rename__impl", (DL_FUNC) &savvy_OpendalFs_rename__impl, 3},
     {"savvy_OpendalFs_replace__impl", (DL_FUNC) &savvy_OpendalFs_replace__impl, 6},
     {"savvy_OpendalFs_stat__impl", (DL_FUNC) &savvy_OpendalFs_stat__impl, 3},
     {"savvy_OpendalFs_write__impl", (DL_FUNC) &savvy_OpendalFs_write__impl, 6},
+    {"savvy_OpendalFs_write_iter__impl", (DL_FUNC) &savvy_OpendalFs_write_iter__impl, 6},
     {"savvy_OpendalHttpFixture_endpoint__impl", (DL_FUNC) &savvy_OpendalHttpFixture_endpoint__impl, 1},
     {"savvy_OpendalHttpFixture_root__impl", (DL_FUNC) &savvy_OpendalHttpFixture_root__impl, 1},
     {"savvy_OpendalHttpFixture_start__impl", (DL_FUNC) &savvy_OpendalHttpFixture_start__impl, 1},
     {"savvy_OpendalHttpFixture_stop__impl", (DL_FUNC) &savvy_OpendalHttpFixture_stop__impl, 1},
+    {"savvy_OpendalReadIter_collect__impl", (DL_FUNC) &savvy_OpendalReadIter_collect__impl, 1},
+    {"savvy_OpendalReadIter_next__impl", (DL_FUNC) &savvy_OpendalReadIter_next__impl, 1},
+    {"savvy_OpendalReadIter_seek__impl", (DL_FUNC) &savvy_OpendalReadIter_seek__impl, 3},
+    {"savvy_OpendalReadIter_tell__impl", (DL_FUNC) &savvy_OpendalReadIter_tell__impl, 1},
+    {"savvy_OpendalWriteIter_close__impl", (DL_FUNC) &savvy_OpendalWriteIter_close__impl, 1},
+    {"savvy_OpendalWriteIter_tell__impl", (DL_FUNC) &savvy_OpendalWriteIter_tell__impl, 1},
+    {"savvy_OpendalWriteIter_write__impl", (DL_FUNC) &savvy_OpendalWriteIter_write__impl, 2},
     {NULL, NULL, 0}
 };
 

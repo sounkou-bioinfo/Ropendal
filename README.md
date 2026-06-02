@@ -9,64 +9,145 @@ R/Rust interface is built with the
 [`savvy`](https://github.com/yutannihilation/savvy) crate, which
 generates the R wrappers and native registration used by the package.
 
-Ropendal currently exposes local filesystems, HTTP endpoints,
-S3-compatible services, and Google Drive as byte-addressable filesystem
-handles with explicit backend configuration and explicit credentials.
+The central abstraction is an `OpendalFs` handle: a root-relative,
+byte-addressable filesystem over local files, HTTP endpoints,
+S3-compatible services, Google Drive, and other OpenDAL-backed providers
+as support is added. Operations move raw bytes and byte ranges; backend
+failures resolve to classed error values; credentials are explicit
+rather than discovered through hidden ambient provider chains.
 
-The filesystem abstraction is deliberately opinionated. Handles use
-normalized paths relative to a configured root, primitive operations
-move bytes and byte ranges, backend failures resolve to classed error
-values, and credentials are supplied explicitly rather than discovered
-through hidden ambient provider chains.
+Aio handles are a core part of the interface. Reads can return
+nanonext-like handles that callers poll, collect, or cancel explicitly,
+while background Rust tasks never call R APIs. The package also exposes
+chunked read/write iterators for streaming-style transfer and installs
+`inst/include/ropendal.h`, a pure C API for downstream native packages
+that want direct async byte access.
 
-At the R level, Ropendal supports raw byte reads, range reads, writes,
-replacements, appends where supported, metadata, listing, path
-normalization, read Aio handles, and credential helpers including Google
-Drive and S3-compatible providers. At the native level, the package
-installs `inst/include/ropendal.h` and exports a pure C API from the
-package shared library so downstream native packages can submit async
-filesystem operations and read directly into caller-owned buffers
-without routing through R raw vectors.
+See `design/api-design.md` for API design notes and `design/STATUS.md`
+for the implementation/test checklist.
 
-See `design/api-design.md` for the current API design notes and
-`design/STATUS.md` for the implementation/test checklist.
+## API at a glance
+
+The tables below are generated from progress data frames in this README
+source.
+
+<details>
+<summary>
+Supported operations
+</summary>
+
+| operation    | surface             | status            | notes                                                                        |
+|:-------------|:--------------------|:------------------|:-----------------------------------------------------------------------------|
+| read         | sync, Aio, iterator | implemented       | range reads, batch concurrency, iterators, seek/tell, per-object read tuning |
+| write        | sync, iterator      | implemented       | create/replace, batch concurrency, iterators, tell, per-object write tuning  |
+| stat/exists  | sync                | implemented       | metadata and existence values                                                |
+| list         | sync                | implemented       | where provider supports listing                                              |
+| mkdir/delete | sync                | implemented       | root-relative path normalization                                             |
+| copy         | sync                | implemented       | direct provider copy                                                         |
+| rename       | sync                | backend-dependent | no silent S3-style emulation of atomic rename                                |
+| append       | sync, iterator      | backend-dependent | returns unsupported where OpenDAL reports no append capability               |
+
+</details>
+<details>
+<summary>
+Aio interface
+</summary>
+
+| abstraction              | status                           | role                                                     |
+|:-------------------------|:---------------------------------|:---------------------------------------------------------|
+| OpendalAio               | implemented                      | nanonext-like handle for background Rust work            |
+| poll_aio()               | implemented                      | non-blocking readiness check                             |
+| collect_aio()/call_aio() | implemented                      | explicit wait and result collection                      |
+| stop_aio()               | implemented; needs race coverage | explicit cancellation request                            |
+| native C Aio             | implemented for byte operations  | downstream native packages can submit async reads/writes |
+
+</details>
+<details>
+<summary>
+Read operations
+</summary>
+
+| function_or_path    | status      | tuning                                                         |
+|:--------------------|:------------|:---------------------------------------------------------------|
+| fs_read()           | implemented | batch_concurrency, read_concurrency, chunk_size, coalesce_gap  |
+| fs_read_aio()       | implemented | same as fs_read()                                              |
+| fs_read_iter()      | implemented | one path returns a handle; many paths return a list of handles |
+| read_iter_next()    | implemented | next chunk as raw bytes                                        |
+| read_iter_collect() | implemented | remaining chunks into one raw vector                           |
+| fs_seek()/fs_tell() | implemented | read iterator position within its read window                  |
+| C read_into_aio()   | implemented | caller-owned output buffer                                     |
+
+</details>
+<details>
+<summary>
+Write operations
+</summary>
+
+| function_or_path           | status            | tuning                                                           |
+|:---------------------------|:------------------|:-----------------------------------------------------------------|
+| fs_write()                 | implemented       | batch_concurrency, write_concurrency, chunk_size                 |
+| fs_replace()               | implemented       | same as fs_write()                                               |
+| fs_append()                | backend-dependent | same where append is supported                                   |
+| fs_write_iter()            | implemented       | one path returns a sink; many paths return a list of sinks       |
+| write_iter_write()         | implemented       | submit one raw chunk                                             |
+| write_iter_close()         | implemented       | finalize multipart/streaming write                               |
+| fs_tell()                  | implemented       | bytes submitted to write sink; seek is intentionally unsupported |
+| C write/replace/append Aio | implemented       | caller-owned input buffer                                        |
+
+</details>
+<details>
+<summary>
+Supported providers
+</summary>
+
+| provider               | status                                      | credentials                                         |
+|:-----------------------|:--------------------------------------------|:----------------------------------------------------|
+| fs                     | implemented/tested                          | none                                                |
+| http                   | implemented/tested read-only                | none                                                |
+| s3-compatible          | implemented/tested with public S3 and MinIO | explicit credentials_s3() or unsigned public config |
+| gdrive                 | implemented/opt-in tested                   | explicit credentials_gdrive()/credentials_gdrive3() |
+| gcs                    | feature wired                               | planned explicit provider                           |
+| azblob                 | feature wired                               | planned explicit provider                           |
+| other OpenDAL services | extension path                              | needs config, credential, and tests                 |
+
+</details>
+<details>
+<summary>
+Serializers and codecs
+</summary>
+
+| layer                   | status      | notes                                       |
+|:------------------------|:------------|:--------------------------------------------|
+| raw bytes               | implemented | core storage contract uses R raw vectors    |
+| R serialize/unserialize | planned     | explicit serializer config; no hidden magic |
+| text                    | planned     | explicit encoding boundary                  |
+| codecs/compression      | planned     | separate from provider transfer chunking    |
+
+</details>
 
 ## Installation
-
-Ropendal is intended to be installed from R-universe with CRAN as the
-fallback repository.
-
-``` r
-install.packages(
-  "Ropendal",
-  repos = c(
-    "https://sounkou-bioinfo.r-universe.dev",
-    "https://cloud.r-project.org"
-  )
-)
-```
 
 Source installs require a Rust toolchain. The default source build
 enables the currently wired OpenDAL service features for local
 filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure
 Blob, and Google Drive. Since the core is backed by the OpenDAL Rust
-crate, Ropendal can in principle grow to support any OpenDAL service;
-adding a new service still needs Ropendal-side configuration,
-credential, and test coverage.
+crate, Ropendal can grow to support additional OpenDAL services; adding
+a service still needs Ropendal-side configuration, credential, and test
+coverage.
 
 ``` r
 # Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
 install.packages(
-  "Ropendal",
-  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
   type = "source",
   configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
 )
 
 # Add the current cloud-service feature group explicitly.
 install.packages(
-  "Ropendal",
-  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
   type = "source",
   configure.args = "--enable-cloud"
 )
@@ -268,6 +349,7 @@ Common development targets:
   make test-gdrive     run opt-in Google Drive tests using explicit env paths
   make test-ci         run C API checks and CI-only tinytest
   make rdm             render README.md from README.Rmd
+  make bench-minio-paws render development MinIO benchmark
   make check           build and run R CMD check --as-cran --no-manual
 make[1]: Leaving directory '/root/Ropendal'
 ```

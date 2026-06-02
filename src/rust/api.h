@@ -25,13 +25,26 @@ SEXP savvy_OpendalFs_normalize_path__ffi(SEXP self__, SEXP c_arg__path, SEXP c_a
 SEXP savvy_OpendalFs_open__ffi(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg__config, SEXP c_arg__root, SEXP c_arg__auth_config);
 SEXP savvy_OpendalFs_read__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap);
 SEXP savvy_OpendalFs_read_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap);
+SEXP savvy_OpendalFs_read_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__chunk_size, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__read_concurrency, SEXP c_arg__coalesce_gap);
 SEXP savvy_OpendalFs_rename__ffi(SEXP self__, SEXP c_arg__from, SEXP c_arg__to);
 SEXP savvy_OpendalFs_replace__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
 SEXP savvy_OpendalFs_stat__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_write__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
+SEXP savvy_OpendalFs_write_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__create, SEXP c_arg__append, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
 
 // methods and associated functions for OpendalHttpFixture
 SEXP savvy_OpendalHttpFixture_endpoint__ffi(SEXP self__);
 SEXP savvy_OpendalHttpFixture_root__ffi(SEXP self__);
 SEXP savvy_OpendalHttpFixture_start__ffi(SEXP c_arg__root);
 SEXP savvy_OpendalHttpFixture_stop__ffi(SEXP self__);
+
+// methods and associated functions for OpendalReadIter
+SEXP savvy_OpendalReadIter_collect__ffi(SEXP self__);
+SEXP savvy_OpendalReadIter_next__ffi(SEXP self__);
+SEXP savvy_OpendalReadIter_seek__ffi(SEXP self__, SEXP c_arg__offset, SEXP c_arg__whence);
+SEXP savvy_OpendalReadIter_tell__ffi(SEXP self__);
+
+// methods and associated functions for OpendalWriteIter
+SEXP savvy_OpendalWriteIter_close__ffi(SEXP self__);
+SEXP savvy_OpendalWriteIter_tell__ffi(SEXP self__);
+SEXP savvy_OpendalWriteIter_write__ffi(SEXP self__, SEXP c_arg__data);

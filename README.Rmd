@@ -12,43 +12,123 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 Ropendal is a byte-oriented abstract filesystem interface for R backed by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The R/Rust interface is built with the [`savvy`](https://github.com/yutannihilation/savvy) crate, which generates the R wrappers and native registration used by the package.
 
-Ropendal currently exposes local filesystems, HTTP endpoints, S3-compatible services, and Google Drive as byte-addressable filesystem handles with explicit backend configuration and explicit credentials.
+The central abstraction is an `OpendalFs` handle: a root-relative, byte-addressable filesystem over local files, HTTP endpoints, S3-compatible services, Google Drive, and other OpenDAL-backed providers as support is added. Operations move raw bytes and byte ranges; backend failures resolve to classed error values; credentials are explicit rather than discovered through hidden ambient provider chains.
 
-The filesystem abstraction is deliberately opinionated. Handles use normalized paths relative to a configured root, primitive operations move bytes and byte ranges, backend failures resolve to classed error values, and credentials are supplied explicitly rather than discovered through hidden ambient provider chains.
+Aio handles are a core part of the interface. Reads can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes chunked read/write iterators for streaming-style transfer and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want direct async byte access.
 
-At the R level, Ropendal supports raw byte reads, range reads, writes, replacements, appends where supported, metadata, listing, path normalization, read Aio handles, and credential helpers including Google Drive and S3-compatible providers. At the native level, the package installs `inst/include/ropendal.h` and exports a pure C API from the package shared library so downstream native packages can submit async filesystem operations and read directly into caller-owned buffers without routing through R raw vectors.
+See `design/api-design.md` for API design notes and `design/STATUS.md` for the implementation/test checklist.
 
-See `design/api-design.md` for the current API design notes and `design/STATUS.md` for the implementation/test checklist.
+## API at a glance
+
+The tables below are generated from progress data frames in this README source.
+
+```{r api-progress-tables, echo = FALSE, results = "asis"}
+details_table <- function(title, data) {
+  cat("<details>\n")
+  cat("<summary>", title, "</summary>\n\n", sep = "")
+  cat(knitr::kable(data, format = "pipe"), sep = "\n")
+  cat("\n</details>\n\n")
+}
+
+operation_progress <- data.frame(
+  operation = c("read", "write", "stat/exists", "list", "mkdir/delete", "copy", "rename", "append"),
+  surface = c("sync, Aio, iterator", "sync, iterator", "sync", "sync", "sync", "sync", "sync", "sync, iterator"),
+  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "backend-dependent", "backend-dependent"),
+  notes = c(
+    "range reads, batch concurrency, iterators, seek/tell, per-object read tuning",
+    "create/replace, batch concurrency, iterators, tell, per-object write tuning",
+    "metadata and existence values",
+    "where provider supports listing",
+    "root-relative path normalization",
+    "direct provider copy",
+    "no silent S3-style emulation of atomic rename",
+    "returns unsupported where OpenDAL reports no append capability"
+  )
+)
+
+aio_progress <- data.frame(
+  abstraction = c("OpendalAio", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
+  status = c("implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
+  role = c(
+    "nanonext-like handle for background Rust work",
+    "non-blocking readiness check",
+    "explicit wait and result collection",
+    "explicit cancellation request",
+    "downstream native packages can submit async reads/writes"
+  )
+)
+
+read_progress <- data.frame(
+  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_into_aio()"),
+  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
+  tuning = c(
+    "batch_concurrency, read_concurrency, chunk_size, coalesce_gap",
+    "same as fs_read()",
+    "one path returns a handle; many paths return a list of handles",
+    "next chunk as raw bytes",
+    "remaining chunks into one raw vector",
+    "read iterator position within its read window",
+    "caller-owned output buffer"
+  )
+)
+
+write_progress <- data.frame(
+  function_or_path = c("fs_write()", "fs_replace()", "fs_append()", "fs_write_iter()", "write_iter_write()", "write_iter_close()", "fs_tell()", "C write/replace/append Aio"),
+  status = c("implemented", "implemented", "backend-dependent", "implemented", "implemented", "implemented", "implemented", "implemented"),
+  tuning = c(
+    "batch_concurrency, write_concurrency, chunk_size",
+    "same as fs_write()",
+    "same where append is supported",
+    "one path returns a sink; many paths return a list of sinks",
+    "submit one raw chunk",
+    "finalize multipart/streaming write",
+    "bytes submitted to write sink; seek is intentionally unsupported",
+    "caller-owned input buffer"
+  )
+)
+
+provider_progress <- data.frame(
+  provider = c("fs", "http", "s3-compatible", "gdrive", "gcs", "azblob", "other OpenDAL services"),
+  status = c("implemented/tested", "implemented/tested read-only", "implemented/tested with public S3 and MinIO", "implemented/opt-in tested", "feature wired", "feature wired", "extension path"),
+  credentials = c("none", "none", "explicit credentials_s3() or unsigned public config", "explicit credentials_gdrive()/credentials_gdrive3()", "planned explicit provider", "planned explicit provider", "needs config, credential, and tests")
+)
+
+serializer_progress <- data.frame(
+  layer = c("raw bytes", "R serialize/unserialize", "text", "codecs/compression"),
+  status = c("implemented", "planned", "planned", "planned"),
+  notes = c(
+    "core storage contract uses R raw vectors",
+    "explicit serializer config; no hidden magic",
+    "explicit encoding boundary",
+    "separate from provider transfer chunking"
+  )
+)
+
+details_table("Supported operations", operation_progress)
+details_table("Aio interface", aio_progress)
+details_table("Read operations", read_progress)
+details_table("Write operations", write_progress)
+details_table("Supported providers", provider_progress)
+details_table("Serializers and codecs", serializer_progress)
+```
 
 ## Installation
 
-Ropendal is intended to be installed from R-universe with CRAN as the fallback repository.
-
-```{r install-binary, eval = FALSE}
-install.packages(
-  "Ropendal",
-  repos = c(
-    "https://sounkou-bioinfo.r-universe.dev",
-    "https://cloud.r-project.org"
-  )
-)
-```
-
-Source installs require a Rust toolchain. The default source build enables the currently wired OpenDAL service features for local filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure Blob, and Google Drive. Since the core is backed by the OpenDAL Rust crate, Ropendal can in principle grow to support any OpenDAL service; adding a new service still needs Ropendal-side configuration, credential, and test coverage.
+Source installs require a Rust toolchain. The default source build enables the currently wired OpenDAL service features for local filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure Blob, and Google Drive. Since the core is backed by the OpenDAL Rust crate, Ropendal can grow to support additional OpenDAL services; adding a service still needs Ropendal-side configuration, credential, and test coverage.
 
 ```{r install-source-features, eval = FALSE}
 # Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
 install.packages(
-  "Ropendal",
-  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
   type = "source",
   configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
 )
 
 # Add the current cloud-service feature group explicitly.
 install.packages(
-  "Ropendal",
-  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
   type = "source",
   configure.args = "--enable-cloud"
 )

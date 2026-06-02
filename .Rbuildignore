@@ -4,6 +4,7 @@
 ^\.sync$
 ^AGENTS\.md$
 ^design$
+^benchmarks$
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^\.Rhistory$

@@ -1,0 +1,182 @@
+Development benchmark: Ropendal vs paws on MinIO
+================
+
+This is a development-only benchmark. It starts a local MinIO service,
+writes and reads one raw payload through Ropendal and `paws.storage`,
+and reports `bench::mark()` results. The benchmark is intentionally
+outside the package build.
+
+``` r
+library(bench)
+library(processx)
+library(paws.storage)
+library(Ropendal)
+
+free_port <- function() {
+  code <- paste(
+    "import socket",
+    "s=socket.socket()",
+    "s.bind(('127.0.0.1',0))",
+    "print(s.getsockname()[1])",
+    "s.close()",
+    sep = ";"
+  )
+  as.integer(system2("python3", c("-c", shQuote(code)), stdout = TRUE))
+}
+
+start_minio <- function() {
+  minio_bin <- Sys.which("minio")
+  mc_bin <- Sys.which("mc")
+  if (!nzchar(minio_bin)) stop("minio binary is required", call. = FALSE)
+  if (!nzchar(mc_bin)) stop("mc binary is required", call. = FALSE)
+
+  data_dir <- tempfile("ropendal-minio-data-")
+  dir.create(data_dir, recursive = TRUE)
+  log_file <- tempfile("ropendal-minio-log-")
+  port <- free_port()
+  console_port <- free_port()
+  while (console_port == port) console_port <- free_port()
+  endpoint <- sprintf("http://127.0.0.1:%d", port)
+  access_key <- "minioadmin"
+  secret_key <- "minioadmin"
+
+  env <- Sys.getenv()
+  env["MINIO_ROOT_USER"] <- access_key
+  env["MINIO_ROOT_PASSWORD"] <- secret_key
+  proc <- process$new(
+    minio_bin,
+    c(
+      "server", data_dir,
+      "--address", sprintf("127.0.0.1:%d", port),
+      "--console-address", sprintf("127.0.0.1:%d", console_port)
+    ),
+    env = env,
+    stdout = log_file,
+    stderr = log_file
+  )
+
+  alias <- paste0("ropendal-bench-", Sys.getpid())
+  ready <- FALSE
+  for (i in seq_len(80)) {
+    ok <- system2(mc_bin, c("alias", "set", alias, endpoint, access_key, secret_key),
+                  stdout = FALSE, stderr = FALSE) == 0
+    if (ok) {
+      ready <- TRUE
+      break
+    }
+    if (!proc$is_alive()) stop("minio exited before becoming ready; see ", log_file, call. = FALSE)
+    Sys.sleep(0.25)
+  }
+  if (!ready) stop("minio did not become ready; see ", log_file, call. = FALSE)
+
+  bucket <- "ropendal-bench"
+  system2(mc_bin, c("mb", "--ignore-existing", paste0(alias, "/", bucket)), stdout = FALSE)
+
+  list(
+    proc = proc,
+    data_dir = data_dir,
+    log_file = log_file,
+    alias = alias,
+    endpoint = endpoint,
+    bucket = bucket,
+    access_key = access_key,
+    secret_key = secret_key,
+    region = "us-east-1"
+  )
+}
+
+minio <- start_minio()
+cleanup_minio <- function() {
+  try(system2(Sys.which("mc"), c("alias", "remove", minio$alias), stdout = FALSE, stderr = FALSE), silent = TRUE)
+  try(minio$proc$kill(), silent = TRUE)
+  unlink(minio$data_dir, recursive = TRUE)
+  unlink(minio$log_file)
+}
+
+root <- paste0("bench-", Sys.getpid())
+key <- "payload.bin"
+paws_key <- paste(root, key, sep = "/")
+payload_size <- 8 * 1024 * 1024
+set.seed(1)
+payload <- as.raw(sample.int(256L, payload_size, replace = TRUE) - 1L)
+
+auth <- credentials_s3(
+  access_key_id = minio$access_key,
+  secret_access_key = minio$secret_key,
+  region = minio$region,
+  source = "minio-benchmark"
+)
+
+fs <- opendal(
+  "s3",
+  endpoint = minio$endpoint,
+  bucket = minio$bucket,
+  root = root,
+  region = minio$region,
+  disable_config_load = TRUE,
+  disable_ec2_metadata = TRUE,
+  auth = auth
+)
+
+old_aws_env <- Sys.getenv(c("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"), unset = NA)
+restore_aws_env <- function() {
+  for (nm in names(old_aws_env)) {
+    if (is.na(old_aws_env[[nm]])) {
+      Sys.unsetenv(nm)
+    } else {
+      do.call(Sys.setenv, as.list(stats::setNames(old_aws_env[[nm]], nm)))
+    }
+  }
+}
+Sys.setenv(
+  AWS_ACCESS_KEY_ID = minio$access_key,
+  AWS_SECRET_ACCESS_KEY = minio$secret_key,
+  AWS_REGION = minio$region
+)
+
+s3 <- paws.storage::s3(
+  endpoint = minio$endpoint,
+  region = minio$region,
+  config = list(s3_force_path_style = TRUE)
+)
+
+# Warm up both clients and leave the payload available for download timings.
+invisible(fs_replace(fs, key, payload, write_concurrency = 4, chunk_size = 5 * 1024 * 1024))
+if (!minio$proc$is_alive()) {
+  if (file.exists(minio$log_file)) cat(readLines(minio$log_file), sep = "\n")
+  stop("minio exited during Ropendal warmup; see ", minio$log_file, call. = FALSE)
+}
+invisible(s3$put_object(Bucket = minio$bucket, Key = paws_key, Body = payload))
+
+bench::mark(
+  ropendal_replace = fs_replace(fs, key, payload, write_concurrency = 4, chunk_size = 5 * 1024 * 1024),
+  paws_put = {
+    s3$put_object(Bucket = minio$bucket, Key = paws_key, Body = payload)
+    TRUE
+  },
+  iterations = 5,
+  check = FALSE
+)[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+#> # A tibble: 2 × 5
+#>   expression            min   median `itr/sec` mem_alloc
+#>   <bch:expr>       <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_replace   22.7ms   25.3ms      39.4        0B
+#> 2 paws_put           76.3ms   77.6ms      12.8    8.16MB
+
+bench::mark(
+  ropendal_read = fs_read(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024),
+  ropendal_read_aio = call_aio(fs_read_aio(fs, key, read_concurrency = 4, chunk_size = 1024 * 1024)),
+  paws_get = s3$get_object(Bucket = minio$bucket, Key = paws_key)$Body,
+  iterations = 5,
+  check = FALSE
+)[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+#> # A tibble: 3 × 5
+#>   expression             min   median `itr/sec` mem_alloc
+#>   <bch:expr>        <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_read       7.71ms   8.34ms     110.     8.01MB
+#> 2 ropendal_read_aio   8.82ms  10.64ms      88.3    8.03MB
+#> 3 paws_get           11.54ms  11.65ms      82.5    8.29MB
+
+restore_aws_env()
+cleanup_minio()
+```

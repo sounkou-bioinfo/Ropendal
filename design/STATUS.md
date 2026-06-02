@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, and the pure C API has a compiled roundtrip test against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations and read/write iterators are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, and the pure C API has a compiled roundtrip test against the installed native library.
 
 ## CI matrix
 
@@ -43,7 +43,8 @@ GitHub Actions jobs:
 | `inst/tinytest/helper-ropendal.R` | yes | yes | yes | env gates, temp helpers |
 | CI-only gating via `ROPENDAL_TEST_CI` | yes | yes | yes | default tests skip CI-only files |
 | Network/service gating | yes | no | partial | public S3, local MinIO, HTTP fixture, and Google Drive tests exist; other cloud service tests planned |
-| Makefile test targets | yes | yes | yes | includes R tests and C API tests |
+| Makefile test targets | yes | yes | yes | includes R tests, C API tests, and development benchmark rendering |
+| Development MinIO benchmark | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; ignored from package build |
 | GitHub Actions workflow | yes | no local | defined | separate R/C/MinIO/check jobs |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
 | Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
@@ -64,10 +65,12 @@ GitHub Actions jobs:
 | `fs_write()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning |
 | `fs_replace()` replacement | yes | yes | yes | yes | local test |
 | `fs_append()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append |
+| `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
+| `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
 | `fs_ls()` | yes | yes | yes | yes | root entry filtered for local `fs`; public S3 and MinIO listing tested; HTTP currently unsupported by OpenDAL |
 | `fs_copy()` / `fs_rename()` / `fs_delete()` | yes | yes | yes | yes | direct `fs$copy()` / `fs$rename()` / `fs$delete()` methods tested; MinIO covers S3 copy/delete and unsupported atomic rename error value |
-| `serial_config(class, sfunc, ufunc)` | yes | no | no | no | planned |
-| `codec_config()` explicit codec layer | provisional | no | no | no | planned |
+| `serial_config(class, sfunc, ufunc)` | yes | no | no | no | planned; README progress table added |
+| `codec_config()` explicit codec layer | provisional | no | no | no | planned; README progress table added |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
 
 ## Async R contracts
@@ -106,7 +109,7 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Continue I/O polishing: read/write iterators, serializer modes, and service-level concurrency layers. Per-call batch/read/write/chunk/coalesce tuning is now wired through Rust/OpenDAL.
+1. Continue I/O polishing: serializer modes and service-level concurrency layers. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
 2. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 3. Expand `fs_read()` vector/list range handling in Rust, including nested result shapes and request-object/data-frame inputs.
 4. Implement native C `readv_into_aio()` result structs and tests.

@@ -16,9 +16,17 @@
 \alias{fs_normalize_path}
 \alias{fs_read}
 \alias{fs_read_aio}
+\alias{fs_read_iter}
+\alias{read_iter_next}
+\alias{read_iter_collect}
+\alias{fs_seek}
+\alias{fs_tell}
 \alias{fs_write}
 \alias{fs_replace}
 \alias{fs_append}
+\alias{fs_write_iter}
+\alias{write_iter_write}
+\alias{write_iter_close}
 \alias{fs_stat}
 \alias{fs_exists}
 \alias{fs_ls}
@@ -59,12 +67,22 @@ fs_read(fs, path, offset = 0, size = NULL, end = NULL,
 fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
+             read_concurrency = NULL, coalesce_gap = NULL)
+read_iter_next(iter)
+read_iter_collect(iter)
+fs_tell(iter)
+fs_seek(iter, offset, whence = c("start", "current", "end"))
 fs_write(fs, path, data, batch_concurrency = NULL,
          write_concurrency = NULL, chunk_size = NULL)
 fs_replace(fs, path, data, batch_concurrency = NULL,
            write_concurrency = NULL, chunk_size = NULL)
 fs_append(fs, path, data, batch_concurrency = NULL,
           write_concurrency = NULL, chunk_size = NULL)
+fs_write_iter(fs, path, create = TRUE, append = FALSE,
+              write_concurrency = NULL, chunk_size = NULL)
+write_iter_write(iter, data)
+write_iter_close(iter)
 fs_stat(fs, path, batch_concurrency = NULL)
 fs_exists(fs, path, batch_concurrency = NULL)
 fs_ls(fs, path = "", recursive = FALSE)
@@ -152,6 +170,14 @@ per-object transfer planning.}
 \item{coalesce_gap}{Optional byte gap for coalescing nearby read ranges.}
 
 \item{data}{Raw vector, or list of raw vectors for multiple paths.}
+
+\item{iter}{Read or write iterator handle.}
+
+\item{whence}{Seek origin for read iterators: iterator \code{start}, \code{current}, or \code{end}.}
+
+\item{create}{Whether a write iterator should create only and fail if the target exists.}
+
+\item{append}{Whether a write iterator should append rather than replace.}
 
 \item{recursive}{Whether to recurse for operations that support it.}
 

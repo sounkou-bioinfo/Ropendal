@@ -29,6 +29,7 @@ help:
 	  '  make test-gdrive     run opt-in Google Drive tests using explicit env paths' \
 	  '  make test-ci         run C API checks and CI-only tinytest' \
 	  '  make rdm             render README.md from README.Rmd' \
+	  '  make bench-minio-paws render development MinIO benchmark' \
 	  '  make check           build and run R CMD check --as-cran --no-manual'
 
 rd:
@@ -126,7 +127,10 @@ rdm:
 	ROPENDAL_GDRIVE_FILE="$(ROPENDAL_GDRIVE_FILE)" \
 	R -e "rmarkdown::render('README.Rmd')"
 
+bench-minio-paws: dev-install
+	R -e "rmarkdown::render('benchmarks/minio-paws.Rmd')"
+
 site:
 	R -e "pkgdown::build_site()"
 
-.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm site
+.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws site

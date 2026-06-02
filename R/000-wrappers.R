@@ -211,6 +211,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_read_iter` <- function(self) {
+  function(`path`, `chunk_size`, `offset` = NULL, `size` = NULL, `read_concurrency` = NULL, `coalesce_gap` = NULL) {
+    .savvy_wrap_OpendalReadIter(.Call(savvy_OpendalFs_read_iter__impl, `self`, `path`, `chunk_size`, `offset`, `size`, `read_concurrency`, `coalesce_gap`))
+  }
+}
+
 `OpendalFs_rename` <- function(self) {
   function(`from`, `to`) {
     .Call(savvy_OpendalFs_rename__impl, `self`, `from`, `to`)
@@ -235,6 +241,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_write_iter` <- function(self) {
+  function(`path`, `create` = NULL, `append` = NULL, `write_concurrency` = NULL, `chunk_size` = NULL) {
+    .savvy_wrap_OpendalWriteIter(.Call(savvy_OpendalFs_write_iter__impl, `self`, `path`, `create`, `append`, `write_concurrency`, `chunk_size`))
+  }
+}
+
 `.savvy_wrap_OpendalFs` <- function(ptr) {
   e <- new.env(parent = emptyenv())
   e$.ptr <- ptr
@@ -249,10 +261,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   e$`normalize_path` <- `OpendalFs_normalize_path`(ptr)
   e$`read` <- `OpendalFs_read`(ptr)
   e$`read_aio` <- `OpendalFs_read_aio`(ptr)
+  e$`read_iter` <- `OpendalFs_read_iter`(ptr)
   e$`rename` <- `OpendalFs_rename`(ptr)
   e$`replace` <- `OpendalFs_replace`(ptr)
   e$`stat` <- `OpendalFs_stat`(ptr)
   e$`write` <- `OpendalFs_write`(ptr)
+  e$`write_iter` <- `OpendalFs_write_iter`(ptr)
 
   class(e) <- c("Ropendal::OpendalFs", "OpendalFs", "savvy_Ropendal__sealed")
   e
@@ -329,5 +343,106 @@ class(`OpendalHttpFixture`) <- c("Ropendal::OpendalHttpFixture__bundle", "savvy_
 #' @export
 `print.Ropendal::OpendalHttpFixture__bundle` <- function(x, ...) {
   cat('Ropendal::OpendalHttpFixture\n')
+}
+
+### wrapper functions for OpendalReadIter
+
+`OpendalReadIter_collect` <- function(self) {
+  function() {
+    .Call(savvy_OpendalReadIter_collect__impl, `self`)
+  }
+}
+
+`OpendalReadIter_next` <- function(self) {
+  function() {
+    .Call(savvy_OpendalReadIter_next__impl, `self`)
+  }
+}
+
+`OpendalReadIter_seek` <- function(self) {
+  function(`offset`, `whence` = NULL) {
+    .Call(savvy_OpendalReadIter_seek__impl, `self`, `offset`, `whence`)
+  }
+}
+
+`OpendalReadIter_tell` <- function(self) {
+  function() {
+    .Call(savvy_OpendalReadIter_tell__impl, `self`)
+  }
+}
+
+`.savvy_wrap_OpendalReadIter` <- function(ptr) {
+  e <- new.env(parent = emptyenv())
+  e$.ptr <- ptr
+  e$`collect` <- `OpendalReadIter_collect`(ptr)
+  e$`next` <- `OpendalReadIter_next`(ptr)
+  e$`seek` <- `OpendalReadIter_seek`(ptr)
+  e$`tell` <- `OpendalReadIter_tell`(ptr)
+
+  class(e) <- c("Ropendal::OpendalReadIter", "OpendalReadIter", "savvy_Ropendal__sealed")
+  e
+}
+
+
+#' Chunked read iterator over one object.
+#' @export
+`OpendalReadIter` <- new.env(parent = emptyenv())
+
+### associated functions for OpendalReadIter
+
+
+
+class(`OpendalReadIter`) <- c("Ropendal::OpendalReadIter__bundle", "savvy_Ropendal__sealed")
+
+#' @export
+`print.Ropendal::OpendalReadIter__bundle` <- function(x, ...) {
+  cat('Ropendal::OpendalReadIter\n')
+}
+
+### wrapper functions for OpendalWriteIter
+
+`OpendalWriteIter_close` <- function(self) {
+  function() {
+    .Call(savvy_OpendalWriteIter_close__impl, `self`)
+  }
+}
+
+`OpendalWriteIter_tell` <- function(self) {
+  function() {
+    .Call(savvy_OpendalWriteIter_tell__impl, `self`)
+  }
+}
+
+`OpendalWriteIter_write` <- function(self) {
+  function(`data`) {
+    .Call(savvy_OpendalWriteIter_write__impl, `self`, `data`)
+  }
+}
+
+`.savvy_wrap_OpendalWriteIter` <- function(ptr) {
+  e <- new.env(parent = emptyenv())
+  e$.ptr <- ptr
+  e$`close` <- `OpendalWriteIter_close`(ptr)
+  e$`tell` <- `OpendalWriteIter_tell`(ptr)
+  e$`write` <- `OpendalWriteIter_write`(ptr)
+
+  class(e) <- c("Ropendal::OpendalWriteIter", "OpendalWriteIter", "savvy_Ropendal__sealed")
+  e
+}
+
+
+#' Chunked write sink for one object.
+#' @export
+`OpendalWriteIter` <- new.env(parent = emptyenv())
+
+### associated functions for OpendalWriteIter
+
+
+
+class(`OpendalWriteIter`) <- c("Ropendal::OpendalWriteIter__bundle", "savvy_Ropendal__sealed")
+
+#' @export
+`print.Ropendal::OpendalWriteIter__bundle` <- function(x, ...) {
+  cat('Ropendal::OpendalWriteIter\n')
 }
 

@@ -1,16 +1,15 @@
 use std::sync::{Arc, Mutex};
 
-use opendal::ErrorKind;
+use opendal::{Buffer, ErrorKind};
 use savvy::savvy;
-use savvy::OwnedRawSexp;
 use tokio::task::JoinHandle;
 
 use crate::error::{error_list, kind_code};
-use crate::r_values::{str_scalar, success_value};
+use crate::r_values::{buffer_to_raw_sexp, str_scalar, success_value};
 
 #[derive(Clone)]
 pub(crate) enum AioOutcome {
-    Bytes(Vec<u8>),
+    Bytes(Buffer),
     Many(Vec<AioOutcome>),
     Error {
         kind: String,
@@ -24,7 +23,7 @@ pub(crate) enum AioOutcome {
 
 fn outcome_to_sexp(outcome: AioOutcome) -> savvy::Result<savvy::Sexp> {
     match outcome {
-        AioOutcome::Bytes(bytes) => <OwnedRawSexp>::try_from(bytes).map(|x| x.into()),
+        AioOutcome::Bytes(bytes) => buffer_to_raw_sexp(bytes).map(|x| x.into()),
         AioOutcome::Many(values) => {
             let mut out = savvy::OwnedListSexp::new(values.len(), false)?;
             for (i, value) in values.into_iter().enumerate() {

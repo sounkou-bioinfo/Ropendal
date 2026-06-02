@@ -1,18 +1,19 @@
 use std::sync::Arc;
 
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use opendal::options::{DeleteOptions, ListOptions};
-use opendal::{Metadata, Operator};
+use opendal::{Buffer, Metadata, Operator};
 use savvy::savvy;
-use savvy::{ListSexp, OwnedListSexp, OwnedRawSexp, Sexp, StringSexp, TypedSexp};
+use savvy::{ListSexp, OwnedListSexp, Sexp, StringSexp, TypedSexp};
 
 use crate::aio::{AioOutcome, OpendalAio};
-use crate::common::{build_runtime, init_registry, NativeFs};
+use crate::common::{NativeFs, build_runtime, init_registry};
 use crate::error::{kind_code, op_error_list, unsupported_value};
+use crate::io_iter::{OpendalReadIter, OpendalWriteIter, checked_chunk_size, normalize_iter_path};
 use crate::metadata::metadata_list;
-use crate::ops::{read_bytes_with, write_bytes_with, ReadTuning, WriteTuning};
+use crate::ops::{ReadTuning, WriteTuning, read_bytes_with, write_bytes_with};
 use crate::path::{checked_u64, normalize_user_path};
-use crate::r_values::{bool_scalar, str_scalar, success_value};
+use crate::r_values::{bool_scalar, buffer_to_raw_sexp, str_scalar, success_value};
 
 /// Filesystem handle backed by Apache OpenDAL.
 /// @export
@@ -171,7 +172,8 @@ impl OpendalFs {
         let result = result.to_string();
         let handle = self.inner.runtime.spawn(async move {
             if n == 1 && result == "auto" {
-                return read_request_outcome(op, requests.into_iter().next().unwrap(), tuning).await;
+                return read_request_outcome(op, requests.into_iter().next().unwrap(), tuning)
+                    .await;
             }
             let mut values = stream::iter(requests.into_iter().enumerate())
                 .map(|(i, req)| {
@@ -187,6 +189,72 @@ impl OpendalFs {
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 
+    /// Create a chunked read iterator for one object.
+    /// @export
+    fn read_iter(
+        &self,
+        path: &str,
+        chunk_size: f64,
+        offset: Option<f64>,
+        size: Option<f64>,
+        read_concurrency: Option<f64>,
+        coalesce_gap: Option<f64>,
+    ) -> savvy::Result<OpendalReadIter> {
+        let path = normalize_iter_path(path, "read_iter")?;
+        let chunk_size = checked_chunk_size(chunk_size, "chunk_size")?;
+        let offset = checked_u64(offset.unwrap_or(0.0), "offset")?;
+        let size = if let Some(value) = size {
+            Some(checked_u64(value, "size")?)
+        } else {
+            let op = self.inner.op.clone();
+            let stat_path = path.clone();
+            let meta = self
+                .inner
+                .runtime
+                .block_on(async move { op.stat(&stat_path).await })
+                .map_err(|e| {
+                    savvy::Error::new(&format!("read_iter stat failed for {path}: {e}"))
+                })?;
+            Some(meta.content_length().saturating_sub(offset))
+        };
+        let tuning = read_tuning(read_concurrency, Some(chunk_size as f64), coalesce_gap)?;
+        Ok(OpendalReadIter::new(
+            self.inner.clone(),
+            path,
+            offset,
+            size,
+            chunk_size,
+            tuning,
+        ))
+    }
+
+    /// Create a chunked write sink for one object.
+    /// @export
+    fn write_iter(
+        &self,
+        path: &str,
+        create: Option<bool>,
+        append: Option<bool>,
+        write_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+    ) -> savvy::Result<OpendalWriteIter> {
+        let path = normalize_iter_path(path, "write_iter")?;
+        let create = create.unwrap_or(true);
+        let append = append.unwrap_or(false);
+        if create && append {
+            return Err(savvy::Error::new("create and append cannot both be true"));
+        }
+        let tuning = write_tuning(write_concurrency, chunk_size)?;
+        OpendalWriteIter::new(
+            self.inner.clone(),
+            path,
+            create,
+            append,
+            tuning,
+            if append { "append_iter" } else { "write_iter" },
+        )
+    }
+
     /// Write bytes to new path(s).
     /// @export
     fn write(
@@ -198,7 +266,15 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_common(path, data, true, false, "write", batch_concurrency.unwrap_or(0.0), tuning)
+        self.write_many_common(
+            path,
+            data,
+            true,
+            false,
+            "write",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
     }
 
     /// Replace bytes at path(s).
@@ -212,7 +288,15 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_common(path, data, false, false, "replace", batch_concurrency.unwrap_or(0.0), tuning)
+        self.write_many_common(
+            path,
+            data,
+            false,
+            false,
+            "replace",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
     }
 
     /// Append bytes to path(s).
@@ -226,7 +310,15 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_common(path, data, false, true, "append", batch_concurrency.unwrap_or(0.0), tuning)
+        self.write_many_common(
+            path,
+            data,
+            false,
+            true,
+            "append",
+            batch_concurrency.unwrap_or(0.0),
+            tuning,
+        )
     }
 
     /// Return metadata for path(s).
@@ -274,19 +366,26 @@ impl OpendalFs {
 
         let mut out = OwnedListSexp::new(n, false)?;
         for (i, value) in values.into_iter().enumerate() {
-            out.set_value(i, stat_value_to_sexp(value.unwrap_or(StatValue::Error {
-                kind: "Unexpected".to_string(),
-                code: 1,
-                message: "missing stat result".to_string(),
-                path: String::new(),
-            }))?)?;
+            out.set_value(
+                i,
+                stat_value_to_sexp(value.unwrap_or(StatValue::Error {
+                    kind: "Unexpected".to_string(),
+                    code: 1,
+                    message: "missing stat result".to_string(),
+                    path: String::new(),
+                }))?,
+            )?;
         }
         out.into()
     }
 
     /// Check whether path(s) exist.
     /// @export
-    fn exists(&self, path: StringSexp, batch_concurrency: Option<f64>) -> savvy::Result<savvy::Sexp> {
+    fn exists(
+        &self,
+        path: StringSexp,
+        batch_concurrency: Option<f64>,
+    ) -> savvy::Result<savvy::Sexp> {
         let n = path.len();
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
@@ -329,12 +428,15 @@ impl OpendalFs {
 
         let mut out = OwnedListSexp::new(n, false)?;
         for (i, value) in values.into_iter().enumerate() {
-            out.set_value(i, exists_value_to_sexp(value.unwrap_or(ExistsValue::Error {
-                kind: "Unexpected".to_string(),
-                code: 1,
-                message: "missing exists result".to_string(),
-                path: String::new(),
-            }))?)?;
+            out.set_value(
+                i,
+                exists_value_to_sexp(value.unwrap_or(ExistsValue::Error {
+                    kind: "Unexpected".to_string(),
+                    code: 1,
+                    message: "missing exists result".to_string(),
+                    path: String::new(),
+                }))?,
+            )?;
         }
         out.into()
     }
@@ -409,12 +511,15 @@ impl OpendalFs {
 
         let mut out = OwnedListSexp::new(n, false)?;
         for (i, value) in values.into_iter().enumerate() {
-            out.set_value(i, delete_value_to_sexp(value.unwrap_or(DeleteValue::Error {
-                kind: "Unexpected".to_string(),
-                code: 1,
-                message: "missing delete result".to_string(),
-                path: String::new(),
-            }))?)?;
+            out.set_value(
+                i,
+                delete_value_to_sexp(value.unwrap_or(DeleteValue::Error {
+                    kind: "Unexpected".to_string(),
+                    code: 1,
+                    message: "missing delete result".to_string(),
+                    path: String::new(),
+                }))?,
+            )?;
         }
         out.into()
     }
@@ -532,7 +637,11 @@ impl OpendalFs {
         };
         let op = self.inner.op.clone();
         let path_for_error = path.clone();
-        match self.inner.runtime.block_on(async move { op.stat(&path).await }) {
+        match self
+            .inner
+            .runtime
+            .block_on(async move { op.stat(&path).await })
+        {
             Ok(meta) => metadata_list(&path_for_error, &meta),
             Err(e) => op_error_list(e, "stat", &path_for_error),
         }
@@ -545,7 +654,11 @@ impl OpendalFs {
         };
         let op = self.inner.op.clone();
         let path_for_error = path.clone();
-        match self.inner.runtime.block_on(async move { op.exists(&path).await }) {
+        match self
+            .inner
+            .runtime
+            .block_on(async move { op.exists(&path).await })
+        {
             Ok(exists) => bool_scalar(exists)?.into(),
             Err(e) => op_error_list(e, "exists", &path_for_error),
         }
@@ -688,7 +801,8 @@ impl OpendalFs {
                     async move {
                         (
                             i,
-                            write_request(op, path, data, create_only, append, &operation, tuning).await,
+                            write_request(op, path, data, create_only, append, &operation, tuning)
+                                .await,
                         )
                     }
                 })
@@ -702,12 +816,18 @@ impl OpendalFs {
 
         let mut out = OwnedListSexp::new(n, false)?;
         for (i, value) in values.into_iter().enumerate() {
-            out.set_value(i, write_value_to_sexp(value.unwrap_or(WriteValue::Error {
-                kind: "Unexpected".to_string(),
-                code: 1,
-                message: "missing write result".to_string(),
-                path: String::new(),
-            }), operation)?)?;
+            out.set_value(
+                i,
+                write_value_to_sexp(
+                    value.unwrap_or(WriteValue::Error {
+                        kind: "Unexpected".to_string(),
+                        code: 1,
+                        message: "missing write result".to_string(),
+                        path: String::new(),
+                    }),
+                    operation,
+                )?,
+            )?;
         }
         out.into()
     }
@@ -715,7 +835,7 @@ impl OpendalFs {
     fn write_common(
         &self,
         path: &str,
-        data: Vec<u8>,
+        data: Buffer,
         create_only: bool,
         append: bool,
         operation: &str,
@@ -730,11 +850,14 @@ impl OpendalFs {
         }
         let op = self.inner.op.clone();
         let path_for_error = path.clone();
-        match self
-            .inner
-            .runtime
-            .block_on(write_bytes_with(op, path, data, create_only, append, tuning))
-        {
+        match self.inner.runtime.block_on(write_bytes_with(
+            op,
+            path,
+            data,
+            create_only,
+            append,
+            tuning,
+        )) {
             Ok(_) => success_value(),
             Err(e) => op_error_list(e, operation, &path_for_error),
         }
@@ -748,7 +871,10 @@ struct ReadRequest {
 }
 
 enum StatValue {
-    Metadata { path: String, meta: Metadata },
+    Metadata {
+        path: String,
+        meta: Metadata,
+    },
     Error {
         kind: String,
         code: i32,
@@ -801,7 +927,7 @@ enum WriteValue {
 async fn write_request(
     op: Operator,
     path: String,
-    data: Vec<u8>,
+    data: Buffer,
     create_only: bool,
     append: bool,
     operation: &str,
@@ -921,7 +1047,7 @@ fn exists_value_to_sexp(value: ExistsValue) -> savvy::Result<savvy::Sexp> {
 }
 
 enum ReadValue {
-    Bytes(Vec<u8>),
+    Bytes(Buffer),
     Error {
         kind: String,
         code: i32,
@@ -965,7 +1091,7 @@ async fn read_request(op: Operator, req: ReadRequest, tuning: ReadTuning) -> Rea
 
 fn read_value_to_sexp(value: ReadValue) -> savvy::Result<savvy::Sexp> {
     match value {
-        ReadValue::Bytes(bytes) => <OwnedRawSexp>::try_from(bytes).map(|x| x.into()),
+        ReadValue::Bytes(bytes) => buffer_to_raw_sexp(bytes).map(|x| x.into()),
         ReadValue::Error {
             kind,
             code,
@@ -1080,7 +1206,9 @@ fn expand_numeric_arg(
     };
     let values = numeric_arg(value, name)?;
     if values.len() != n {
-        return Err(savvy::Error::new(&format!("{name} length must match path length")));
+        return Err(savvy::Error::new(&format!(
+            "{name} length must match path length"
+        )));
     }
     Ok(values)
 }
@@ -1116,23 +1244,27 @@ fn append_named_config(
 
 fn config_value_to_string(value: Sexp, name: &str) -> savvy::Result<String> {
     match value.into_typed() {
-        TypedSexp::String(value) if value.len() == 1 => Ok(value.iter().next().unwrap_or("").to_string()),
+        TypedSexp::String(value) if value.len() == 1 => {
+            Ok(value.iter().next().unwrap_or("").to_string())
+        }
         TypedSexp::Integer(value) if value.len() == 1 => Ok(value.as_slice()[0].to_string()),
         TypedSexp::Real(value) if value.len() == 1 => Ok(value.as_slice()[0].to_string()),
-        TypedSexp::Logical(value) if value.len() == 1 => Ok(if value.iter().next().unwrap_or(false) {
-            "true".to_string()
-        } else {
-            "false".to_string()
-        }),
+        TypedSexp::Logical(value) if value.len() == 1 => {
+            Ok(if value.iter().next().unwrap_or(false) {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            })
+        }
         _ => Err(savvy::Error::new(&format!(
             "config value {name} must be a scalar string, number, or logical"
         ))),
     }
 }
 
-fn payloads_from_sexp(data: Sexp, n: usize) -> savvy::Result<Vec<Vec<u8>>> {
+fn payloads_from_sexp(data: Sexp, n: usize) -> savvy::Result<Vec<Buffer>> {
     match data.into_typed() {
-        TypedSexp::Raw(raw) if n == 1 => Ok(vec![raw.to_vec()]),
+        TypedSexp::Raw(raw) if n == 1 => Ok(vec![raw.to_vec().into()]),
         TypedSexp::Raw(_) => Err(savvy::Error::new(
             "data must be a list of raw vectors when path has length greater than 1",
         )),
@@ -1143,7 +1275,7 @@ fn payloads_from_sexp(data: Sexp, n: usize) -> savvy::Result<Vec<Vec<u8>>> {
             let mut out = Vec::with_capacity(n);
             for value in list.values_iter() {
                 match value.into_typed() {
-                    TypedSexp::Raw(raw) => out.push(raw.to_vec()),
+                    TypedSexp::Raw(raw) => out.push(raw.to_vec().into()),
                     _ => return Err(savvy::Error::new("each data element must be raw")),
                 }
             }

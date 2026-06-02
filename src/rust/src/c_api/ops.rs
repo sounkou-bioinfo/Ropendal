@@ -3,9 +3,13 @@ use std::ptr;
 
 use crate::ops::{read_bytes, write_bytes};
 use crate::path::normalize_user_path;
+use crate::r_values::copy_buffer_to_slice;
 
-use super::{c_error_from_opendal, c_str, set_c_error, CErrorInfo};
-use super::{ropendal_aio, ropendal_error, ropendal_fs, ropendal_read_options, ropendal_write_options, COutcome};
+use super::{CErrorInfo, c_error_from_opendal, c_str, set_c_error};
+use super::{
+    COutcome, ropendal_aio, ropendal_error, ropendal_fs, ropendal_read_options,
+    ropendal_write_options,
+};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_read_into_aio(
@@ -71,7 +75,11 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
     let op = native.op.clone();
     let runtime = native.runtime.clone();
     let offset = opt.offset;
-    let size = if opt.has_size != 0 { Some(opt.size) } else { None };
+    let size = if opt.has_size != 0 {
+        Some(opt.size)
+    } else {
+        None
+    };
     let dst_addr = dst as usize;
     let callback = opt.callback;
     let userdata_addr = opt.userdata as usize;
@@ -87,10 +95,12 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
                         path,
                     })
                 } else {
+                    let n = bytes.len();
                     unsafe {
-                        ptr::copy_nonoverlapping(bytes.as_ptr(), dst_addr as *mut u8, bytes.len());
+                        let dst = std::slice::from_raw_parts_mut(dst_addr as *mut u8, dst_len);
+                        copy_buffer_to_slice(bytes, &mut dst[..n]);
                     }
-                    COutcome::Nread(bytes.len())
+                    COutcome::Nread(n)
                 }
             }
             Err(e) => COutcome::Error(c_error_from_opendal(e, "read_into", &path)),
@@ -147,10 +157,14 @@ pub unsafe extern "C" fn ropendal_read_aio(
     let op = native.op.clone();
     let runtime = native.runtime.clone();
     let offset = opt.offset;
-    let size = if opt.has_size != 0 { Some(opt.size) } else { None };
+    let size = if opt.has_size != 0 {
+        Some(opt.size)
+    } else {
+        None
+    };
     let handle = runtime.spawn(async move {
         match read_bytes(op, path.clone(), offset, size).await {
-            Ok(bytes) => COutcome::Bytes(bytes),
+            Ok(bytes) => COutcome::Bytes(bytes.to_vec()),
             Err(e) => COutcome::Error(c_error_from_opendal(e, "read", &path)),
         }
     });
@@ -213,9 +227,9 @@ fn c_submit_write(
             }
         };
         let bytes = if src_len == 0 {
-            Vec::new()
+            opendal::Buffer::new()
         } else {
-            std::slice::from_raw_parts(src, src_len).to_vec()
+            std::slice::from_raw_parts(src, src_len).to_vec().into()
         };
         let native = (*fs).native.clone();
         let op = native.op.clone();

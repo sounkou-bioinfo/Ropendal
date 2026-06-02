@@ -1,5 +1,5 @@
 use opendal::options::{ReadOptions, WriteOptions};
-use opendal::{Error, ErrorKind, Operator};
+use opendal::{Buffer, Error, ErrorKind, Operator};
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ReadTuning {
@@ -19,7 +19,7 @@ pub(crate) async fn read_bytes(
     path: String,
     offset: u64,
     size: Option<u64>,
-) -> Result<Vec<u8>, opendal::Error> {
+) -> Result<Buffer, opendal::Error> {
     read_bytes_with(op, path, offset, size, ReadTuning::default()).await
 }
 
@@ -29,7 +29,7 @@ pub(crate) async fn read_bytes_with(
     offset: u64,
     size: Option<u64>,
     tuning: ReadTuning,
-) -> Result<Vec<u8>, opendal::Error> {
+) -> Result<Buffer, opendal::Error> {
     let mut opts = ReadOptions::default();
     if let Some(n) = size {
         opts.range = (offset..offset.saturating_add(n)).into();
@@ -45,13 +45,13 @@ pub(crate) async fn read_bytes_with(
     if let Some(gap) = tuning.coalesce_gap {
         opts.gap = Some(gap);
     }
-    Ok(op.read_options(&path, opts).await?.to_vec())
+    op.read_options(&path, opts).await
 }
 
 pub(crate) async fn write_bytes(
     op: Operator,
     path: String,
-    bytes: Vec<u8>,
+    bytes: Buffer,
     create_only: bool,
     append: bool,
 ) -> Result<(), opendal::Error> {
@@ -61,7 +61,7 @@ pub(crate) async fn write_bytes(
 pub(crate) async fn write_bytes_with(
     op: Operator,
     path: String,
-    bytes: Vec<u8>,
+    bytes: Buffer,
     create_only: bool,
     append: bool,
     tuning: WriteTuning,
@@ -69,9 +69,11 @@ pub(crate) async fn write_bytes_with(
     if create_only {
         match op.stat(&path).await {
             Ok(_) => {
-                return Err(Error::new(ErrorKind::AlreadyExists, "target already exists")
-                    .with_operation("write")
-                    .with_context("path", &path));
+                return Err(
+                    Error::new(ErrorKind::AlreadyExists, "target already exists")
+                        .with_operation("write")
+                        .with_context("path", &path),
+                );
             }
             Err(err) if err.kind() == ErrorKind::NotFound => {}
             Err(err) => return Err(err),

@@ -8,8 +8,9 @@
 #' @name Ropendal-api
 #' @aliases CredentialProvider opendal opendal_uri credentials_s3 credentials_gdrive
 #'   credentials_gdrive3 credential_schemes credential_config credential_summary
-#'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio fs_write
-#'   fs_replace fs_append fs_stat fs_exists fs_ls fs_mkdir fs_delete fs_copy
+#'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio fs_read_iter
+#'   read_iter_next read_iter_collect fs_seek fs_tell fs_write fs_replace fs_append
+#'   fs_write_iter write_iter_write write_iter_close fs_stat fs_exists fs_ls fs_mkdir fs_delete fs_copy
 #'   fs_rename collect_aio call_aio stop_aio poll_aio unresolved is_error_value
 #'   error_kind error_message error_operation error_path
 #' @param scheme OpenDAL service scheme.
@@ -50,6 +51,10 @@
 #'   per-object transfer planning.
 #' @param coalesce_gap Optional byte gap for coalescing nearby read ranges.
 #' @param data Raw vector, or list of raw vectors for multiple paths.
+#' @param iter Read or write iterator handle.
+#' @param whence Seek origin for read iterators: iterator `start`, `current`, or `end`.
+#' @param create Whether a write iterator should create only and fail if the target exists.
+#' @param append Whether a write iterator should append rather than replace.
 #' @param recursive Whether to recurse for operations that support it.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.
@@ -76,12 +81,22 @@
 #' fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
 #'             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#' fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
+#'              read_concurrency = NULL, coalesce_gap = NULL)
+#' read_iter_next(iter)
+#' read_iter_collect(iter)
+#' fs_tell(iter)
+#' fs_seek(iter, offset, whence = c("start", "current", "end"))
 #' fs_write(fs, path, data, batch_concurrency = NULL,
 #'          write_concurrency = NULL, chunk_size = NULL)
 #' fs_replace(fs, path, data, batch_concurrency = NULL,
 #'            write_concurrency = NULL, chunk_size = NULL)
 #' fs_append(fs, path, data, batch_concurrency = NULL,
 #'           write_concurrency = NULL, chunk_size = NULL)
+#' fs_write_iter(fs, path, create = TRUE, append = FALSE,
+#'               write_concurrency = NULL, chunk_size = NULL)
+#' write_iter_write(iter, data)
+#' write_iter_close(iter)
 #' fs_stat(fs, path, batch_concurrency = NULL)
 #' fs_exists(fs, path, batch_concurrency = NULL)
 #' fs_ls(fs, path = "", recursive = FALSE)
@@ -353,6 +368,84 @@ fs_append <- function(fs, path, data, batch_concurrency = NULL,
 
 #' @export
 #' @noRd
+fs_read_iter <- function(fs, path, chunk_size, offset = 0, size = NULL,
+                         read_concurrency = NULL, coalesce_gap = NULL) {
+  n <- length(path)
+  if (n == 0L) return(list())
+  one <- function(i) {
+    fs$read_iter(
+      path[[i]],
+      scalar_or_at(chunk_size, i, n, "chunk_size"),
+      scalar_or_at(offset, i, n, "offset"),
+      null_or_scalar_or_at(size, i, n, "size"),
+      read_concurrency,
+      coalesce_gap
+    )
+  }
+  if (n == 1L) one(1L) else lapply(seq_len(n), one)
+}
+
+#' @export
+#' @noRd
+read_iter_next <- function(iter) iter[["next"]]()
+
+#' @export
+#' @noRd
+read_iter_collect <- function(iter) iter$collect()
+
+#' @export
+#' @noRd
+fs_tell <- function(iter) {
+  if (is.null(iter$tell)) stop("object does not support fs_tell()", call. = FALSE)
+  iter$tell()
+}
+
+#' @export
+#' @noRd
+fs_seek <- function(iter, offset, whence = c("start", "current", "end")) {
+  if (is.null(iter$seek)) stop("object does not support fs_seek()", call. = FALSE)
+  iter$seek(offset, match.arg(whence))
+}
+
+#' @export
+#' @noRd
+fs_write_iter <- function(fs, path, create = TRUE, append = FALSE,
+                          write_concurrency = NULL, chunk_size = NULL) {
+  n <- length(path)
+  if (n == 0L) return(list())
+  one <- function(i) {
+    fs$write_iter(
+      path[[i]],
+      scalar_or_at(create, i, n, "create"),
+      scalar_or_at(append, i, n, "append"),
+      write_concurrency,
+      chunk_size
+    )
+  }
+  if (n == 1L) one(1L) else lapply(seq_len(n), one)
+}
+
+#' @export
+#' @noRd
+write_iter_write <- function(iter, data) iter$write(data)
+
+#' @export
+#' @noRd
+write_iter_close <- function(iter) iter$close()
+
+scalar_or_at <- function(x, i, n, name) {
+  if (length(x) == 1L) return(x[[1L]])
+  if (length(x) == n) return(x[[i]])
+  stop(name, " must have length 1 or match path length", call. = FALSE)
+}
+
+null_or_scalar_or_at <- function(x, i, n, name) {
+  if (is.null(x)) return(NULL)
+  scalar_or_at(x, i, n, name)
+}
+
+#' @export
+#' @noRd
 fs_stat <- function(fs, path, batch_concurrency = NULL) {
   fs$stat(path, batch_concurrency)
 }
@@ -427,5 +520,19 @@ print.OpendalFs <- function(x, ...) {
 #' @noRd
 print.OpendalAio <- function(x, ...) {
   cat("<opendal aio>", poll_aio(x), "\n")
+  invisible(x)
+}
+
+#' @export
+#' @noRd
+print.OpendalReadIter <- function(x, ...) {
+  cat("<opendal read iterator>\n")
+  invisible(x)
+}
+
+#' @export
+#' @noRd
+print.OpendalWriteIter <- function(x, ...) {
+  cat("<opendal write iterator>\n")
   invisible(x)
 }
