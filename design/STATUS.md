@@ -77,8 +77,9 @@ GitHub Actions jobs:
 
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
-| `*Aio` object classes | yes | yes | yes | yes | read Aio |
-| active bindings `$data` / `$result` | yes | no | no | no | planned |
+| generic `OpendalAio` native result future | yes | partial | yes | yes | currently read-focused; target outcome includes bytes, unit, bool, metadata, entries, many, error, cancelled |
+| `_aio()` for metadata/namespace operations | yes | no | no | no | planned for stat, exists, ls, mkdir, delete, copy, rename; remote filesystems need async-first here too |
+| active bindings `$value` / `$data` / `$result` | yes | no | no | no | planned; `$value` is universal, `$data`/`$result` aliases |
 | `unresolved()` | yes | partial | no | no | exported sentinel constructor exists |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | yes | read Aio tested |
 | `stop_aio()` cancellation | yes | partial | no | no | cancel path exists; needs race tests |
@@ -102,23 +103,23 @@ GitHub Actions jobs:
 | `write_aio()` create | yes | yes | no | yes | roundtrip |
 | `replace_aio()` | yes | yes | no | symbol | planned test |
 | `append_aio()` | yes | partial | no | symbol | backend capability dependent |
-| `stat_aio()` / `ls_aio()` | yes | unsupported stub | no | symbol | planned |
+| `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | unsupported/absent stubs | no | symbol partial | planned; metadata/entries/bool results need C accessors |
 | `cv` primitives | yes | partial | no | symbol | basic alloc/wait/signal exists |
 | monitor primitives | yes | unsupported stub | no | symbol | planned |
 | per-request `readv` result details | provisional | no | no | no | still needs final structs |
 
 ## Next implementation milestones
 
-1. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
-2. Make the R Aio contract nanonext-like: active `$data`/`$result`/state bindings, unresolved values while pending, `call_aio()` as wait/update, and `collect_aio()` as value-returning collection.
+1. Generalize `OpendalAio` from read bytes to native operation futures: bytes, unit, bool, metadata, entries, many, error, and cancelled.
+2. Add async metadata and namespace APIs: `fs_stat_aio()`, `fs_exists_aio()`, `fs_ls_aio()`, `fs_mkdir_aio()`, `fs_delete_aio()`, `fs_copy_aio()`, and `fs_rename_aio()`.
 3. Add R async write APIs: `fs_write_aio()`, `fs_replace_aio()`, and `fs_append_aio()` with R input stabilized before background upload.
-4. Continue I/O polishing: service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
-5. Implement serializers/deserializers only after byte Aio is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
-6. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
-7. Implement native C `readv_into_aio()` result structs and tests.
-8. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
-9. Expand capability tests by service profile and return classed capability values.
-10. Expand credential helpers beyond Google Drive and add more service coverage.
+4. Make the R Aio contract nanonext-like: active `$value`/`$data`/`$result`/state bindings, unresolved values while pending, `call_aio()` as wait/update, and `collect_aio()` as value-returning collection.
+5. Implement streaming namespace traversal: `fs_ls_iter()` and `fs_walk_iter()` with page size, prefetch, traversal fanout, limits, and continuation/backpressure semantics.
+6. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
+7. Continue I/O polishing: service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning and read/write iterators are now wired through Rust/OpenDAL.
+8. Implement serializers/deserializers only after the operation Aio substrate is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
+9. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
+10. Bring native C API parity up to the async operation contract: `readv_into_aio()`, metadata/entry/bool result accessors, and tests.
 
 ## Deferred milestones
 

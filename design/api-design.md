@@ -2,7 +2,7 @@
 
 ## Design center
 
-Ropendal is an abstract filesystem interface for R backed by the Rust crate of Apache OpenDAL. The core value is not a convenience wrapper around one backend; it is a byte-oriented filesystem substrate that higher-level R and native packages can build on.
+Ropendal is an abstract filesystem interface for R backed by the Rust crate of Apache OpenDAL. The core value is not a convenience wrapper around one backend; it is an async, capability-aware remote filesystem operation substrate that higher-level R and native packages can build on. Byte I/O is the data plane, but metadata and namespace operations are first-class remote operations too.
 
 The API borrows deliberately from `nanonext`:
 
@@ -17,27 +17,30 @@ The `savvy-async-poc` pattern is useful for ALTREP-backed lazy vectors, but expl
 
 ## Core constitution
 
-Ropendal's stable center is an async, capability-aware byte substrate over
-OpenDAL. The core should stay as small as possible:
+Ropendal's stable center is an async, capability-aware remote filesystem
+operation substrate over OpenDAL. The core should stay as small as possible:
 
 | Core value | Meaning |
 |---|---|
 | `OpendalFs` | capability-bearing OpenDAL operator handle plus runtime/config |
 | `OpendalAio` | one in-flight or resolved async operation |
 | `OpendalBytes` | planned immutable Rust-owned bytes exposed to R as a handle |
+| `NativeResult` | bytes, metadata, entries, booleans, unit completion, errors, cancellation, or many results |
 | Request/options | normalized operation description, ranges, concurrency, and transfer tuning |
 
 Everything else is an adapter or materialization layer. R objects, `SEXP` values,
 R closures, and serializer/deserializer hooks must not enter Tokio/background
-work. Background work operates on owned bytes, metadata, native codec state,
-paths, options, and errors only.
+work. Background work operates on owned bytes, metadata, entries, booleans,
+unit completion, native codec state, paths, options, and errors only.
 
 The package therefore uses three layers:
 
-1. **Byte future**: Rust/OpenDAL owns async I/O and resolves to owned bytes,
-   metadata, success, or error values.
-2. **Materializer**: R-thread conversion between bytes and R representations
-   such as `raw`, text, serialized R objects, matrix columns, or data frames.
+1. **Operation future**: Rust/OpenDAL owns async backend work and resolves to a
+   native result such as bytes, metadata, entries, bool, unit, many, error, or
+   cancellation.
+2. **Materializer**: R-thread conversion between native results and R
+   representations such as `raw`, `OpendalBytes`, metadata lists, entries,
+   logical values, text, serialized R objects, matrix columns, or data frames.
 3. **Adapter**: convenience surfaces such as iterators, Aio active bindings,
    future connection wrappers, promises/later integration, or package-specific
    serializers.
@@ -53,8 +56,13 @@ payload.
 R connections are compatibility adapters, not the core abstraction. A future
 connection API should wrap read/write iterators so `readBin()`, `writeBin()`,
 `serialize(obj, con)`, and `unserialize(con)` can be useful, while preserving the
-same byte-future, multipart-finalization, range-read, and provider-error
+same operation-future, multipart-finalization, range-read, and provider-error
 semantics.
+
+Every operation that may perform backend I/O should have an `_aio()` form:
+read/write, stat/exists, listing/walk, mkdir/delete, copy, rename, and append.
+`fs_info()`, `fs_capabilities()`, and path normalization can remain synchronous
+because they are local handle introspection.
 
 ## Avoid `list`
 
@@ -94,15 +102,15 @@ Required native state:
 
 ### Aio handles
 
-Aio objects are environments with active bindings, following nanonext.
+Aio objects are environments with active bindings, following nanonext. An Aio is a generic remote operation future, not just a read handle.
 
 ```r
-aio <- fs_read_aio(fs, "x.bin")
+aio <- fs_stat_aio(fs, "x.bin")
 aio
-# < readAio | $data >
+# < opendal aio | $value >
 
 unresolved(aio)
-aio$data          # unresolvedValue if pending, otherwise value or errorValue
+aio$value        # unresolvedValue if pending, otherwise value or errorValue
 call_aio(aio)    # wait, update object, return invisibly
 collect_aio(aio) # wait and return value
 stop_aio(aio)    # cancel if possible
@@ -119,19 +127,16 @@ Operation-specific Aio classes, if added later, must be Rust-backed/generated ob
 
 Active bindings:
 
-| Class | Binding | Meaning |
-|---|---|---|
-| `readAio` | `$data` | raw vector, decoded object, text, or errorValue |
-| `writeAio` | `$result` | success value or errorValue; optional `$metadata` later |
-| `statAio` | `$data` | metadata object/list or errorValue |
-| `lsAio` | `$data` | entries data frame/list or errorValue |
-| `existsAio` | `$data` | logical scalar or errorValue |
-| `deleteAio` | `$result` | success value or errorValue |
-| `copyAio` | `$result` | success/metadata or errorValue |
-| `renameAio` | `$result` | success value or errorValue |
-| `mkdirAio` | `$result` | success value or errorValue |
+| Binding | Meaning |
+|---|---|
+| `$value` | universal resolved value, success value, or error value |
+| `$data` | alias for `$value` on value-returning operations such as read/stat/ls/exists |
+| `$result` | alias for `$value` on unit/completion operations such as write/delete/copy/rename/mkdir |
+| `$state` | pending, ready, materialized, error, or cancelled |
+| `$resolved` | logical resolution state |
+| `$error` | error value or `NULL` |
 
-`collect_aio()` returns `$data` for value-returning Aios and `$result` for unit/completion Aios. Lists of Aios preserve length and names.
+`collect_aio()` returns `$value`. Lists of Aios preserve length and names. Operation-specific Aio classes may still exist for printing/documentation, but the value contract is generic.
 
 ## Errors as values
 
@@ -157,9 +162,9 @@ stop(as_error_condition(x))
 
 Rules:
 
-- Aio active bindings (`$data`, `$result`) never throw for backend failures; they return `unresolvedValue`, a success value, or `opendalErrorValue`.
+- Aio active bindings (`$value`, `$data`, `$result`) never throw for backend failures; they return `unresolvedValue`, a success value, or `opendalErrorValue`.
 - `collect_aio(aio)` returns the resolved value, including `opendalErrorValue` on failure.
-- `call_aio(aio)` waits and returns the Aio invisibly; users inspect `$data`/`$result`.
+- `call_aio(aio)` waits and returns the Aio invisibly; users inspect `$value`/`$data`/`$result`.
 - Synchronous primitive functions also return `opendalErrorValue` for backend/filesystem failures.
 - Vectorized operations preserve shape and place error values exactly where the corresponding success value would appear.
 - Hard errors still throw: invalid R arguments, impossible result shapes, unsafe pointer misuse, serializer/deserializer exceptions, package internal bugs, and memory/allocation failures.
@@ -220,8 +225,10 @@ fs_capabilities(x)
 
 fs_stat(x, path, ..., batch_concurrency = NULL)
 fs_exists(x, path, ..., batch_concurrency = NULL)
-fs_ls(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL, ...)
-fs_walk(x, path = "", recursive = TRUE, ...)
+fs_ls(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL,
+      page_size = NULL, prefetch = NULL, batch_concurrency = NULL,
+      list_concurrency = NULL, result = c("auto", "nested", "flat"), ...)
+fs_walk(x, path = "", recursive = TRUE, page_size = NULL, prefetch = NULL, ...)
 
 fs_read(
   x, path,
@@ -265,12 +272,15 @@ Write semantics:
 - Directory hierarchy creation is a directory operation, not part of file write semantics. Use `fs_mkdir()` / directory APIs.
 - User-supplied `path` and `data` vectors/lists use strict length matching; no implicit recycling of payloads.
 
-Async variants use the same vectorized arguments and return one Aio handle for the whole submitted operation:
+Async variants use the same vectorized arguments and return one Aio handle for the whole submitted operation. The synchronous forms should be blocking convenience wrappers over the same native operation pipeline, even if the implementation avoids literally constructing a public Aio object.
 
 ```r
 fs_stat_aio(x, path, ..., batch_concurrency = NULL, cv = NULL)
 fs_exists_aio(x, path, ..., batch_concurrency = NULL, cv = NULL)
-fs_ls_aio(x, path = "", recursive = FALSE, ..., cv = NULL)
+fs_ls_aio(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL,
+          page_size = NULL, prefetch = NULL, batch_concurrency = NULL,
+          list_concurrency = NULL, result = c("auto", "nested", "flat"),
+          ..., cv = NULL)
 fs_read_aio(x, path, offset = 0, size = NULL, end = NULL, ...,
             batch_concurrency = NULL, read_concurrency = NULL,
             chunk_size = NULL, coalesce_gap = NULL, prefetch = NULL,
@@ -286,6 +296,15 @@ fs_delete_aio(x, path, recursive = FALSE, ..., batch_concurrency = NULL, cv = NU
 fs_copy_aio(x, from, to, ..., batch_concurrency = NULL, cv = NULL)
 fs_rename_aio(x, from, to, ..., batch_concurrency = NULL, cv = NULL)
 ```
+
+Operation taxonomy:
+
+| Plane | Operations | Result family |
+|---|---|---|
+| Data | read, write, replace, append | bytes or unit |
+| Metadata | stat, exists | metadata or bool |
+| Namespace | ls, walk, mkdir, delete, copy, rename | entries or unit |
+| Materialization/adapters | raw, bytes handle, text, serial, codec, entries data frame, connections | R values over native results |
 
 ## Vectorized range reads
 
@@ -342,6 +361,40 @@ Semantics:
 A small constructor can exist for clarity, but it should feed `fs_read()` rather than create another verb. Directory paths are for `fs_ls()`/`fs_walk()`; byte ranges apply to file reads.
 
 The native C API remains more explicit (`read_aio`, `read_into_aio`, `readv_into_aio`) because C callers need direct buffer ownership and cannot rely on R vector/list recycling.
+
+## Listing and walking
+
+Listing is a first-class remote operation. On object stores and Google Drive-like
+services it can be paginated, rate-limited, recursive, and much larger than a
+single materialized R list. Provide both collectable and streaming forms:
+
+```r
+aio <- fs_ls_aio(fs, "prefix/", recursive = TRUE)
+entries <- collect_aio(aio)
+
+it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000, prefetch = 4)
+page <- ls_iter_next(it)
+
+walk <- fs_walk_iter(fs, "prefix/", recursive = TRUE, page_size = 1000)
+entry_or_page <- walk_iter_next(walk)
+```
+
+Semantics:
+
+- `fs_ls()` / `fs_ls_aio()` collect a finite listing into an entries value or
+  list of entries values.
+- `fs_ls_iter()` pages a listing and provides backpressure.
+- `fs_walk_iter()` recursively traverses and streams entries or pages.
+- `batch_concurrency` controls many independent roots/prefixes.
+- `list_concurrency` controls recursive traversal fanout where implemented.
+- `page_size` is the backend page request size where supported.
+- `prefetch` controls how many listing pages may be buffered ahead.
+- `limit` bounds materialized results for collectable listing APIs.
+- `start_after` or continuation-like options allow resuming object-store listings.
+
+A lightweight `opendalEntries` value can wrap returned entries with
+`as.list()`/`as.data.frame()` adapters. Primitive errors remain per-root/per-page
+error values rather than conditions.
 
 ## Path and metadata semantics
 
@@ -763,6 +816,7 @@ The native API is pure C and async-first. It does not include R headers and shou
 - Callbacks may run on Rust/Tokio worker threads and must not call R's C API unless the caller independently arranges safe handoff to R's main thread.
 - For `read_into_aio`, the caller owns `dst` and must keep it valid until the Aio reaches a terminal state.
 - Returned buffer pointers from `ropendal_aio_result_bytes()` are owned by the Aio and valid until `ropendal_aio_release()`.
+- Returned metadata/entry pointers are also owned by the Aio and valid until `ropendal_aio_release()`. The Aio must own C-compatible stable storage for strings and entry arrays.
 
 ### C types
 
@@ -821,16 +875,57 @@ ropendal_status_t ropendal_stat_aio(ropendal_fs_t *fs, const char *path,
                                     void *userdata,
                                     ropendal_aio_t **out,
                                     ropendal_error_t **err);
+ropendal_status_t ropendal_exists_aio(ropendal_fs_t *fs, const char *path,
+                                      ropendal_aio_callback_t callback,
+                                      void *userdata,
+                                      ropendal_aio_t **out,
+                                      ropendal_error_t **err);
 ropendal_status_t ropendal_ls_aio(ropendal_fs_t *fs,
                                   const ropendal_ls_options_t *opts,
                                   ropendal_aio_t **out,
                                   ropendal_error_t **err);
+ropendal_status_t ropendal_mkdir_aio(ropendal_fs_t *fs, const char *path,
+                                     ropendal_aio_callback_t callback,
+                                     void *userdata,
+                                     ropendal_aio_t **out,
+                                     ropendal_error_t **err);
+ropendal_status_t ropendal_delete_aio(ropendal_fs_t *fs,
+                                      const ropendal_delete_options_t *opts,
+                                      ropendal_aio_t **out,
+                                      ropendal_error_t **err);
+ropendal_status_t ropendal_copy_aio(ropendal_fs_t *fs, const char *from,
+                                    const char *to,
+                                    ropendal_aio_callback_t callback,
+                                    void *userdata,
+                                    ropendal_aio_t **out,
+                                    ropendal_error_t **err);
+ropendal_status_t ropendal_rename_aio(ropendal_fs_t *fs, const char *from,
+                                      const char *to,
+                                      ropendal_aio_callback_t callback,
+                                      void *userdata,
+                                      ropendal_aio_t **out,
+                                      ropendal_error_t **err);
 
 ropendal_aio_status_t ropendal_aio_poll(ropendal_aio_t *aio);
 ropendal_status_t ropendal_aio_wait(ropendal_aio_t *aio, int timeout_ms,
                                     ropendal_error_t **err);
 void ropendal_aio_cancel(ropendal_aio_t *aio);
 void ropendal_aio_release(ropendal_aio_t *aio);
+
+ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
+                                            const uint8_t **data,
+                                            size_t *len,
+                                            ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_bool(ropendal_aio_t *aio,
+                                           int *value,
+                                           ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_entry(ropendal_aio_t *aio,
+                                            const ropendal_entry_t **entry,
+                                            ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_entries(ropendal_aio_t *aio,
+                                              const ropendal_entry_t **entries,
+                                              size_t *len,
+                                              ropendal_error_t **err);
 ```
 
 Vectorized range reads:

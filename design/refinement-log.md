@@ -373,3 +373,40 @@ with `seek` mapped to range reads where possible and write `close()` mapped to
 multipart/finalize. The core API should remain byte futures plus iterators/Aio so
 provider errors, object-store range semantics, multipart finalization, and C API
 ownership stay explicit.
+
+### Async metadata and namespace operations
+
+Status: `provisional`
+
+The async-first contract applies to every operation that may perform backend I/O,
+not only byte reads/writes. On S3, Google Drive, HTTP-like remote services, and
+other object stores, `stat`, `exists`, `ls`, recursive `walk`, `delete`, `copy`,
+`rename`, `mkdir`, and append/write completion are network operations with
+latency, pagination, rate limits, and backend-specific consistency semantics.
+
+Revise the core wording from a byte future to a native operation future. Bytes
+are one result family among several:
+
+- data plane: read/write/replace/append -> bytes or unit completion;
+- metadata plane: stat/exists -> metadata or bool;
+- namespace plane: ls/walk/mkdir/delete/copy/rename -> entries or unit
+  completion;
+- materialization/adapters: raw vectors, `OpendalBytes`, text, serial R objects,
+  entries data frames, and R connections.
+
+Every backend-I/O operation should have an `_aio()` form. Synchronous R functions
+should be blocking convenience wrappers over the same native operation pipeline.
+Only local handle introspection such as `fs_info()`, `fs_capabilities()`, and path
+normalization can stay sync-only.
+
+Listing needs both collectable and streaming forms. `fs_ls_aio()` can collect a
+finite listing, but `fs_ls_iter()` and `fs_walk_iter()` are needed for paginated
+or very large listings with backpressure. Listing controls should distinguish
+many-prefix batch concurrency, recursive traversal fanout, page size, prefetch,
+limits, and continuation/resume points.
+
+The generic Aio outcome should therefore include bytes, unit, bool, metadata,
+entries, many, error, and cancelled states. R materialization of metadata/entries
+still happens on the R thread. The C API should mirror this with R-free result
+accessors such as bool, entry, and entries result extraction, with returned
+pointers owned by the Aio until release.
