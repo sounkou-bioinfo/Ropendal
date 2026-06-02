@@ -87,9 +87,9 @@ GitHub Actions jobs:
 | `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
 | `stop_aio()` / C Aio cancellation | yes | partial | no | yes | delayed HTTP fixture covers R pending-read cancellation; installed C roundtrip covers `ropendal_aio_cancel()`; broader race/service coverage still useful |
-| condition variables `cv_*` | yes | C-only partial | no | header only | planned for R |
-| `aio_monitor()` / `read_monitor()` | yes | no | no | no | planned |
-| `race_aio()` | yes | no | no | no | planned |
+| condition variables `cv_*` | yes | R polling + C partial | yes | header only | R `cv()`, `cv_value()`, `cv_reset()`, `cv_signal()`, `cv_wait()`, and `cv_until()` implemented; C cv lifecycle covered |
+| `aio_monitor()` / `read_monitor()` | yes | yes | yes | no | R monitor drains Aio completion events without materializing success payloads |
+| `race_aio()` | yes | yes | yes | no | returns first completion event plus Aio handle; timeout returns `unresolvedValue` |
 
 ## C API contracts
 

@@ -59,14 +59,15 @@ Supported operations
 Aio interface
 </summary>
 
-| abstraction              | status                                                                             | role                                                                    |
-|:-------------------------|:-----------------------------------------------------------------------------------|:------------------------------------------------------------------------|
-| OpendalAio               | implemented for bytes, metadata, entries, bools, and unit completions              | nanonext-like handle for background Rust work                           |
-| active bindings          | implemented                                                                        | $value/$data/\$result plus $state/$resolved/\$error                     |
-| poll_aio()               | implemented                                                                        | non-blocking readiness check                                            |
-| collect_aio()/call_aio() | implemented                                                                        | collect returns value; call waits/updates and returns the Aio invisibly |
-| stop_aio()               | implemented with delayed HTTP cancellation coverage                                | explicit cancellation request                                           |
-| native C Aio             | implemented for byte, read-vector, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
+| abstraction                   | status                                                                             | role                                                                    |
+|:------------------------------|:-----------------------------------------------------------------------------------|:------------------------------------------------------------------------|
+| OpendalAio                    | implemented for bytes, metadata, entries, bools, and unit completions              | nanonext-like handle for background Rust work                           |
+| active bindings               | implemented                                                                        | $value/$data/\$result plus $state/$resolved/\$error                     |
+| poll_aio()                    | implemented                                                                        | non-blocking readiness check                                            |
+| collect_aio()/call_aio()      | implemented                                                                        | collect returns value; call waits/updates and returns the Aio invisibly |
+| cv()/aio_monitor()/race_aio() | implemented as R polling helpers                                                   | condition-variable style wait helpers and completion event draining     |
+| stop_aio()                    | implemented with delayed HTTP cancellation coverage                                | explicit cancellation request                                           |
+| native C Aio                  | implemented for byte, read-vector, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
 
 </details>
 <details>

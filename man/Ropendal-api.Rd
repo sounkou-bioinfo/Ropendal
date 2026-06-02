@@ -63,9 +63,20 @@
 \alias{fs_rename}
 \alias{fs_rename_aio}
 \alias{collect_aio}
+\alias{collect_aio_}
 \alias{call_aio}
+\alias{call_aio_}
 \alias{stop_aio}
 \alias{poll_aio}
+\alias{cv}
+\alias{cv_value}
+\alias{cv_reset}
+\alias{cv_signal}
+\alias{cv_wait}
+\alias{cv_until}
+\alias{aio_monitor}
+\alias{read_monitor}
+\alias{race_aio}
 \alias{unresolved}
 \alias{is_error_value}
 \alias{error_kind}
@@ -162,9 +173,20 @@ fs_copy_aio(fs, from, to, batch_concurrency = NULL)
 fs_rename(fs, from, to)
 fs_rename_aio(fs, from, to, batch_concurrency = NULL)
 collect_aio(aio)
+collect_aio_(aio)
 call_aio(aio)
+call_aio_(aio)
 stop_aio(aio)
 poll_aio(aio)
+cv()
+cv_value(cv)
+cv_reset(cv)
+cv_signal(cv)
+cv_wait(cv, interval = 0.001)
+cv_until(cv, msec = 0, interval = 0.001)
+aio_monitor(aio, cv = cv())
+read_monitor(monitor)
+race_aio(aio, timeout = NULL, interval = 0.001)
 unresolved(x = NULL)
 is_error_value(x)
 error_kind(x)

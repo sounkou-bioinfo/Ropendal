@@ -17,7 +17,9 @@
 #'   write_iter_write write_iter_close fs_stat fs_stat_aio fs_stats
 #'   fs_stats_aio fs_exists fs_exists_aio fs_ls fs_ls_aio fs_mkdir fs_mkdir_aio fs_delete
 #'   fs_delete_aio fs_copy fs_copy_aio fs_rename fs_rename_aio collect_aio
-#'   call_aio stop_aio poll_aio unresolved is_error_value
+#'   collect_aio_ call_aio call_aio_ stop_aio poll_aio cv cv_value
+#'   cv_reset cv_signal cv_wait cv_until aio_monitor read_monitor race_aio
+#'   unresolved is_error_value
 #'   error_kind error_message error_operation error_path
 #' @export OpendalBytes
 #' @param scheme OpenDAL service scheme.
@@ -169,9 +171,20 @@
 #' fs_rename(fs, from, to)
 #' fs_rename_aio(fs, from, to, batch_concurrency = NULL)
 #' collect_aio(aio)
+#' collect_aio_(aio)
 #' call_aio(aio)
+#' call_aio_(aio)
 #' stop_aio(aio)
 #' poll_aio(aio)
+#' cv()
+#' cv_value(cv)
+#' cv_reset(cv)
+#' cv_signal(cv)
+#' cv_wait(cv, interval = 0.001)
+#' cv_until(cv, msec = 0, interval = 0.001)
+#' aio_monitor(aio, cv = cv())
+#' read_monitor(monitor)
+#' race_aio(aio, timeout = NULL, interval = 0.001)
 #' unresolved(x = NULL)
 #' is_error_value(x)
 #' error_kind(x)
@@ -1030,8 +1043,23 @@ collect_aio <- function(aio) {
 
 #' @export
 #' @noRd
+collect_aio_ <- function(aio) {
+  if (inherits(aio, "OpendalAio")) return(collect_aio(aio))
+  lapply(aio, collect_aio)
+}
+
+#' @export
+#' @noRd
 call_aio <- function(aio) {
   collect_aio(aio)
+  invisible(aio)
+}
+
+#' @export
+#' @noRd
+call_aio_ <- function(aio) {
+  if (inherits(aio, "OpendalAio")) return(call_aio(aio))
+  lapply(aio, call_aio)
   invisible(aio)
 }
 
@@ -1045,6 +1073,184 @@ stop_aio <- function(aio) {
 #' @noRd
 poll_aio <- function(aio) {
   aio$poll()
+}
+
+#' @export
+#' @noRd
+cv <- function() {
+  out <- new.env(parent = emptyenv())
+  out$.value <- 0L
+  out$.monitors <- list()
+  class(out) <- "opendalCv"
+  out
+}
+
+opendal_assert_cv <- function(x) {
+  if (!inherits(x, "opendalCv")) stop("cv must come from cv()", call. = FALSE)
+}
+
+opendal_cv_bump <- function(x) {
+  x$.value <- x$.value + 1L
+  invisible(x)
+}
+
+#' @export
+#' @noRd
+cv_value <- function(cv) {
+  opendal_assert_cv(cv)
+  cv$.value
+}
+
+#' @export
+#' @noRd
+cv_reset <- function(cv) {
+  opendal_assert_cv(cv)
+  cv$.value <- 0L
+  invisible(cv)
+}
+
+#' @export
+#' @noRd
+cv_signal <- function(cv) {
+  opendal_assert_cv(cv)
+  opendal_cv_bump(cv)
+}
+
+opendal_empty_monitor_events <- function() {
+  data.frame(
+    index = integer(),
+    name = character(),
+    event = character(),
+    state = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+opendal_aio_event <- function(aio) {
+  state <- aio$state
+  if (identical(state, "pending")) return(NULL)
+  if (identical(state, "cancelled")) return(c(event = "cancelled", state = state))
+  err <- aio$error
+  if (is_error_value(err)) {
+    event <- if (identical(error_kind(err), "Cancelled")) "cancelled" else "error"
+    return(c(event = event, state = aio$state))
+  }
+  c(event = "ready", state = aio$state)
+}
+
+opendal_monitor_scan <- function(monitor) {
+  if (!inherits(monitor, "opendalAioMonitor")) return(FALSE)
+  found <- opendal_empty_monitor_events()
+  for (i in seq_along(monitor$.aios)) {
+    if (monitor$.emitted[[i]]) next
+    event <- opendal_aio_event(monitor$.aios[[i]])
+    if (is.null(event)) next
+    monitor$.emitted[[i]] <- TRUE
+    found <- rbind(found, data.frame(
+      index = i,
+      name = monitor$.names[[i]],
+      event = unname(event[["event"]]),
+      state = unname(event[["state"]]),
+      stringsAsFactors = FALSE
+    ))
+  }
+  if (!nrow(found)) return(FALSE)
+  monitor$.events <- rbind(monitor$.events, found)
+  TRUE
+}
+
+opendal_cv_scan <- function(cv) {
+  opendal_assert_cv(cv)
+  if (!length(cv$.monitors)) return(invisible(FALSE))
+  signalled <- FALSE
+  for (monitor in cv$.monitors) {
+    signalled <- opendal_monitor_scan(monitor) || signalled
+  }
+  if (signalled) opendal_cv_bump(cv)
+  invisible(signalled)
+}
+
+#' @export
+#' @noRd
+cv_until <- function(cv, msec = 0, interval = 0.001) {
+  opendal_assert_cv(cv)
+  if (!is.numeric(msec) || length(msec) != 1L || is.na(msec) || msec < 0) {
+    stop("msec must be a non-negative number", call. = FALSE)
+  }
+  if (!is.numeric(interval) || length(interval) != 1L || is.na(interval) || interval < 0) {
+    stop("interval must be a non-negative number of seconds", call. = FALSE)
+  }
+  if (cv$.value > 0L) return(TRUE)
+  start <- cv$.value
+  deadline <- Sys.time() + as.difftime(msec / 1000, units = "secs")
+  repeat {
+    opendal_cv_scan(cv)
+    if (!identical(cv$.value, start)) return(TRUE)
+    remaining <- as.numeric(difftime(deadline, Sys.time(), units = "secs"))
+    if (remaining <= 0) return(FALSE)
+    Sys.sleep(min(interval, remaining))
+  }
+}
+
+#' @export
+#' @noRd
+cv_wait <- function(cv, interval = 0.001) {
+  opendal_assert_cv(cv)
+  if (cv$.value > 0L) return(TRUE)
+  start <- cv$.value
+  repeat {
+    opendal_cv_scan(cv)
+    if (!identical(cv$.value, start)) return(TRUE)
+    Sys.sleep(interval)
+  }
+}
+
+#' @export
+#' @noRd
+aio_monitor <- function(aio, cv = cv()) {
+  opendal_assert_cv(cv)
+  aios <- if (inherits(aio, "OpendalAio")) list(aio) else as.list(aio)
+  if (!length(aios) || !all(vapply(aios, inherits, logical(1), "OpendalAio"))) {
+    stop("aio must be an OpendalAio or a list of OpendalAio objects", call. = FALSE)
+  }
+  out <- new.env(parent = emptyenv())
+  out$.aios <- aios
+  out$.names <- names(aios)
+  if (is.null(out$.names)) out$.names <- rep("", length(aios))
+  out$.emitted <- rep(FALSE, length(aios))
+  out$.events <- opendal_empty_monitor_events()
+  out$cv <- cv
+  class(out) <- "opendalAioMonitor"
+  cv$.monitors[[length(cv$.monitors) + 1L]] <- out
+  out
+}
+
+#' @export
+#' @noRd
+read_monitor <- function(monitor) {
+  if (!inherits(monitor, "opendalAioMonitor")) {
+    stop("monitor must come from aio_monitor()", call. = FALSE)
+  }
+  opendal_monitor_scan(monitor)
+  events <- monitor$.events
+  monitor$.events <- opendal_empty_monitor_events()
+  events
+}
+
+#' @export
+#' @noRd
+race_aio <- function(aio, timeout = NULL, interval = 0.001) {
+  aios <- if (inherits(aio, "OpendalAio")) list(aio) else as.list(aio)
+  cv <- cv()
+  monitor <- aio_monitor(aios, cv = cv)
+  ready <- if (is.null(timeout)) cv_wait(cv, interval = interval) else cv_until(cv, timeout, interval = interval)
+  if (!ready) return(unresolved())
+  events <- read_monitor(monitor)
+  first <- events[["index"]][[1L]]
+  structure(
+    list(index = first, name = events[["name"]][[1L]], event = events[["event"]][[1L]], aio = aios[[first]]),
+    class = "opendalAioRace"
+  )
 }
 
 #' @export

@@ -455,3 +455,20 @@ bindings:
 returns the Aio invisibly. `collect_aio()` remains the value-returning helper.
 `unresolved()` remains the sentinel constructor when called with no argument and
 also acts as a predicate for Aios or returned values.
+
+### R Aio wait helpers and polling monitors
+
+Status: `implemented provisionally in R`
+
+R now exports `collect_aio_()`, `call_aio_()`, `cv()`, `cv_value()`,
+`cv_reset()`, `cv_signal()`, `cv_wait()`, `cv_until()`, `aio_monitor()`,
+`read_monitor()`, and `race_aio()`. The current R monitor is deliberately thin
+and polling-based: it never materializes successful Aio values in the
+background, and it uses `$error` only to classify ready/error/cancelled events.
+This gives users nanonext-like wait/race ergonomics while keeping background
+work in Rust/OpenDAL/Tokio and avoiding R API calls from worker threads.
+
+This remains a provisional bridge over the stronger native notification design.
+C `ropendal_cv_*` lifecycle primitives exist, but C `ropendal_aio_notify()` and
+monitor event queues still need a safe ownership model before they can replace
+R-side polling for completion notifications.

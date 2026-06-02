@@ -47,13 +47,14 @@ operation_progress <- data.frame(
 )
 
 aio_progress <- data.frame(
-  abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, and unit operations"),
+  abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "cv()/aio_monitor()/race_aio()", "stop_aio()", "native C Aio"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented as R polling helpers", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, and unit operations"),
   role = c(
     "nanonext-like handle for background Rust work",
     "$value/$data/$result plus $state/$resolved/$error",
     "non-blocking readiness check",
     "collect returns value; call waits/updates and returns the Aio invisibly",
+    "condition-variable style wait helpers and completion event draining",
     "explicit cancellation request",
     "downstream native packages can submit async filesystem operations"
   )

@@ -93,6 +93,8 @@ Run on local filesystem by default. Coverage:
 - `unresolved()` behavior before/after completion
 - `call_aio()` waits and caches result
 - `collect_aio()` returns result with the same shape as sync function
+- `collect_aio_()` and `call_aio_()` cover lists of Aios
+- `cv()` / `cv_until()` / `aio_monitor()` / `read_monitor()` / `race_aio()` polling wait helpers
 - `stop_aio()` cancellation behavior
 - errors captured as structured values by default, nanonext-like
 - list/vectorized Aio result shape and names
