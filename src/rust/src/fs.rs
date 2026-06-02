@@ -7,6 +7,7 @@ use savvy::savvy;
 use savvy::{ListSexp, OwnedListSexp, Sexp, StringSexp, TypedSexp};
 
 use crate::aio::{AioOutcome, EntryOutcome, OpendalAio};
+use crate::bytes::{buffer_from_opendal_bytes_sexp, opendal_bytes_to_sexp};
 use crate::common::{NativeFs, build_runtime, init_registry};
 use crate::error::{kind_code, op_error_list, unsupported_value};
 use crate::http_headers::apply_http_headers;
@@ -152,6 +153,78 @@ impl OpendalFs {
         self.read_requests(requests, result, batch_concurrency.unwrap_or(0.0), tuning)
     }
 
+    /// Read bytes into Rust-owned byte handle(s).
+    /// @export
+    fn read_bytes(
+        &self,
+        path: StringSexp,
+        offset: Option<Sexp>,
+        size: Option<Sexp>,
+        end: Option<Sexp>,
+        result: Option<&str>,
+        batch_concurrency: Option<f64>,
+        read_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+        coalesce_gap: Option<f64>,
+    ) -> savvy::Result<savvy::Sexp> {
+        let result = result.unwrap_or("auto");
+        match result {
+            "auto" | "flat" | "nested" => {}
+            _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
+        }
+        let requests = read_requests_from_options(path, offset, size, end)?;
+        let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
+        self.read_bytes_requests(requests, result, batch_concurrency.unwrap_or(0.0), tuning)
+    }
+
+    /// Submit asynchronous read(s) into Rust-owned byte handle(s).
+    /// @export
+    fn read_bytes_aio(
+        &self,
+        path: StringSexp,
+        offset: Option<Sexp>,
+        size: Option<Sexp>,
+        end: Option<Sexp>,
+        result: Option<&str>,
+        batch_concurrency: Option<f64>,
+        read_concurrency: Option<f64>,
+        chunk_size: Option<f64>,
+        coalesce_gap: Option<f64>,
+    ) -> savvy::Result<OpendalAio> {
+        let result = result.unwrap_or("auto");
+        match result {
+            "auto" | "flat" | "nested" => {}
+            _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
+        }
+        let requests = read_requests_from_options(path, offset, size, end)?;
+        let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
+        let n = requests.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let op = self.inner.op.clone();
+        let result = result.to_string();
+        let handle = self.inner.runtime.spawn(async move {
+            if n == 1 && result == "auto" {
+                return read_request_bytes_outcome(
+                    op,
+                    requests.into_iter().next().unwrap(),
+                    tuning,
+                )
+                .await;
+            }
+            let mut values = stream::iter(requests.into_iter().enumerate())
+                .map(|(i, req)| {
+                    let op = op.clone();
+                    async move { (i, read_request_bytes_outcome(op, req, tuning).await) }
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
+            values.sort_by_key(|(i, _)| *i);
+            aio_many_from_sorted(values, &result)
+        });
+        Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
+    }
+
     /// Submit asynchronous read(s).
     /// @export
     fn read_aio(
@@ -191,7 +264,7 @@ impl OpendalFs {
                 .collect::<Vec<_>>()
                 .await;
             values.sort_by_key(|(i, _)| *i);
-            AioOutcome::Many(values.into_iter().map(|(_, value)| value).collect())
+            aio_many_from_sorted(values, &result)
         });
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
@@ -1079,13 +1152,49 @@ impl OpendalFs {
         batch_concurrency: f64,
         tuning: ReadTuning,
     ) -> savvy::Result<savvy::Sexp> {
+        self.read_requests_with_materializer(
+            requests,
+            result,
+            batch_concurrency,
+            tuning,
+            read_value_to_sexp,
+        )
+    }
+
+    fn read_bytes_requests(
+        &self,
+        requests: Vec<ReadRequest>,
+        result: &str,
+        batch_concurrency: f64,
+        tuning: ReadTuning,
+    ) -> savvy::Result<savvy::Sexp> {
+        self.read_requests_with_materializer(
+            requests,
+            result,
+            batch_concurrency,
+            tuning,
+            read_value_to_bytes_sexp,
+        )
+    }
+
+    fn read_requests_with_materializer<F>(
+        &self,
+        requests: Vec<ReadRequest>,
+        result: &str,
+        batch_concurrency: f64,
+        tuning: ReadTuning,
+        materialize: F,
+    ) -> savvy::Result<savvy::Sexp>
+    where
+        F: Fn(ReadValue) -> savvy::Result<savvy::Sexp> + Copy,
+    {
         let n = requests.len();
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
         }
         if n == 1 && result == "auto" {
             let req = requests.into_iter().next().unwrap();
-            return read_value_to_sexp(self.inner.runtime.block_on(read_request(
+            return materialize(self.inner.runtime.block_on(read_request(
                 self.inner.op.clone(),
                 req,
                 tuning,
@@ -1108,7 +1217,15 @@ impl OpendalFs {
 
         let mut out = OwnedListSexp::new(n, false)?;
         for (i, value) in values.into_iter() {
-            out.set_value(i, read_value_to_sexp(value)?)?;
+            if result == "nested" {
+                let mut inner = OwnedListSexp::new(1, false)?;
+                let value = materialize(value)?;
+                inner.set_value(0, value)?;
+                out.set_value(i, inner)?;
+            } else {
+                let value = materialize(value)?;
+                out.set_value(i, value)?;
+            }
         }
         out.into()
     }
@@ -1728,16 +1845,37 @@ enum ReadValue {
 }
 
 async fn read_request_outcome(op: Operator, req: ReadRequest, tuning: ReadTuning) -> AioOutcome {
+    read_request_outcome_with(op, req, tuning, "read", AioOutcome::Bytes).await
+}
+
+async fn read_request_bytes_outcome(
+    op: Operator,
+    req: ReadRequest,
+    tuning: ReadTuning,
+) -> AioOutcome {
+    read_request_outcome_with(op, req, tuning, "read_bytes", AioOutcome::BytesHandle).await
+}
+
+async fn read_request_outcome_with<F>(
+    op: Operator,
+    req: ReadRequest,
+    tuning: ReadTuning,
+    operation: &str,
+    success: F,
+) -> AioOutcome
+where
+    F: Fn(Buffer) -> AioOutcome,
+{
     let path_for_error = req.path.clone();
     match read_bytes_with(op, req.path, req.offset, req.size, tuning).await {
-        Ok(bytes) => AioOutcome::Bytes(bytes),
+        Ok(bytes) => success(bytes),
         Err(e) => {
             let kind = e.kind();
             AioOutcome::Error {
                 kind: kind.into_static().to_string(),
                 code: kind_code(kind),
                 message: e.to_string(),
-                operation: "read".to_string(),
+                operation: operation.to_string(),
                 path: path_for_error,
             }
         }
@@ -1761,14 +1899,45 @@ async fn read_request(op: Operator, req: ReadRequest, tuning: ReadTuning) -> Rea
 }
 
 fn read_value_to_sexp(value: ReadValue) -> savvy::Result<savvy::Sexp> {
+    read_value_to_sexp_with(value, "read", |bytes| {
+        buffer_to_raw_sexp(bytes).map(|x| x.into())
+    })
+}
+
+fn read_value_to_bytes_sexp(value: ReadValue) -> savvy::Result<savvy::Sexp> {
+    read_value_to_sexp_with(value, "read_bytes", opendal_bytes_to_sexp)
+}
+
+fn read_value_to_sexp_with<F>(
+    value: ReadValue,
+    operation: &str,
+    materialize: F,
+) -> savvy::Result<savvy::Sexp>
+where
+    F: Fn(Buffer) -> savvy::Result<savvy::Sexp>,
+{
     match value {
-        ReadValue::Bytes(bytes) => buffer_to_raw_sexp(bytes).map(|x| x.into()),
+        ReadValue::Bytes(bytes) => materialize(bytes),
         ReadValue::Error {
             kind,
             code,
             message,
             path,
-        } => crate::error::error_list(&kind, code, &message, "read", &path),
+        } => crate::error::error_list(&kind, code, &message, operation, &path),
+    }
+}
+
+fn aio_many_from_sorted(values: Vec<(usize, AioOutcome)>, result: &str) -> AioOutcome {
+    let values: Vec<AioOutcome> = values.into_iter().map(|(_, value)| value).collect();
+    if result == "nested" {
+        AioOutcome::Many(
+            values
+                .into_iter()
+                .map(|value| AioOutcome::Many(vec![value]))
+                .collect(),
+        )
+    } else {
+        AioOutcome::Many(values)
     }
 }
 
@@ -1968,10 +2137,20 @@ fn config_value_to_string(value: Sexp, name: &str) -> savvy::Result<String> {
 }
 
 fn payloads_from_sexp(data: Sexp, n: usize) -> savvy::Result<Vec<Buffer>> {
+    if let Some(buffer) = buffer_from_opendal_bytes_sexp(&data)? {
+        return if n == 1 {
+            Ok(vec![buffer])
+        } else {
+            Err(savvy::Error::new(
+                "data must be a list of raw vectors or OpendalBytes when path has length greater than 1",
+            ))
+        };
+    }
+
     match data.into_typed() {
         TypedSexp::Raw(raw) if n == 1 => Ok(vec![raw.to_vec().into()]),
         TypedSexp::Raw(_) => Err(savvy::Error::new(
-            "data must be a list of raw vectors when path has length greater than 1",
+            "data must be a list of raw vectors or OpendalBytes when path has length greater than 1",
         )),
         TypedSexp::List(list) => {
             if list.len() != n {
@@ -1979,15 +2158,23 @@ fn payloads_from_sexp(data: Sexp, n: usize) -> savvy::Result<Vec<Buffer>> {
             }
             let mut out = Vec::with_capacity(n);
             for value in list.values_iter() {
+                if let Some(buffer) = buffer_from_opendal_bytes_sexp(&value)? {
+                    out.push(buffer);
+                    continue;
+                }
                 match value.into_typed() {
                     TypedSexp::Raw(raw) => out.push(raw.to_vec().into()),
-                    _ => return Err(savvy::Error::new("each data element must be raw")),
+                    _ => {
+                        return Err(savvy::Error::new(
+                            "each data element must be raw or OpendalBytes",
+                        ));
+                    }
                 }
             }
             Ok(out)
         }
         _ => Err(savvy::Error::new(
-            "data must be a raw vector or list of raw vectors",
+            "data must be a raw vector, OpendalBytes, or list of raw vectors/OpendalBytes",
         )),
     }
 }

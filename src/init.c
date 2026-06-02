@@ -39,6 +39,15 @@ SEXP handle_result(SEXP res_) {
     return (SEXP)res;
 }
 
+SEXP savvy_opendal_bytes_as_raw__impl(SEXP c_arg__bytes) {
+    SEXP res = savvy_opendal_bytes_as_raw__ffi(c_arg__bytes);
+    return handle_result(res);
+}
+
+SEXP savvy_opendal_bytes_len__impl(SEXP c_arg__bytes) {
+    SEXP res = savvy_opendal_bytes_len__ffi(c_arg__bytes);
+    return handle_result(res);
+}
 
 SEXP savvy_OpendalAio_cancel__impl(SEXP self__) {
     SEXP res = savvy_OpendalAio_cancel__ffi(self__);
@@ -64,6 +73,7 @@ SEXP savvy_OpendalAio_state_name__impl(SEXP self__) {
     SEXP res = savvy_OpendalAio_state_name__ffi(self__);
     return handle_result(res);
 }
+
 
 SEXP savvy_OpendalCredentialProvider_config__impl(SEXP self__, SEXP c_arg__service) {
     SEXP res = savvy_OpendalCredentialProvider_config__ffi(self__, c_arg__service);
@@ -195,6 +205,16 @@ SEXP savvy_OpendalFs_read_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__o
     return handle_result(res);
 }
 
+SEXP savvy_OpendalFs_read_bytes__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap) {
+    SEXP res = savvy_OpendalFs_read_bytes__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency, c_arg__read_concurrency, c_arg__chunk_size, c_arg__coalesce_gap);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalFs_read_bytes_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap) {
+    SEXP res = savvy_OpendalFs_read_bytes_aio__ffi(self__, c_arg__path, c_arg__offset, c_arg__size, c_arg__end, c_arg__result, c_arg__batch_concurrency, c_arg__read_concurrency, c_arg__chunk_size, c_arg__coalesce_gap);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalFs_read_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__chunk_size, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__read_concurrency, SEXP c_arg__coalesce_gap) {
     SEXP res = savvy_OpendalFs_read_iter__ffi(self__, c_arg__path, c_arg__chunk_size, c_arg__offset, c_arg__size, c_arg__read_concurrency, c_arg__coalesce_gap);
     return handle_result(res);
@@ -260,8 +280,8 @@ SEXP savvy_OpendalHttpFixture_root__impl(SEXP self__) {
     return handle_result(res);
 }
 
-SEXP savvy_OpendalHttpFixture_start__impl(SEXP c_arg__root, SEXP c_arg__required_headers) {
-    SEXP res = savvy_OpendalHttpFixture_start__ffi(c_arg__root, c_arg__required_headers);
+SEXP savvy_OpendalHttpFixture_start__impl(SEXP c_arg__root, SEXP c_arg__required_headers, SEXP c_arg__delay_ms) {
+    SEXP res = savvy_OpendalHttpFixture_start__ffi(c_arg__root, c_arg__required_headers, c_arg__delay_ms);
     return handle_result(res);
 }
 
@@ -317,12 +337,14 @@ SEXP savvy_OpendalWriteIter_write__impl(SEXP self__, SEXP c_arg__data) {
 
 
 static const R_CallMethodDef CallEntries[] = {
-
+    {"savvy_opendal_bytes_as_raw__impl", (DL_FUNC) &savvy_opendal_bytes_as_raw__impl, 1},
+    {"savvy_opendal_bytes_len__impl", (DL_FUNC) &savvy_opendal_bytes_len__impl, 1},
     {"savvy_OpendalAio_cancel__impl", (DL_FUNC) &savvy_OpendalAio_cancel__impl, 1},
     {"savvy_OpendalAio_collect__impl", (DL_FUNC) &savvy_OpendalAio_collect__impl, 1},
     {"savvy_OpendalAio_error_value__impl", (DL_FUNC) &savvy_OpendalAio_error_value__impl, 1},
     {"savvy_OpendalAio_poll__impl", (DL_FUNC) &savvy_OpendalAio_poll__impl, 1},
     {"savvy_OpendalAio_state_name__impl", (DL_FUNC) &savvy_OpendalAio_state_name__impl, 1},
+
     {"savvy_OpendalCredentialProvider_config__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_config__impl, 2},
     {"savvy_OpendalCredentialProvider_gdrive__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive__impl, 5},
     {"savvy_OpendalCredentialProvider_gdrive3__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive3__impl, 3},
@@ -349,6 +371,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 6},
     {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 10},
     {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 10},
+    {"savvy_OpendalFs_read_bytes__impl", (DL_FUNC) &savvy_OpendalFs_read_bytes__impl, 10},
+    {"savvy_OpendalFs_read_bytes_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_bytes_aio__impl, 10},
     {"savvy_OpendalFs_read_iter__impl", (DL_FUNC) &savvy_OpendalFs_read_iter__impl, 7},
     {"savvy_OpendalFs_rename__impl", (DL_FUNC) &savvy_OpendalFs_rename__impl, 3},
     {"savvy_OpendalFs_rename_aio__impl", (DL_FUNC) &savvy_OpendalFs_rename_aio__impl, 4},
@@ -362,7 +386,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_write_iter__impl", (DL_FUNC) &savvy_OpendalFs_write_iter__impl, 6},
     {"savvy_OpendalHttpFixture_endpoint__impl", (DL_FUNC) &savvy_OpendalHttpFixture_endpoint__impl, 1},
     {"savvy_OpendalHttpFixture_root__impl", (DL_FUNC) &savvy_OpendalHttpFixture_root__impl, 1},
-    {"savvy_OpendalHttpFixture_start__impl", (DL_FUNC) &savvy_OpendalHttpFixture_start__impl, 2},
+    {"savvy_OpendalHttpFixture_start__impl", (DL_FUNC) &savvy_OpendalHttpFixture_start__impl, 3},
     {"savvy_OpendalHttpFixture_stop__impl", (DL_FUNC) &savvy_OpendalHttpFixture_stop__impl, 1},
     {"savvy_OpendalLsIter_collect__impl", (DL_FUNC) &savvy_OpendalLsIter_collect__impl, 1},
     {"savvy_OpendalLsIter_next__impl", (DL_FUNC) &savvy_OpendalLsIter_next__impl, 1},

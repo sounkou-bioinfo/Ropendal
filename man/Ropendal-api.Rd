@@ -3,6 +3,7 @@
 \name{Ropendal-api}
 \alias{Ropendal-api}
 \alias{CredentialProvider}
+\alias{OpendalBytes}
 \alias{opendal}
 \alias{opendal_uri}
 \alias{credentials_s3}
@@ -11,11 +12,20 @@
 \alias{credential_schemes}
 \alias{credential_config}
 \alias{credential_summary}
+\alias{opt}
+\alias{opt<-}
+\alias{serial_config}
+\alias{serialize_raw}
+\alias{deserialize_raw}
 \alias{fs_info}
 \alias{fs_capabilities}
 \alias{fs_normalize_path}
 \alias{fs_read}
 \alias{fs_read_aio}
+\alias{fs_read_bytes}
+\alias{fs_read_bytes_aio}
+\alias{as.raw.OpendalBytes}
+\alias{length.OpendalBytes}
 \alias{fs_read_iter}
 \alias{read_iter_next}
 \alias{read_iter_collect}
@@ -80,12 +90,27 @@ credential_summary(provider)
 fs_info(fs)
 fs_capabilities(fs)
 fs_normalize_path(fs, path, directory = FALSE)
+opt(fs, name)
+opt(fs, name) <- value
+serial_config(class, sfunc, ufunc)
+serialize_raw(x, config = list())
+deserialize_raw(x, config = list())
 fs_read(fs, path, offset = 0, size = NULL, end = NULL,
         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
-        read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+        read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
+        mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
-            read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+            read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
+            mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
+              result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+              read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+fs_read_bytes_aio(fs, path, offset = 0, size = NULL, end = NULL,
+                  result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+                  read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+\method{as.raw}{OpendalBytes}(x)
+\method{length}{OpendalBytes}(x)
 fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
              read_concurrency = NULL, coalesce_gap = NULL)
 read_iter_next(iter)
@@ -93,17 +118,23 @@ read_iter_collect(iter)
 fs_tell(iter)
 fs_seek(iter, offset, whence = c("start", "current", "end"))
 fs_write(fs, path, data, batch_concurrency = NULL,
-         write_concurrency = NULL, chunk_size = NULL)
+         write_concurrency = NULL, chunk_size = NULL,
+         mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_write_aio(fs, path, data, batch_concurrency = NULL,
-             write_concurrency = NULL, chunk_size = NULL)
+             write_concurrency = NULL, chunk_size = NULL,
+             mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_replace(fs, path, data, batch_concurrency = NULL,
-           write_concurrency = NULL, chunk_size = NULL)
+           write_concurrency = NULL, chunk_size = NULL,
+           mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_replace_aio(fs, path, data, batch_concurrency = NULL,
-               write_concurrency = NULL, chunk_size = NULL)
+               write_concurrency = NULL, chunk_size = NULL,
+               mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_append(fs, path, data, batch_concurrency = NULL,
-          write_concurrency = NULL, chunk_size = NULL)
+          write_concurrency = NULL, chunk_size = NULL,
+          mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_append_aio(fs, path, data, batch_concurrency = NULL,
-              write_concurrency = NULL, chunk_size = NULL)
+              write_concurrency = NULL, chunk_size = NULL,
+              mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 fs_write_iter(fs, path, create = TRUE, append = FALSE,
               write_concurrency = NULL, chunk_size = NULL)
 write_iter_write(iter, data)
@@ -148,7 +179,8 @@ error_path(x)
 
 \item{root}{Root path/prefix for the service.}
 
-\item{config}{Named list of service configuration entries.}
+\item{config}{For \code{opendal()}, named list of service configuration entries.
+For \code{serialize_raw()} / \code{deserialize_raw()}, serialization config.}
 
 \item{auth}{Explicit credential provider.}
 
@@ -199,6 +231,19 @@ and \code{client_secret}.}
 
 \item{result}{Requested result shape.}
 
+\item{name}{Option name.}
+
+\item{value}{Option value.}
+
+\item{class}{Class name or names matched for custom serialization.}
+
+\item{sfunc, ufunc}{Serializer and deserializer functions for
+\code{serial_config()}.}
+
+\item{mode}{Materialization mode: raw bytes or serialized R objects.}
+
+\item{serial_config}{Serialization config, normally \code{opt(fs, "serial")}.}
+
 \item{batch_concurrency}{Optional maximum number of independent paths/ranges
 to process concurrently.}
 
@@ -213,7 +258,9 @@ per-object transfer planning.}
 
 \item{coalesce_gap}{Optional byte gap for coalescing nearby read ranges.}
 
-\item{data}{Raw vector, or list of raw vectors for multiple paths.}
+\item{data}{Raw vector, \code{OpendalBytes} handle, or list mixing raw vectors
+and \code{OpendalBytes} handles for multiple paths in raw mode; arbitrary R
+object or list of objects in serial mode.}
 
 \item{iter}{Read, write, listing, or walking iterator handle.}
 
@@ -234,8 +281,9 @@ per-object transfer planning.}
 \item{x}{Object to inspect.}
 }
 \value{
-Filesystem handles, raw vectors, metadata lists, logical results,
-Aio handles, or classed error values depending on the operation.
+Filesystem handles, raw vectors, \code{OpendalBytes} handles,
+deserialized R objects, metadata lists, logical results, Aio handles, or
+classed error values depending on the operation and mode.
 }
 \description{
 Byte-oriented filesystem operations backed by Apache OpenDAL. The current

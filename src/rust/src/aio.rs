@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use opendal::{Buffer, ErrorKind, Metadata};
-use savvy::{savvy, NullSexp};
+use savvy::{NullSexp, savvy};
 use tokio::task::JoinHandle;
 
+use crate::bytes::opendal_bytes_to_sexp;
 use crate::error::{error_list, kind_code};
 use crate::metadata::metadata_list;
 use crate::r_values::{bool_scalar, buffer_to_raw_sexp, str_scalar, success_value};
@@ -17,6 +18,7 @@ pub(crate) struct EntryOutcome {
 #[derive(Clone)]
 pub(crate) enum AioOutcome {
     Bytes(Buffer),
+    BytesHandle(Buffer),
     Unit,
     Bool(bool),
     Metadata {
@@ -38,6 +40,7 @@ pub(crate) enum AioOutcome {
 fn outcome_to_sexp(outcome: AioOutcome) -> savvy::Result<savvy::Sexp> {
     match outcome {
         AioOutcome::Bytes(bytes) => buffer_to_raw_sexp(bytes).map(|x| x.into()),
+        AioOutcome::BytesHandle(bytes) => opendal_bytes_to_sexp(bytes),
         AioOutcome::Unit => success_value(),
         AioOutcome::Bool(value) => bool_scalar(value)?.into(),
         AioOutcome::Metadata { path, meta } => metadata_list(&path, &meta),

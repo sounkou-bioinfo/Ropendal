@@ -62,7 +62,7 @@ No OpenDAL backend required. These tests should cover:
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
 - redacted printing for credentials
-- `serial_config()` / `codec_config()` validation
+- `serial_config()` validation and planned `codec_config()` validation
 
 ### 20 local filesystem backend
 
@@ -72,6 +72,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 
 - construct `opendal("fs", root = tempdir)`
 - write/read raw bytes
+- `OpendalBytes` read handles, `as.raw()`/`length()`, Aio collection, and write/replace/append acceptance
 - read scalar ranges
 - read multiple ranges from one file
 - read many paths with list-of-ranges
@@ -102,27 +103,29 @@ Files: `test-40-serial-*`
 
 Default tests should use only base R objects and toy custom classes. Coverage:
 
-- base `mode = "serial"` roundtrip
-- custom `serial_config(class, sfunc, ufunc)` roundtrip
+- base `mode = "serial"` roundtrip (implemented locally)
+- custom `serial_config(class, sfunc, ufunc)` roundtrip (implemented locally)
 - multiple class hooks
-- `opt(fs, "serial") <- list()` removes hooks
+- `opt(fs, "serial") <- list()` removes hooks (implemented locally)
 - `mode = "codec"` explicit codec roundtrip
-- deserializer runs at collect/materialization time for async reads
-- partial range + `mode = "serial"` errors clearly
+- deserializer runs at collect/materialization time for async reads (implemented locally)
+- partial range + `mode = "serial"` errors clearly (implemented locally)
 
 ### 50 C ABI / downstream consumer
 
-Files: `test-50-c-api-*`
+Files/tools: `tools/check-c-api-header.R`, `tools/check-c-api-roundtrip.R`, and CI-only `test-90-ci-native-api-contract.R`.
 
-Once the C API is implemented, add a tiny installed C consumer fixture. Coverage:
+Coverage:
 
-- `R_GetCCallable()` symbols are registered
-- `ropendal_api_version()` returns compatible version
-- pure C `ropendal_fs_open()` / `ropendal_fs_from_uri()` lifecycle contract
-- `ropendal_read_into_aio()` fills caller-owned buffer
-- `ropendal_readv_into_aio()` handles multiple ranges
-- per-request result/error reporting for `readv`
-- cancellation does not use freed buffers
+- pure C header compiles without R headers or `SEXP`
+- `ropendal_api_version()` and exported C symbols remain link-visible through the installed native library
+- pure C `ropendal_fs_open()` lifecycle contract
+- `ropendal_write_aio()` and `ropendal_read_into_aio()` fill caller-owned buffers
+- `ropendal_exists_aio()` plus `ropendal_aio_result_bool()`
+- `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
+- `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`
+- namespace mutations `ropendal_mkdir_aio()`, `ropendal_copy_aio()`, `ropendal_rename_aio()`, and `ropendal_delete_aio()`
+- still planned: `ropendal_fs_from_uri()` fixture coverage, `ropendal_readv_into_aio()`, per-request `readv` result/error reporting, and cancellation safety tests
 
 ### 90 CI-only API contract tests
 
@@ -166,7 +169,7 @@ Coverage:
 
 - auth construction redacts secrets
 - public S3-compatible read/stat/list/range reads
-- HTTP fixture read/stat/range reads, unsupported listing value, and explicit `headers=` authentication path
+- HTTP fixture read/stat/range reads, unsupported listing value, explicit `headers=` authentication path, and delayed-response pending Aio state
 - local MinIO write/read/stat/list/copy/delete in an isolated prefix
 - unsupported S3-compatible atomic rename returns an error value rather than silent emulation
 - range reads
@@ -215,14 +218,13 @@ fs_read(fs, read_requests(c("x", "x", "y"), c(0, 10, 5), c(2, 2, 3)),
 
 ## C API contract to test later
 
-Before implementation, update `inst/include/ropendal.h` so public option/result structs contain `struct_size` for ABI extensibility. Then test that downstream C code initializes structs with `sizeof(struct)` and that older struct sizes are accepted or rejected intentionally.
+Public option/result structs contain `struct_size` for ABI extensibility. Future tests should check that downstream C code initializes structs with `sizeof(struct)` and that older struct sizes are accepted or rejected intentionally.
 
-Important cases:
+Remaining important cases:
 
-- one async read into caller buffer
 - many async range reads into caller buffers
 - cancellation before completion
 - timeout wait
 - per-request failure in a vector read
-- release order: aio before fs, fs before aio, and R object GC while retained by C
+- release order: aio before fs and fs before aio
 - monitor/notification flow using `ropendal_cv_*` and `ropendal_monitor_*`

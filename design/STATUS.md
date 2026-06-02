@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has a compiled roundtrip test against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, metadata/existence, listing, and namespace operations against the installed native library.
 
 ## CI matrix
 
@@ -66,12 +66,13 @@ GitHub Actions jobs:
 | `fs_replace()` / `fs_replace_aio()` replacement | yes | yes | yes | pending | local sync and async tests |
 | `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append; async API wired |
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
+| `OpendalBytes` / `fs_read_bytes()` / `fs_read_bytes_aio()` | yes | yes | yes | no | Rust-owned immutable byte handles; `as.raw()`/`length()` materialization; writes accept handles without rerouting through another R raw vector |
 | `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
 | `fs_ls_iter()` / `fs_walk_iter()` streaming namespace traversal | yes | yes | yes | no | Rust-backed `OpendalLsIter` with `page_size`, `*_next()`, and `*_collect()`; empty listing, paged root listing, and recursive local walk tested |
 | `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | pending | metadata/existence sync plus async local tests; `fs_stats*` aliases vectorized `fs_stat*`; remote services should use async-first path |
 | `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | pending | root entry filtered for local `fs`; public S3 and MinIO listing tested for sync; async local test added; HTTP currently unsupported by OpenDAL |
 | `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | pending | direct sync methods tested; async local namespace tests added; MinIO covers S3 copy/delete and unsupported atomic rename error value |
-| `serial_config(class, sfunc, ufunc)` | yes | no | no | no | planned; README progress table added |
+| `serial_config(class, sfunc, ufunc)` / `serialize_raw()` / `deserialize_raw()` / `mode = "serial"` | yes | yes | yes | no | base serialization, custom class envelopes, `opt(fs, "serial")`, sync/Aio read/write materialization, vectorized serial writes, reset via `list()`, and partial-range rejection tested locally |
 | `codec_config()` explicit codec layer | provisional | no | no | no | planned; README progress table added |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
 
@@ -82,9 +83,9 @@ GitHub Actions jobs:
 | generic `OpendalAio` native result future | yes | yes | yes | pending | bytes, unit, bool, metadata, entries, many, error, cancelled outcome family implemented |
 | `_aio()` for metadata/namespace operations | yes | yes | yes | pending | stat/stats, exists, ls, mkdir, delete, copy, rename implemented and locally tested |
 | `_aio()` for writes | yes | yes | yes | pending | write, replace, append API implemented; local tests cover write/replace |
-| active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | pending | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested, deterministic pending coverage still needed |
-| `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; pending predicate needs deterministic coverage |
-| `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly; `collect_aio()` returns value |
+| active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | pending | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested by default, deterministic pending behavior tested with delayed local HTTP fixture |
+| `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
+| `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
 | `stop_aio()` cancellation | yes | partial | no | no | cancel path exists; needs race tests |
 | condition variables `cv_*` | yes | C-only partial | no | header only | planned for R |
 | `aio_monitor()` / `read_monitor()` | yes | no | no | no | planned |
@@ -106,7 +107,7 @@ GitHub Actions jobs:
 | `write_aio()` create | yes | yes | no | yes | roundtrip |
 | `replace_aio()` | yes | yes | no | symbol | planned test |
 | `append_aio()` | yes | partial | no | symbol | backend capability dependent |
-| `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | unsupported/absent stubs | no | symbol partial | planned; metadata/entries/bool results need C accessors |
+| `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
 | `cv` primitives | yes | partial | no | symbol | basic alloc/wait/signal exists |
 | monitor primitives | yes | unsupported stub | no | symbol | planned |
 | per-request `readv` result details | provisional | no | no | no | still needs final structs |
@@ -114,11 +115,11 @@ GitHub Actions jobs:
 ## Next implementation milestones
 
 1. Add prefetch, traversal fanout, limits, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them.
-2. Freeze the byte boundary: add `OpendalBytes`, `fs_read_bytes()` / `fs_read_bytes_aio()`, and make writes accept Rust-owned byte handles without rematerializing R raw vectors.
-3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, and read/write/listing/walking iterators are now wired through Rust/OpenDAL.
-4. Implement serializers/deserializers only after the operation Aio substrate is stable: `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` with R-thread-only hooks.
+2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations or C API byte-handle accessors.
+3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
+4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
 5. Implement native byte codecs as R-free byte transforms where useful, keeping them separable from serializers and shareable with the C API.
-6. Bring native C API parity up to the async operation contract: `readv_into_aio()`, metadata/entry/bool result accessors, and tests.
+6. Bring native C API parity up to the async operation contract: `readv_into_aio()`, per-request result details, and broader service tests.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests by service profile and return classed capability values.
 9. Expand credential helpers beyond Google Drive and add more service coverage.

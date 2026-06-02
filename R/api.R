@@ -6,10 +6,12 @@
 #' values; read Aio handles; and a pure C API.
 #'
 #' @name Ropendal-api
-#' @aliases CredentialProvider opendal opendal_uri credentials_s3 credentials_gdrive
+#' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gdrive
 #'   credentials_gdrive3 credential_schemes credential_config credential_summary
-#'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio fs_read_iter
-#'   read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
+#'   opt opt<- serial_config serialize_raw deserialize_raw
+#'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
+#'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
+#'   fs_read_iter read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
 #'   ls_iter_collect walk_iter_next walk_iter_collect fs_seek fs_tell fs_write fs_write_aio
 #'   fs_replace fs_replace_aio fs_append fs_append_aio fs_write_iter
 #'   write_iter_write write_iter_close fs_stat fs_stat_aio fs_stats
@@ -17,10 +19,12 @@
 #'   fs_delete_aio fs_copy fs_copy_aio fs_rename fs_rename_aio collect_aio
 #'   call_aio stop_aio poll_aio unresolved is_error_value
 #'   error_kind error_message error_operation error_path
+#' @export OpendalBytes
 #' @param scheme OpenDAL service scheme.
 #' @param ... Named service configuration entries.
 #' @param root Root path/prefix for the service.
-#' @param config Named list of service configuration entries.
+#' @param config For `opendal()`, named list of service configuration entries.
+#'   For `serialize_raw()` / `deserialize_raw()`, serialization config.
 #' @param auth Explicit credential provider.
 #' @param headers Named scalar character list/vector of HTTP headers for
 #'   `http`/`https` filesystems; values may contain credentials and are not
@@ -48,6 +52,13 @@
 #' @param size Number of bytes to read, or `NULL` to read to EOF.
 #' @param end Exclusive byte end offset.
 #' @param result Requested result shape.
+#' @param name Option name.
+#' @param value Option value.
+#' @param class Class name or names matched for custom serialization.
+#' @param sfunc,ufunc Serializer and deserializer functions for
+#'   `serial_config()`.
+#' @param mode Materialization mode: raw bytes or serialized R objects.
+#' @param serial_config Serialization config, normally `opt(fs, "serial")`.
 #' @param batch_concurrency Optional maximum number of independent paths/ranges
 #'   to process concurrently.
 #' @param read_concurrency Optional per-object OpenDAL read concurrency for large
@@ -57,7 +68,9 @@
 #' @param chunk_size Optional read/write chunk size in bytes for OpenDAL's
 #'   per-object transfer planning.
 #' @param coalesce_gap Optional byte gap for coalescing nearby read ranges.
-#' @param data Raw vector, or list of raw vectors for multiple paths.
+#' @param data Raw vector, `OpendalBytes` handle, or list mixing raw vectors
+#'   and `OpendalBytes` handles for multiple paths in raw mode; arbitrary R
+#'   object or list of objects in serial mode.
 #' @param iter Read, write, listing, or walking iterator handle.
 #' @param whence Seek origin for read iterators: iterator `start`, `current`, or `end`.
 #' @param create Whether a write iterator should create only and fail if the target exists.
@@ -84,12 +97,27 @@
 #' fs_info(fs)
 #' fs_capabilities(fs)
 #' fs_normalize_path(fs, path, directory = FALSE)
+#' opt(fs, name)
+#' opt(fs, name) <- value
+#' serial_config(class, sfunc, ufunc)
+#' serialize_raw(x, config = list())
+#' deserialize_raw(x, config = list())
 #' fs_read(fs, path, offset = 0, size = NULL, end = NULL,
 #'         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
-#'         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#'         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
+#'         mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
 #'             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
-#'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
+#'             mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#' fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
+#'               result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+#'               read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#' fs_read_bytes_aio(fs, path, offset = 0, size = NULL, end = NULL,
+#'                   result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+#'                   read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#' \method{as.raw}{OpendalBytes}(x)
+#' \method{length}{OpendalBytes}(x)
 #' fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
 #'              read_concurrency = NULL, coalesce_gap = NULL)
 #' read_iter_next(iter)
@@ -97,17 +125,23 @@
 #' fs_tell(iter)
 #' fs_seek(iter, offset, whence = c("start", "current", "end"))
 #' fs_write(fs, path, data, batch_concurrency = NULL,
-#'          write_concurrency = NULL, chunk_size = NULL)
+#'          write_concurrency = NULL, chunk_size = NULL,
+#'          mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_write_aio(fs, path, data, batch_concurrency = NULL,
-#'              write_concurrency = NULL, chunk_size = NULL)
+#'              write_concurrency = NULL, chunk_size = NULL,
+#'              mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_replace(fs, path, data, batch_concurrency = NULL,
-#'            write_concurrency = NULL, chunk_size = NULL)
+#'            write_concurrency = NULL, chunk_size = NULL,
+#'            mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_replace_aio(fs, path, data, batch_concurrency = NULL,
-#'                write_concurrency = NULL, chunk_size = NULL)
+#'                write_concurrency = NULL, chunk_size = NULL,
+#'                mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_append(fs, path, data, batch_concurrency = NULL,
-#'           write_concurrency = NULL, chunk_size = NULL)
+#'           write_concurrency = NULL, chunk_size = NULL,
+#'           mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_append_aio(fs, path, data, batch_concurrency = NULL,
-#'               write_concurrency = NULL, chunk_size = NULL)
+#'               write_concurrency = NULL, chunk_size = NULL,
+#'               mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
 #' fs_write_iter(fs, path, create = TRUE, append = FALSE,
 #'               write_concurrency = NULL, chunk_size = NULL)
 #' write_iter_write(iter, data)
@@ -156,8 +190,9 @@
 #' `collect_aio()` waits and returns the value. `call_aio()` waits, updates the
 #' Aio, and returns the Aio invisibly. `unresolved()` constructs the unresolved
 #' sentinel; `unresolved(aio)` and `unresolved(value)` are predicates.
-#' @return Filesystem handles, raw vectors, metadata lists, logical results,
-#'   Aio handles, or classed error values depending on the operation.
+#' @return Filesystem handles, raw vectors, `OpendalBytes` handles,
+#'   deserialized R objects, metadata lists, logical results, Aio handles, or
+#'   classed error values depending on the operation and mode.
 NULL
 
 #' Credential provider interface.
@@ -347,6 +382,164 @@ fs_normalize_path <- function(fs, path, directory = FALSE) {
   fs$normalize_path(path, directory)
 }
 
+.ropendal_serial_magic <- "Ropendal.serial.v1"
+.ropendal_options_name <- ".ropendal_options"
+
+#' @export
+#' @noRd
+serial_config <- function(class, sfunc, ufunc) {
+  if (!is.character(class) || !length(class) || anyNA(class) || any(!nzchar(class))) {
+    stop("class must be a non-empty character vector", call. = FALSE)
+  }
+  sfunc <- .ropendal_function_list(sfunc, length(class), "sfunc")
+  ufunc <- .ropendal_function_list(ufunc, length(class), "ufunc")
+  structure(
+    list(class = class, sfunc = sfunc, ufunc = ufunc),
+    class = "ropendalSerialConfig"
+  )
+}
+
+.ropendal_function_list <- function(value, n, name) {
+  if (is.function(value)) value <- list(value)
+  if (!is.list(value) || length(value) != n || !all(vapply(value, is.function, logical(1)))) {
+    stop(name, " must be a function or list of functions matching class", call. = FALSE)
+  }
+  value
+}
+
+.ropendal_normalize_serial_config <- function(config) {
+  if (is.null(config) || (is.list(config) && !length(config))) return(list())
+  if (!inherits(config, "ropendalSerialConfig")) {
+    stop("serial config must come from serial_config() or be list()", call. = FALSE)
+  }
+  config
+}
+
+.ropendal_check_fs <- function(fs) {
+  if (!inherits(fs, "OpendalFs")) stop("fs must be an OpendalFs", call. = FALSE)
+}
+
+.ropendal_options <- function(fs) {
+  .ropendal_check_fs(fs)
+  if (exists(.ropendal_options_name, envir = fs, inherits = FALSE)) {
+    get(.ropendal_options_name, envir = fs, inherits = FALSE)
+  } else {
+    list()
+  }
+}
+
+.ropendal_set_options <- function(fs, opts) {
+  assign(.ropendal_options_name, opts, envir = fs)
+  invisible(fs)
+}
+
+#' @export
+#' @noRd
+opt <- function(fs, name) {
+  name <- match.arg(name, "serial")
+  opts <- .ropendal_options(fs)
+  switch(name, serial = if (is.null(opts$serial)) list() else opts$serial)
+}
+
+#' @export
+#' @noRd
+`opt<-` <- function(fs, name, value) {
+  name <- match.arg(name, "serial")
+  opts <- .ropendal_options(fs)
+  switch(name, serial = {
+    opts$serial <- .ropendal_normalize_serial_config(value)
+  })
+  .ropendal_set_options(fs, opts)
+}
+
+.ropendal_payload_to_raw <- function(value, name) {
+  if (inherits(value, "OpendalBytes")) value <- as.raw(value)
+  if (!is.raw(value)) stop(name, " must be a raw vector or OpendalBytes", call. = FALSE)
+  value
+}
+
+.ropendal_serial_match <- function(x, config) {
+  if (!inherits(config, "ropendalSerialConfig")) return(NA_integer_)
+  match(TRUE, vapply(config$class, function(cls) inherits(x, cls), logical(1)), nomatch = NA_integer_)
+}
+
+#' @export
+#' @noRd
+serialize_raw <- function(x, config = list()) {
+  config <- .ropendal_normalize_serial_config(config)
+  i <- .ropendal_serial_match(x, config)
+  if (is.na(i)) return(serialize(x, NULL))
+
+  payload <- config$sfunc[[i]](x)
+  payload <- .ropendal_payload_to_raw(payload, "sfunc result")
+  serialize(
+    structure(
+      list(
+        magic = .ropendal_serial_magic,
+        version = 1L,
+        class = config$class[[i]],
+        payload = payload
+      ),
+      class = "ropendalSerialEnvelope"
+    ),
+    NULL
+  )
+}
+
+.ropendal_is_serial_envelope <- function(x) {
+  inherits(x, "ropendalSerialEnvelope") &&
+    is.list(x) &&
+    identical(x$magic, .ropendal_serial_magic) &&
+    identical(x$version, 1L) &&
+    is.character(x$class) && length(x$class) == 1L &&
+    is.raw(x$payload)
+}
+
+#' @export
+#' @noRd
+deserialize_raw <- function(x, config = list()) {
+  x <- .ropendal_payload_to_raw(x, "x")
+  value <- unserialize(x)
+  if (!.ropendal_is_serial_envelope(value)) return(value)
+
+  config <- .ropendal_normalize_serial_config(config)
+  if (!inherits(config, "ropendalSerialConfig")) {
+    stop("serialized payload requires a matching serial_config()", call. = FALSE)
+  }
+  i <- match(value$class, config$class, nomatch = NA_integer_)
+  if (is.na(i)) {
+    stop("serialized payload requires a deserializer for class ", value$class, call. = FALSE)
+  }
+  config$ufunc[[i]](value$payload)
+}
+
+.ropendal_deserialize_tree <- function(x, config) {
+  if (is_error_value(x)) return(x)
+  if (is.raw(x) || inherits(x, "OpendalBytes")) return(deserialize_raw(x, config))
+  if (is.list(x)) return(lapply(x, .ropendal_deserialize_tree, config = config))
+  stop("serial reads must resolve to raw bytes or error values", call. = FALSE)
+}
+
+.ropendal_serial_data <- function(path, data, config) {
+  config <- .ropendal_normalize_serial_config(config)
+  n <- length(path)
+  if (n <= 1L) return(serialize_raw(data, config))
+  if (!is.list(data) || is_error_value(data) || length(data) != n) {
+    stop("data must be a list matching path length for vectorized serial writes", call. = FALSE)
+  }
+  lapply(data, serialize_raw, config = config)
+}
+
+.ropendal_check_complete_serial_read <- function(offset, size, end) {
+  if (!is.null(size) || !is.null(end)) {
+    stop("mode = \"serial\" requires complete-object reads; use mode = \"raw\" for byte ranges", call. = FALSE)
+  }
+  values <- unlist(offset, recursive = TRUE, use.names = FALSE)
+  if (length(values) && (anyNA(values) || any(values != 0))) {
+    stop("mode = \"serial\" requires complete-object reads; use mode = \"raw\" for byte ranges", call. = FALSE)
+  }
+}
+
 #' @export
 #' @noRd
 fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
@@ -354,18 +547,24 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     batch_concurrency = NULL,
                     read_concurrency = NULL,
                     chunk_size = NULL,
-                    coalesce_gap = NULL) {
-  fs$read(
+                    coalesce_gap = NULL,
+                    mode = c("raw", "serial"),
+                    serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  result <- match.arg(result)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  value <- fs$read(
     path,
     offset,
     size,
     end,
-    match.arg(result),
+    result,
     batch_concurrency,
     read_concurrency,
     chunk_size,
     coalesce_gap
   )
+  if (identical(mode, "serial")) .ropendal_deserialize_tree(value, serial_config) else value
 }
 
 #' @export
@@ -375,8 +574,38 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         batch_concurrency = NULL,
                         read_concurrency = NULL,
                         chunk_size = NULL,
-                        coalesce_gap = NULL) {
+                        coalesce_gap = NULL,
+                        mode = c("raw", "serial"),
+                        serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  result <- match.arg(result)
+  materializer <- identity
+  if (identical(mode, "serial")) {
+    .ropendal_check_complete_serial_read(offset, size, end)
+    materializer <- function(value) .ropendal_deserialize_tree(value, serial_config)
+  }
   opendal_aio_with_bindings(fs$read_aio(
+    path,
+    offset,
+    size,
+    end,
+    result,
+    batch_concurrency,
+    read_concurrency,
+    chunk_size,
+    coalesce_gap
+  ), materializer = materializer)
+}
+
+#' @export
+#' @noRd
+fs_read_bytes <- function(fs, path, offset = 0, size = NULL, end = NULL,
+                          result = c("auto", "flat", "nested"),
+                          batch_concurrency = NULL,
+                          read_concurrency = NULL,
+                          chunk_size = NULL,
+                          coalesce_gap = NULL) {
+  opendal_bytes_wrap(fs$read_bytes(
     path,
     offset,
     size,
@@ -391,15 +620,76 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
 
 #' @export
 #' @noRd
+fs_read_bytes_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
+                              result = c("auto", "flat", "nested"),
+                              batch_concurrency = NULL,
+                              read_concurrency = NULL,
+                              chunk_size = NULL,
+                              coalesce_gap = NULL) {
+  opendal_aio_with_bindings(fs$read_bytes_aio(
+    path,
+    offset,
+    size,
+    end,
+    match.arg(result),
+    batch_concurrency,
+    read_concurrency,
+    chunk_size,
+    coalesce_gap
+  ))
+}
+
+#' @export
+#' @noRd
+as.raw.OpendalBytes <- function(x) opendal_bytes_as_raw(x)
+
+#' @export
+#' @noRd
+length.OpendalBytes <- function(x) opendal_bytes_len(x)
+
+opendal_bytes_wrap <- function(x) {
+  if (inherits(x, "OpendalBytes") && identical(typeof(x), "externalptr")) {
+    return(.savvy_wrap_OpendalBytes(x))
+  }
+  if (is.list(x) && !is_error_value(x)) {
+    return(lapply(x, opendal_bytes_wrap))
+  }
+  x
+}
+
+opendal_bytes_unwrap <- function(x) {
+  if (inherits(x, "OpendalBytes") && is.environment(x)) return(x$.ptr)
+  if (is.list(x) && !is_error_value(x)) return(lapply(x, opendal_bytes_unwrap))
+  x
+}
+
+#' @export
+#' @noRd
 fs_write <- function(fs, path, data, batch_concurrency = NULL,
-                     write_concurrency = NULL, chunk_size = NULL) {
+                     write_concurrency = NULL, chunk_size = NULL,
+                     mode = c("raw", "serial"),
+                     serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   fs$write(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
 #' @export
 #' @noRd
 fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
-                         write_concurrency = NULL, chunk_size = NULL) {
+                         write_concurrency = NULL, chunk_size = NULL,
+                         mode = c("raw", "serial"),
+                         serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   opendal_aio_with_bindings(
     fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -408,14 +698,30 @@ fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @export
 #' @noRd
 fs_replace <- function(fs, path, data, batch_concurrency = NULL,
-                       write_concurrency = NULL, chunk_size = NULL) {
+                       write_concurrency = NULL, chunk_size = NULL,
+                       mode = c("raw", "serial"),
+                       serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   fs$replace(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
 #' @export
 #' @noRd
 fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
-                           write_concurrency = NULL, chunk_size = NULL) {
+                           write_concurrency = NULL, chunk_size = NULL,
+                           mode = c("raw", "serial"),
+                           serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   opendal_aio_with_bindings(
     fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -424,14 +730,30 @@ fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @export
 #' @noRd
 fs_append <- function(fs, path, data, batch_concurrency = NULL,
-                      write_concurrency = NULL, chunk_size = NULL) {
+                      write_concurrency = NULL, chunk_size = NULL,
+                      mode = c("raw", "serial"),
+                      serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   fs$append(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
 #' @export
 #' @noRd
 fs_append_aio <- function(fs, path, data, batch_concurrency = NULL,
-                          write_concurrency = NULL, chunk_size = NULL) {
+                          write_concurrency = NULL, chunk_size = NULL,
+                          mode = c("raw", "serial"),
+                          serial_config = opt(fs, "serial")) {
+  mode <- match.arg(mode)
+  data <- if (identical(mode, "serial")) {
+    .ropendal_serial_data(path, data, serial_config)
+  } else {
+    opendal_bytes_unwrap(data)
+  }
   opendal_aio_with_bindings(
     fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -635,7 +957,9 @@ fs_rename_aio <- function(fs, from, to, batch_concurrency = NULL) {
   opendal_aio_with_bindings(fs$rename_aio(from, to, batch_concurrency))
 }
 
-opendal_aio_with_bindings <- function(aio) {
+opendal_aio_with_bindings <- function(aio, materializer = identity) {
+  assign(".ropendal_materializer", materializer, envir = aio)
+  assign(".ropendal_materialized_ready", FALSE, envir = aio)
   for (name in c("value", "data", "result", "state", "resolved", "error")) {
     if (!exists(name, envir = aio, inherits = FALSE)) {
       makeActiveBinding(name, opendal_aio_binding(aio, name), aio)
@@ -661,7 +985,24 @@ opendal_aio_binding <- function(aio, name) {
 }
 
 opendal_aio_value <- function(aio) {
-  if (identical(aio$state_name(), "pending")) unresolved() else aio$collect()
+  if (identical(aio$state_name(), "pending")) unresolved() else opendal_aio_collect_value(aio)
+}
+
+opendal_aio_collect_value <- function(aio) {
+  if (exists(".ropendal_materialized_ready", envir = aio, inherits = FALSE) &&
+    isTRUE(get(".ropendal_materialized_ready", envir = aio, inherits = FALSE))) {
+    return(get(".ropendal_materialized_value", envir = aio, inherits = FALSE))
+  }
+  value <- opendal_bytes_wrap(aio$collect())
+  materializer <- if (exists(".ropendal_materializer", envir = aio, inherits = FALSE)) {
+    get(".ropendal_materializer", envir = aio, inherits = FALSE)
+  } else {
+    identity
+  }
+  value <- materializer(value)
+  assign(".ropendal_materialized_value", value, envir = aio)
+  assign(".ropendal_materialized_ready", TRUE, envir = aio)
+  value
 }
 
 opendal_aio_resolved <- function(aio) {
@@ -684,7 +1025,7 @@ unresolved <- function(x = NULL) {
 #' @export
 #' @noRd
 collect_aio <- function(aio) {
-  aio$collect()
+  opendal_aio_collect_value(aio)
 }
 
 #' @export
@@ -725,6 +1066,13 @@ print.OpendalAio <- function(x, ...) {
 #' @noRd
 print.OpendalReadIter <- function(x, ...) {
   cat("<opendal read iterator>\n")
+  invisible(x)
+}
+
+#' @export
+#' @noRd
+print.OpendalBytes <- function(x, ...) {
+  cat("<opendal bytes>", length(x), "bytes\n")
   invisible(x)
 }
 

@@ -314,6 +314,13 @@ ropendal_status_t ropendal_stat_aio(ropendal_fs_t *fs,
                                     ropendal_aio_t **out,
                                     ropendal_error_t **err);
 
+ropendal_status_t ropendal_exists_aio(ropendal_fs_t *fs,
+                                      const char *path,
+                                      ropendal_aio_callback_t callback,
+                                      void *userdata,
+                                      ropendal_aio_t **out,
+                                      ropendal_error_t **err);
+
 ropendal_status_t ropendal_ls_aio(ropendal_fs_t *fs,
                                   const ropendal_ls_options_t *opts,
                                   ropendal_aio_t **out,
@@ -402,6 +409,9 @@ ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
 ropendal_status_t ropendal_aio_result_nread(ropendal_aio_t *aio,
                                             size_t *nread,
                                             ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_bool(ropendal_aio_t *aio,
+                                           int *value,
+                                           ropendal_error_t **err);
 ropendal_status_t ropendal_aio_result_entries(ropendal_aio_t *aio,
                                               const ropendal_entry_t **entries,
                                               size_t *len,

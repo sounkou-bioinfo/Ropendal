@@ -23,10 +23,11 @@ Aio handles are a core part of the interface. Reads, writes, metadata
 checks, listings, and namespace mutations can return nanonext-like
 handles that callers poll, collect, or cancel explicitly, while
 background Rust tasks never call R APIs. The package also exposes
-chunked read/write iterators plus paged listing/walking iterators for
-streaming-style transfer and namespace traversal, and installs
-`inst/include/ropendal.h`, a pure C API for downstream native packages
-that want direct async byte access.
+immutable `OpendalBytes` handles, chunked read/write iterators, paged
+listing/walking iterators for streaming-style transfer and namespace
+traversal, and installs `inst/include/ropendal.h`, a pure C API for
+downstream native packages that want async byte, metadata, and namespace
+operations.
 
 See `design/api-design.md` for API design notes and `design/STATUS.md`
 for the implementation/test checklist.
@@ -65,7 +66,7 @@ Aio interface
 | poll_aio()               | implemented                                                           | non-blocking readiness check                                            |
 | collect_aio()/call_aio() | implemented                                                           | collect returns value; call waits/updates and returns the Aio invisibly |
 | stop_aio()               | implemented; needs race coverage                                      | explicit cancellation request                                           |
-| native C Aio             | implemented for byte operations                                       | downstream native packages can submit async reads/writes                |
+| native C Aio             | implemented for byte, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
 
 </details>
 <details>
@@ -73,15 +74,16 @@ Aio interface
 Read operations
 </summary>
 
-| function_or_path    | status      | tuning                                                         |
-|:--------------------|:------------|:---------------------------------------------------------------|
-| fs_read()           | implemented | batch_concurrency, read_concurrency, chunk_size, coalesce_gap  |
-| fs_read_aio()       | implemented | same as fs_read()                                              |
-| fs_read_iter()      | implemented | one path returns a handle; many paths return a list of handles |
-| read_iter_next()    | implemented | next chunk as raw bytes                                        |
-| read_iter_collect() | implemented | remaining chunks into one raw vector                           |
-| fs_seek()/fs_tell() | implemented | read iterator position within its read window                  |
-| C read_into_aio()   | implemented | caller-owned output buffer                                     |
+| function_or_path                    | status      | tuning                                                             |
+|:------------------------------------|:------------|:-------------------------------------------------------------------|
+| fs_read()                           | implemented | batch_concurrency, read_concurrency, chunk_size, coalesce_gap      |
+| fs_read_aio()                       | implemented | same as fs_read()                                                  |
+| fs_read_bytes()/fs_read_bytes_aio() | implemented | Rust-owned OpendalBytes handles; explicit as.raw() materialization |
+| fs_read_iter()                      | implemented | one path returns a handle; many paths return a list of handles     |
+| read_iter_next()                    | implemented | next chunk as raw bytes                                            |
+| read_iter_collect()                 | implemented | remaining chunks into one raw vector                               |
+| fs_seek()/fs_tell()                 | implemented | read iterator position within its read window                      |
+| C read_into_aio()                   | implemented | caller-owned output buffer                                         |
 
 </details>
 <details>
@@ -89,16 +91,16 @@ Read operations
 Write operations
 </summary>
 
-| function_or_path              | status            | tuning                                                           |
-|:------------------------------|:------------------|:-----------------------------------------------------------------|
-| fs_write()/fs_write_aio()     | implemented       | batch_concurrency, write_concurrency, chunk_size                 |
-| fs_replace()/fs_replace_aio() | implemented       | same as fs_write()                                               |
-| fs_append()/fs_append_aio()   | backend-dependent | same where append is supported                                   |
-| fs_write_iter()               | implemented       | one path returns a sink; many paths return a list of sinks       |
-| write_iter_write()            | implemented       | submit one raw chunk                                             |
-| write_iter_close()            | implemented       | finalize multipart/streaming write                               |
-| fs_tell()                     | implemented       | bytes submitted to write sink; seek is intentionally unsupported |
-| C write/replace/append Aio    | implemented       | caller-owned input buffer                                        |
+| function_or_path              | status            | tuning                                                                        |
+|:------------------------------|:------------------|:------------------------------------------------------------------------------|
+| fs_write()/fs_write_aio()     | implemented       | batch_concurrency, write_concurrency, chunk_size; accepts raw or OpendalBytes |
+| fs_replace()/fs_replace_aio() | implemented       | same as fs_write(); accepts raw or OpendalBytes                               |
+| fs_append()/fs_append_aio()   | backend-dependent | same where append is supported; accepts raw or OpendalBytes                   |
+| fs_write_iter()               | implemented       | one path returns a sink; many paths return a list of sinks                    |
+| write_iter_write()            | implemented       | submit one raw chunk                                                          |
+| write_iter_close()            | implemented       | finalize multipart/streaming write                                            |
+| fs_tell()                     | implemented       | bytes submitted to write sink; seek is intentionally unsupported              |
+| C write/replace/append Aio    | implemented       | caller-owned input buffer                                                     |
 
 </details>
 <details>
@@ -122,12 +124,12 @@ Supported providers
 Serializers and codecs
 </summary>
 
-| layer                   | status      | notes                                       |
-|:------------------------|:------------|:--------------------------------------------|
-| raw bytes               | implemented | core storage contract uses R raw vectors    |
-| R serialize/unserialize | planned     | explicit serializer config; no hidden magic |
-| text                    | planned     | explicit encoding boundary                  |
-| codecs/compression      | planned     | separate from provider transfer chunking    |
+| layer                   | status      | notes                                                                                                   |
+|:------------------------|:------------|:--------------------------------------------------------------------------------------------------------|
+| raw bytes               | implemented | core storage contract uses R raw vectors and OpendalBytes handles                                       |
+| R serialize/unserialize | implemented | mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread |
+| text                    | planned     | explicit encoding boundary                                                                              |
+| codecs/compression      | planned     | separate from provider transfer chunking                                                                |
 
 </details>
 
@@ -193,6 +195,11 @@ fs_stat(fs, "data.bin")[c("path", "type", "size")]
 #> 
 #> $size
 #> [1] 4
+bytes_handle <- fs_read_bytes(fs, "data.bin")
+length(bytes_handle)
+#> [1] 4
+as.raw(bytes_handle)
+#> [1] 01 02 03 04
 vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "data.bin"
 

@@ -21,6 +21,8 @@ expect_match(header_text, "ropendal_fs_open")
 expect_match(header_text, "ropendal_fs_from_uri")
 expect_match(header_text, "ropendal_replace_aio")
 expect_match(header_text, "ropendal_append_aio")
+expect_match(header_text, "ropendal_exists_aio")
+expect_match(header_text, "ropendal_aio_result_bool")
 
 # Notification/monitor primitives inspired by nanonext condition variables.
 expect_match(header_text, "ropendal_cv_alloc")

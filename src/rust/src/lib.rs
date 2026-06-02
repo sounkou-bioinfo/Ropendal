@@ -1,4 +1,5 @@
 mod aio;
+mod bytes;
 mod c_api;
 mod common;
 mod credentials;

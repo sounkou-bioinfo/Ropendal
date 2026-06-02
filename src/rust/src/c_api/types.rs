@@ -3,6 +3,7 @@ use std::os::raw::{c_char, c_void};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Condvar, Mutex};
 
+use opendal::Metadata;
 use tokio::task::JoinHandle;
 
 use crate::common::NativeFs;
@@ -53,6 +54,194 @@ pub struct ropendal_write_options {
 }
 
 #[repr(C)]
+pub struct ropendal_ls_options {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) recursive: i32,
+    pub(crate) limit: usize,
+    pub(crate) start_after: *const c_char,
+    pub(crate) versions: i32,
+    pub(crate) deleted: i32,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
+pub struct ropendal_delete_options {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) recursive: i32,
+    pub(crate) version: *const c_char,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ropendal_entry {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) name: *const c_char,
+    pub(crate) mode: i32,
+    pub(crate) content_length: u64,
+    pub(crate) has_content_length: i32,
+    pub(crate) etag: *const c_char,
+    pub(crate) content_type: *const c_char,
+    pub(crate) content_encoding: *const c_char,
+    pub(crate) last_modified: *const c_char,
+    pub(crate) version: *const c_char,
+}
+
+// `ropendal_entry` pointers always borrow from `CString`s owned by the same
+// `CEntrySet` outcome. The outcome is moved between worker and caller threads,
+// but the pointed-to bytes are immutable and remain owned until Aio release.
+unsafe impl Send for ropendal_entry {}
+unsafe impl Sync for ropendal_entry {}
+
+pub(crate) struct CEntrySet {
+    pub(crate) entries: Vec<ropendal_entry>,
+    _strings: Vec<CEntryStrings>,
+}
+
+#[derive(Clone)]
+struct CEntryStrings {
+    path: CString,
+    name: CString,
+    etag: Option<CString>,
+    content_type: Option<CString>,
+    content_encoding: Option<CString>,
+    last_modified: Option<CString>,
+    version: Option<CString>,
+}
+
+#[repr(i32)]
+enum CEntryMode {
+    Unknown = 0,
+    File = 1,
+    Dir = 2,
+}
+
+fn cstring_lossy(s: &str) -> CString {
+    CString::new(s.replace('\0', " ")).unwrap_or_else(|_| CString::new("").unwrap())
+}
+
+fn opt_cstring(value: Option<&str>) -> Option<CString> {
+    value.map(cstring_lossy)
+}
+
+fn entry_name(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    let name = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    if name.is_empty() {
+        path.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+fn entry_mode(meta: &Metadata) -> i32 {
+    if meta.is_file() {
+        CEntryMode::File as i32
+    } else if meta.is_dir() {
+        CEntryMode::Dir as i32
+    } else {
+        CEntryMode::Unknown as i32
+    }
+}
+
+impl Clone for CEntrySet {
+    fn clone(&self) -> Self {
+        let strings = self._strings.clone();
+        let mut entries = self.entries.clone();
+        for (entry, entry_strings) in entries.iter_mut().zip(strings.iter()) {
+            entry.path = entry_strings.path.as_ptr();
+            entry.name = entry_strings.name.as_ptr();
+            entry.etag = entry_strings
+                .etag
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr());
+            entry.content_type = entry_strings
+                .content_type
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr());
+            entry.content_encoding = entry_strings
+                .content_encoding
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr());
+            entry.last_modified = entry_strings
+                .last_modified
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr());
+            entry.version = entry_strings
+                .version
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr());
+        }
+        Self {
+            entries,
+            _strings: strings,
+        }
+    }
+}
+
+impl CEntrySet {
+    pub(crate) fn one(path: &str, meta: &Metadata) -> Self {
+        Self::from_entries(vec![(path.to_string(), meta.clone())])
+    }
+
+    pub(crate) fn from_entries(values: Vec<(String, Metadata)>) -> Self {
+        let mut strings = Vec::with_capacity(values.len());
+        let mut entries = Vec::with_capacity(values.len());
+        for (path, meta) in values {
+            let last_modified = meta.last_modified().map(|v| v.to_string());
+            let entry_strings = CEntryStrings {
+                path: cstring_lossy(&path),
+                name: cstring_lossy(&entry_name(&path)),
+                etag: opt_cstring(meta.etag()),
+                content_type: opt_cstring(meta.content_type()),
+                content_encoding: opt_cstring(meta.content_encoding()),
+                last_modified: opt_cstring(last_modified.as_deref()),
+                version: opt_cstring(meta.version()),
+            };
+            let entry = ropendal_entry {
+                struct_size: std::mem::size_of::<ropendal_entry>(),
+                path: entry_strings.path.as_ptr(),
+                name: entry_strings.name.as_ptr(),
+                mode: entry_mode(&meta),
+                content_length: meta.content_length(),
+                has_content_length: if meta.is_file() { 1 } else { 0 },
+                etag: entry_strings
+                    .etag
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+                content_type: entry_strings
+                    .content_type
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+                content_encoding: entry_strings
+                    .content_encoding
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+                last_modified: entry_strings
+                    .last_modified
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+                version: entry_strings
+                    .version
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+            };
+            strings.push(entry_strings);
+            entries.push(entry);
+        }
+        Self {
+            entries,
+            _strings: strings,
+        }
+    }
+}
+
+#[repr(C)]
 pub struct ropendal_error {
     pub(crate) status: i32,
     pub(crate) kind: CString,
@@ -71,6 +260,9 @@ pub(crate) enum COutcome {
     Bytes(Vec<u8>),
     Nread(usize),
     Unit,
+    Bool(bool),
+    Entry(CEntrySet),
+    Entries(CEntrySet),
     Error(super::error::CErrorInfo),
     Cancelled,
 }

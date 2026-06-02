@@ -14,7 +14,7 @@ Ropendal is an abstract remote filesystem operation interface for R backed by th
 
 The central abstraction is an `OpendalFs` handle: a root-relative, byte-addressable filesystem over local files, HTTP endpoints, S3-compatible services, Google Drive, and other OpenDAL-backed providers as support is added. Operations move raw bytes and byte ranges, but metadata and namespace operations such as stat, exists, listing, delete, copy, rename, and mkdir are remote I/O too; backend failures resolve to classed error values; credentials are explicit rather than discovered through hidden ambient provider chains.
 
-Aio handles are a core part of the interface. Reads, writes, metadata checks, listings, and namespace mutations can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes chunked read/write iterators plus paged listing/walking iterators for streaming-style transfer and namespace traversal, and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want direct async byte access.
+Aio handles are a core part of the interface. Reads, writes, metadata checks, listings, and namespace mutations can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes immutable `OpendalBytes` handles, chunked read/write iterators, paged listing/walking iterators for streaming-style transfer and namespace traversal, and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want async byte, metadata, and namespace operations.
 
 See `design/api-design.md` for API design notes and `design/STATUS.md` for the implementation/test checklist.
 
@@ -48,23 +48,24 @@ operation_progress <- data.frame(
 
 aio_progress <- data.frame(
   abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte operations"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented; needs race coverage", "implemented for byte, metadata, entry/list, bool, and unit operations"),
   role = c(
     "nanonext-like handle for background Rust work",
     "$value/$data/$result plus $state/$resolved/$error",
     "non-blocking readiness check",
     "collect returns value; call waits/updates and returns the Aio invisibly",
     "explicit cancellation request",
-    "downstream native packages can submit async reads/writes"
+    "downstream native packages can submit async filesystem operations"
   )
 )
 
 read_progress <- data.frame(
-  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_into_aio()"),
-  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
+  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_bytes()/fs_read_bytes_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_into_aio()"),
+  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
   tuning = c(
     "batch_concurrency, read_concurrency, chunk_size, coalesce_gap",
     "same as fs_read()",
+    "Rust-owned OpendalBytes handles; explicit as.raw() materialization",
     "one path returns a handle; many paths return a list of handles",
     "next chunk as raw bytes",
     "remaining chunks into one raw vector",
@@ -77,9 +78,9 @@ write_progress <- data.frame(
   function_or_path = c("fs_write()/fs_write_aio()", "fs_replace()/fs_replace_aio()", "fs_append()/fs_append_aio()", "fs_write_iter()", "write_iter_write()", "write_iter_close()", "fs_tell()", "C write/replace/append Aio"),
   status = c("implemented", "implemented", "backend-dependent", "implemented", "implemented", "implemented", "implemented", "implemented"),
   tuning = c(
-    "batch_concurrency, write_concurrency, chunk_size",
-    "same as fs_write()",
-    "same where append is supported",
+    "batch_concurrency, write_concurrency, chunk_size; accepts raw or OpendalBytes",
+    "same as fs_write(); accepts raw or OpendalBytes",
+    "same where append is supported; accepts raw or OpendalBytes",
     "one path returns a sink; many paths return a list of sinks",
     "submit one raw chunk",
     "finalize multipart/streaming write",
@@ -96,10 +97,10 @@ provider_progress <- data.frame(
 
 serializer_progress <- data.frame(
   layer = c("raw bytes", "R serialize/unserialize", "text", "codecs/compression"),
-  status = c("implemented", "planned", "planned", "planned"),
+  status = c("implemented", "implemented", "planned", "planned"),
   notes = c(
-    "core storage contract uses R raw vectors",
-    "explicit serializer config; no hidden magic",
+    "core storage contract uses R raw vectors and OpendalBytes handles",
+    "mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread",
     "explicit encoding boundary",
     "separate from provider transfer chunking"
   )
@@ -157,6 +158,9 @@ fs_read(fs, "data.bin")
 fs_read(fs, "data.bin", offset = 1, size = 2)
 
 fs_stat(fs, "data.bin")[c("path", "type", "size")]
+bytes_handle <- fs_read_bytes(fs, "data.bin")
+length(bytes_handle)
+as.raw(bytes_handle)
 vapply(fs_ls(fs), `[[`, character(1), "path")
 
 it <- fs_ls_iter(fs, page_size = 1)

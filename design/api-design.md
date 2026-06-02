@@ -24,7 +24,7 @@ operation substrate over OpenDAL. The core should stay as small as possible:
 |---|---|
 | `OpendalFs` | capability-bearing OpenDAL operator handle plus runtime/config |
 | `OpendalAio` | one in-flight or resolved async operation |
-| `OpendalBytes` | planned immutable Rust-owned bytes exposed to R as a handle |
+| `OpendalBytes` | immutable Rust-owned bytes exposed to R as a handle |
 | `NativeResult` | bytes, metadata, entries, booleans, unit completion, errors, cancellation, or many results |
 | Request/options | normalized operation description, ranges, concurrency, and transfer tuning |
 
@@ -48,10 +48,10 @@ The package therefore uses three layers:
 Read/write are intentionally asymmetric at the R boundary. Reads can complete
 into Rust-owned bytes first and materialize later. Writes from ordinary R values
 must serialize or copy into stable owned bytes before background upload. The
-planned `OpendalBytes` type provides the copy-minimized R-facing byte handle:
-remote bytes can be read into Rust-owned storage, passed around in R, converted
-to `raw` explicitly, or written back without routing through another R raw-vector
-payload.
+`OpendalBytes` provides the copy-minimized R-facing byte handle: remote bytes can
+be read into Rust-owned storage, passed around in R, converted to `raw`
+explicitly via `as.raw()`, inspected with `length()`, or written back without
+routing through another R raw-vector payload.
 
 R connections are compatibility adapters, not the core abstraction. A future
 connection API should wrap read/write iterators so `readBin()`, `writeBin()`,
@@ -634,7 +634,7 @@ Rules:
 - `fs_read_aio(..., mode = "serial")` downloads asynchronously; `$data`/`collect_aio()` deserializes on the R thread after bytes resolve.
 - Passing `list()` to `opt(fs, "serial") <- list()` removes custom hooks, matching nanonext.
 
-Implementation note: for `mode = "serial"`, prefer an R serialization envelope with refhook-like custom serialization, not bare codec bytes. This lets the deserializer be chosen from the serialized stream, provided the same `serial_config()` is available at read time.
+Implementation: for `mode = "serial"`, Ropendal uses an R serialization envelope with custom-hook payload bytes, not bare codec bytes. This lets the deserializer be chosen from the serialized stream, provided the same `serial_config()` is available at read time.
 
 Expose explicit helpers for debugging and for users who want the conversion layer without I/O:
 
@@ -930,6 +930,9 @@ void ropendal_aio_release(ropendal_aio_t *aio);
 ropendal_status_t ropendal_aio_result_bytes(ropendal_aio_t *aio,
                                             const uint8_t **data,
                                             size_t *len,
+                                            ropendal_error_t **err);
+ropendal_status_t ropendal_aio_result_nread(ropendal_aio_t *aio,
+                                            size_t *nread,
                                             ropendal_error_t **err);
 ropendal_status_t ropendal_aio_result_bool(ropendal_aio_t *aio,
                                            int *value,

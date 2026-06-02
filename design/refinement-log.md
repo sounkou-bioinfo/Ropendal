@@ -204,7 +204,7 @@ Use nanonext-like semantics for the core serializer API:
 serial_config(class, sfunc, ufunc)
 ```
 
-`mode = "serial"` uses base R serialization with custom serialize/unserialize hooks. `sfunc` and `ufunc` are paired, and both R closures run only on the R thread.
+`mode = "serial"` uses base R serialization with custom serialize/unserialize hooks. `sfunc` and `ufunc` are paired, and both R closures run only on the R thread. Current implementation stores custom-hook payloads in an explicit Ropendal serialization envelope so read-side deserialization can select the matching `ufunc` from `serial_config()`.
 
 Clarification still needed only for the optional storage-format codec layer (`codec_config()`): whether it remains explicit-only or later supports extension/content-type selection. Core behavior should avoid hidden deserializer surprises.
 
@@ -369,12 +369,12 @@ first serialize or copy into stable owned bytes before background upload. A trul
 borrowed async write from R memory would require an explicit lifetime contract
 and is not safe for ordinary R vectors because of mutation and GC interaction.
 
-A future advanced R-facing byte object can make this explicit: e.g. an immutable
-`OpendalBytes` external-pointer/ALTREP-like value containing Rust-owned bytes,
-with `as.raw()` materialization when needed. Such an object can be passed back to
-Ropendal for writes without routing through another R raw-vector payload. If a
-user passes a normal R `raw`, matrix, character vector, or arbitrary object, the
-package still has to touch the R API on the R thread to copy or serialize.
+The R-facing byte object is now explicit: immutable `OpendalBytes` values contain
+Rust-owned bytes, materialize to R raw vectors via `as.raw()` when needed, report
+byte length with `length()`, and can be passed back to Ropendal writes without
+routing through another R raw-vector payload. If a user passes a normal R `raw`,
+matrix, character vector, or arbitrary object, the package still has to touch the
+R API on the R thread to copy or serialize.
 
 R's connection API is an adapter candidate, not the core abstraction. `readBin()`
 and `writeBin()` operate through a connection's synchronous callbacks; a
@@ -388,7 +388,7 @@ ownership stay explicit.
 
 ### Async metadata and namespace operations
 
-Status: `implemented for R API; C metadata/entry parity still planned`
+Status: `implemented for R API; C stat/exists/ls result parity implemented for local roundtrip`
 
 The async-first contract applies to every operation that may perform backend I/O,
 not only byte reads/writes. On S3, Google Drive, HTTP-like remote services, and
@@ -419,15 +419,18 @@ limits, and continuation/resume points.
 
 The generic Aio outcome should therefore include bytes, unit, bool, metadata,
 entries, many, error, and cancelled states. R materialization of metadata/entries
-still happens on the R thread. The C API should mirror this with R-free result
-accessors such as bool, entry, and entries result extraction, with returned
-pointers owned by the Aio until release.
+still happens on the R thread. The C API mirrors the single-result metadata path
+with R-free bool, entry, and entries accessors; returned pointers are owned by
+the Aio until release.
 
 Implementation note: the R API now has `fs_stat_aio()`, `fs_stats_aio()`,
 `fs_exists_aio()`, `fs_ls_aio()`, `fs_mkdir_aio()`, `fs_delete_aio()`,
 `fs_copy_aio()`, `fs_rename_aio()`, `fs_write_aio()`, `fs_replace_aio()`, and
 `fs_append_aio()` over a generic `AioOutcome` that can materialize bytes, unit,
-bool, metadata, entries, many, errors, and cancellation.
+bool, metadata, entries, many, errors, and cancellation. The C API now exposes
+async stat/exists/list/delete/copy/rename/mkdir operations plus bool/entry/entries
+result accessors; `readv_into_aio()` and richer per-request result structures
+remain planned.
 
 ### Aio active binding contract
 

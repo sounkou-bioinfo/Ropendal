@@ -38,6 +38,15 @@ NULL
 }
 
 
+`opendal_bytes_as_raw` <- function(`bytes`) {
+  .Call(savvy_opendal_bytes_as_raw__impl, `bytes`)
+}
+
+
+`opendal_bytes_len` <- function(`bytes`) {
+  .Call(savvy_opendal_bytes_len__impl, `bytes`)
+}
+
 ### wrapper functions for OpendalAio
 
 `OpendalAio_cancel` <- function(self) {
@@ -97,6 +106,33 @@ class(`OpendalAio`) <- c("Ropendal::OpendalAio__bundle", "savvy_Ropendal__sealed
 #' @export
 `print.Ropendal::OpendalAio__bundle` <- function(x, ...) {
   cat('Ropendal::OpendalAio\n')
+}
+
+### wrapper functions for OpendalBytes
+
+
+`.savvy_wrap_OpendalBytes` <- function(ptr) {
+  e <- new.env(parent = emptyenv())
+  e$.ptr <- ptr
+
+
+  class(e) <- c("Ropendal::OpendalBytes", "OpendalBytes", "savvy_Ropendal__sealed")
+  e
+}
+
+
+
+`OpendalBytes` <- new.env(parent = emptyenv())
+
+### associated functions for OpendalBytes
+
+
+
+class(`OpendalBytes`) <- c("Ropendal::OpendalBytes__bundle", "savvy_Ropendal__sealed")
+
+#' @export
+`print.Ropendal::OpendalBytes__bundle` <- function(x, ...) {
+  cat('Ropendal::OpendalBytes\n')
 }
 
 ### wrapper functions for OpendalCredentialProvider
@@ -267,6 +303,18 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   }
 }
 
+`OpendalFs_read_bytes` <- function(self) {
+  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL, `read_concurrency` = NULL, `chunk_size` = NULL, `coalesce_gap` = NULL) {
+    .Call(savvy_OpendalFs_read_bytes__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`, `read_concurrency`, `chunk_size`, `coalesce_gap`)
+  }
+}
+
+`OpendalFs_read_bytes_aio` <- function(self) {
+  function(`path`, `offset` = NULL, `size` = NULL, `end` = NULL, `result` = NULL, `batch_concurrency` = NULL, `read_concurrency` = NULL, `chunk_size` = NULL, `coalesce_gap` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_read_bytes_aio__impl, `self`, `path`, `offset`, `size`, `end`, `result`, `batch_concurrency`, `read_concurrency`, `chunk_size`, `coalesce_gap`))
+  }
+}
+
 `OpendalFs_read_iter` <- function(self) {
   function(`path`, `chunk_size`, `offset` = NULL, `size` = NULL, `read_concurrency` = NULL, `coalesce_gap` = NULL) {
     .savvy_wrap_OpendalReadIter(.Call(savvy_OpendalFs_read_iter__impl, `self`, `path`, `chunk_size`, `offset`, `size`, `read_concurrency`, `coalesce_gap`))
@@ -354,6 +402,8 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
   e$`normalize_path` <- `OpendalFs_normalize_path`(ptr)
   e$`read` <- `OpendalFs_read`(ptr)
   e$`read_aio` <- `OpendalFs_read_aio`(ptr)
+  e$`read_bytes` <- `OpendalFs_read_bytes`(ptr)
+  e$`read_bytes_aio` <- `OpendalFs_read_bytes_aio`(ptr)
   e$`read_iter` <- `OpendalFs_read_iter`(ptr)
   e$`rename` <- `OpendalFs_rename`(ptr)
   e$`rename_aio` <- `OpendalFs_rename_aio`(ptr)
@@ -431,8 +481,8 @@ class(`OpendalFs`) <- c("Ropendal::OpendalFs__bundle", "savvy_Ropendal__sealed")
 
 ### associated functions for OpendalHttpFixture
 
-`OpendalHttpFixture`$`start` <- function(`root`, `required_headers` = NULL) {
-  .savvy_wrap_OpendalHttpFixture(.Call(savvy_OpendalHttpFixture_start__impl, `root`, `required_headers`))
+`OpendalHttpFixture`$`start` <- function(`root`, `required_headers` = NULL, `delay_ms` = NULL) {
+  .savvy_wrap_OpendalHttpFixture(.Call(savvy_OpendalHttpFixture_start__impl, `root`, `required_headers`, `delay_ms`))
 }
 
 

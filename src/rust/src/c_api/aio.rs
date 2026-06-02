@@ -1,9 +1,7 @@
 use std::ptr;
 
-use opendal::ErrorKind;
-
 use super::{CErrorInfo, set_c_error};
-use super::{COutcome, ropendal_aio, ropendal_error};
+use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error};
 
 fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
     unsafe {
@@ -126,7 +124,7 @@ pub unsafe extern "C" fn ropendal_aio_result_bytes(
             status
         }
         Ok(COutcome::Cancelled) => 7,
-        Ok(COutcome::Unit) => {
+        Ok(COutcome::Unit | COutcome::Bool(_) | COutcome::Entry(_) | COutcome::Entries(_)) => {
             *data = ptr::null();
             *len = 0;
             0
@@ -163,8 +161,40 @@ pub unsafe extern "C" fn ropendal_aio_result_nread(
             status
         }
         Ok(COutcome::Cancelled) => 7,
-        Ok(COutcome::Unit) => {
+        Ok(COutcome::Unit | COutcome::Bool(_) | COutcome::Entry(_) | COutcome::Entries(_)) => {
             *nread = 0;
+            0
+        }
+        Err(info) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ropendal_aio_result_bool(
+    aio: *mut ropendal_aio,
+    value: *mut i32,
+    err: *mut *mut ropendal_error,
+) -> i32 {
+    if value.is_null() {
+        return 2;
+    }
+    match c_aio_finish(aio) {
+        Ok(COutcome::Bool(v)) => {
+            *value = if v { 1 } else { 0 };
+            0
+        }
+        Ok(COutcome::Error(info)) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+        Ok(COutcome::Cancelled) => 7,
+        Ok(_) => {
+            *value = 0;
             0
         }
         Err(info) => {
@@ -178,20 +208,95 @@ pub unsafe extern "C" fn ropendal_aio_result_nread(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_result_entries(
     aio: *mut ropendal_aio,
-    entries: *mut *const std::os::raw::c_void,
+    entries: *mut *const ropendal_entry,
     len: *mut usize,
     err: *mut *mut ropendal_error,
 ) -> i32 {
-    let _ = (aio, entries, len, err, ErrorKind::Unsupported);
-    3
+    if entries.is_null() || len.is_null() {
+        return 2;
+    }
+    match c_aio_finish(aio) {
+        Ok(COutcome::Entries(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Entries(ref set)) = *cached {
+                *entries = set.entries.as_ptr();
+                *len = set.entries.len();
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Entry(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Entry(ref set)) = *cached {
+                *entries = set.entries.as_ptr();
+                *len = set.entries.len();
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Error(info)) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+        Ok(COutcome::Cancelled) => 7,
+        Ok(_) => {
+            *entries = ptr::null();
+            *len = 0;
+            0
+        }
+        Err(info) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_result_entry(
     aio: *mut ropendal_aio,
-    entry: *mut *const std::os::raw::c_void,
+    entry: *mut *const ropendal_entry,
     err: *mut *mut ropendal_error,
 ) -> i32 {
-    let _ = (aio, entry, err, ErrorKind::Unsupported);
-    3
+    if entry.is_null() {
+        return 2;
+    }
+    match c_aio_finish(aio) {
+        Ok(COutcome::Entry(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Entry(ref set)) = *cached {
+                *entry = set.entries.as_ptr();
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Entries(_)) => {
+            let cached = (*aio).cached.lock().unwrap();
+            if let Some(COutcome::Entries(ref set)) = *cached {
+                *entry = set.entries.first().map_or(ptr::null(), |e| e as *const _);
+                0
+            } else {
+                1
+            }
+        }
+        Ok(COutcome::Error(info)) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+        Ok(COutcome::Cancelled) => 7,
+        Ok(_) => {
+            *entry = ptr::null();
+            0
+        }
+        Err(info) => {
+            let status = info.status;
+            set_c_error(err, info);
+            status
+        }
+    }
 }

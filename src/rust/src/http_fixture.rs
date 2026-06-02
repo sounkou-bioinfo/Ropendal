@@ -26,8 +26,13 @@ pub struct OpendalHttpFixture {
 impl OpendalHttpFixture {
     /// Start the internal HTTP fixture.
     /// @export
-    fn start(root: &str, required_headers: Option<ListSexp>) -> savvy::Result<Self> {
+    fn start(
+        root: &str,
+        required_headers: Option<ListSexp>,
+        delay_ms: Option<f64>,
+    ) -> savvy::Result<Self> {
         let required_headers = parse_required_headers(required_headers)?;
+        let response_delay = parse_response_delay(delay_ms)?;
         let root_path = PathBuf::from(root).canonicalize().map_err(|e| {
             savvy::Error::new(&format!("cannot canonicalize HTTP fixture root: {e}"))
         })?;
@@ -50,7 +55,13 @@ impl OpendalHttpFixture {
         let thread_required_headers = required_headers.clone();
 
         let handle = thread::spawn(move || {
-            run_server(listener, thread_root, thread_required_headers, thread_stop)
+            run_server(
+                listener,
+                thread_root,
+                thread_required_headers,
+                response_delay,
+                thread_stop,
+            )
         });
 
         Ok(Self {
@@ -114,6 +125,26 @@ fn parse_required_headers(headers: Option<ListSexp>) -> savvy::Result<Vec<(Strin
     Ok(out)
 }
 
+fn parse_response_delay(delay_ms: Option<f64>) -> savvy::Result<Duration> {
+    let Some(delay_ms) = delay_ms else {
+        return Ok(Duration::ZERO);
+    };
+    if !delay_ms.is_finite() || delay_ms < 0.0 {
+        return Err(savvy::Error::new(
+            "HTTP fixture delay_ms must be a non-negative finite number",
+        ));
+    }
+    if delay_ms.fract() != 0.0 {
+        return Err(savvy::Error::new(
+            "HTTP fixture delay_ms must be a whole number of milliseconds",
+        ));
+    }
+    if delay_ms > u64::MAX as f64 {
+        return Err(savvy::Error::new("HTTP fixture delay_ms is too large"));
+    }
+    Ok(Duration::from_millis(delay_ms as u64))
+}
+
 fn scalar_to_string(value: Sexp, name: &str) -> savvy::Result<String> {
     match value.into_typed() {
         TypedSexp::String(value) if value.len() == 1 => {
@@ -129,13 +160,14 @@ fn run_server(
     listener: TcpListener,
     root: PathBuf,
     required_headers: Vec<(String, String)>,
+    response_delay: Duration,
     stop: Arc<AtomicBool>,
 ) {
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-                let _ = handle_connection(&mut stream, &root, &required_headers);
+                let _ = handle_connection(&mut stream, &root, &required_headers, response_delay);
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(10));
@@ -149,6 +181,7 @@ fn handle_connection(
     stream: &mut TcpStream,
     root: &Path,
     required_headers: &[(String, String)],
+    response_delay: Duration,
 ) -> std::io::Result<()> {
     let mut buf = [0_u8; 8192];
     let n = stream.read(&mut buf)?;
@@ -224,6 +257,10 @@ fn handle_connection(
             b"missing required header",
             "text/plain",
         );
+    }
+
+    if !response_delay.is_zero() {
+        thread::sleep(response_delay);
     }
 
     let path = match request_path(root, uri) {
