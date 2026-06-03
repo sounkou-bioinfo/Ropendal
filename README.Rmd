@@ -278,11 +278,9 @@ paws_s3 <- paws.storage::s3(
 
 payload <- as.raw(sample.int(256L, 1024L * 1024L, replace = TRUE) - 1L)
 bench_key <- "bench/payload.bin"
-invisible(fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024))
-invisible(paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload))
 
 bench::mark(
-  ropendal_replace = fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024),
+  ropendal_replace = fs_replace(s3_fs, bench_key, payload),
   paws_put = {
     paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload)
     TRUE
@@ -292,8 +290,8 @@ bench::mark(
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
 
 bench::mark(
-  ropendal_read = fs_read(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024),
-  ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024)),
+  ropendal_read = fs_read(s3_fs, bench_key),
+  ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key)),
   paws_get = paws_s3$get_object(Bucket = minio$bucket, Key = bench_key)$Body,
   iterations = 3,
   check = FALSE

@@ -192,11 +192,9 @@ paws_s3 <- paws.storage::s3(
 
 payload <- as.raw(sample.int(256L, 1024L * 1024L, replace = TRUE) - 1L)
 bench_key <- "bench/payload.bin"
-invisible(fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024))
-invisible(paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload))
 
 bench::mark(
-  ropendal_replace = fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024),
+  ropendal_replace = fs_replace(s3_fs, bench_key, payload),
   paws_put = {
     paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload)
     TRUE
@@ -207,12 +205,12 @@ bench::mark(
 #> # A tibble: 2 × 5
 #>   expression            min   median `itr/sec` mem_alloc
 #>   <bch:expr>       <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace   7.57ms   8.48ms     121.         0B
-#> 2 paws_put          20.94ms  21.56ms      46.4    1.16MB
+#> 1 ropendal_replace   6.19ms   6.32ms     127.    10.46KB
+#> 2 paws_put          18.29ms   20.5ms      48.8    4.68MB
 
 bench::mark(
-  ropendal_read = fs_read(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024),
-  ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024)),
+  ropendal_read = fs_read(s3_fs, bench_key),
+  ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key)),
   paws_get = paws_s3$get_object(Bucket = minio$bucket, Key = bench_key)$Body,
   iterations = 3,
   check = FALSE
@@ -220,9 +218,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression             min   median `itr/sec` mem_alloc
 #>   <bch:expr>        <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read        2.1ms   2.14ms      455.       1MB
-#> 2 ropendal_read_aio   2.04ms   2.11ms      476.       1MB
-#> 3 paws_get            7.27ms   7.85ms      127.    1.29MB
+#> 1 ropendal_read       1.65ms   1.67ms      573.       1MB
+#> 2 ropendal_read_aio   1.41ms   1.46ms      682.       1MB
+#> 3 paws_get            6.57ms   6.92ms      145.    1.29MB
 
 restore_aws_env()
 minio$stop()
