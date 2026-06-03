@@ -81,7 +81,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls_iter()` empty-listing, paged listing, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection
 - mkdir/delete/copy/rename
-- declarative capability profiles: supported operations, implementation source, and unsupported-operation error values
+- declarative capability profiles: supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 
 ### 30 async Aio behavior
 

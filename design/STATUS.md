@@ -55,8 +55,8 @@ GitHub Actions jobs:
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
 | Rust-backed filesystem handle `OpendalFs` | yes | yes | yes | yes | local `fs`; no ad hoc `opendalFs` / `abstractFs` mutation |
-| `opendal()` / `opendal_uri()` constructors | yes | yes | partial | partial | `opendal("fs", root=)` and public S3 config tested; `opendal_uri()` still needs coverage; HTTP(S) `headers=` supported for explicit request headers |
-| declarative `fs_capabilities()` | yes | yes | no | no | shape exists; needs stronger tests |
+| `opendal()` / `opendal_uri()` constructors | yes | yes | yes | partial | `opendal("fs", root=)`, local `opendal_uri("fs://...")`, and public S3 config tested; HTTP(S) `headers=` supported for explicit request headers |
+| declarative `fs_capabilities()` | yes | yes | partial | no | local `fs` shape/read/list support tested; broader service capability profiles need stronger tests |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
 | vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
