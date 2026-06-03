@@ -280,8 +280,10 @@ rawToChar(collect_aio(aio))
 ```
 
 For a small local comparison, we use a larger object to compare Ropendal's
-default path with its chunked/concurrent path. `paws.storage` is included as a
-single-GET baseline.
+default path with its chunked/concurrent path. Local MinIO removes most network
+latency, so concurrency helps most when the object is large enough or when the
+store is remote; for many independent objects, use `batch_concurrency`.
+`paws.storage` is included as a single-GET baseline.
 
 ```{r api-tour-s3-bench-setup, eval = readme_run_s3}
 restore_aws_env <- readme_set_aws_env(minio)
@@ -291,10 +293,11 @@ paws_s3 <- paws.storage::s3(
   config = list(s3_force_path_style = TRUE)
 )
 
-payload <- as.raw(sample.int(256L, 8L * 1024L * 1024L, replace = TRUE) - 1L)
+payload_size <- 64 * 1024 * 1024
+payload <- rep(as.raw(0:255), length.out = payload_size)
 bench_key <- "bench/payload.bin"
-read_chunk <- 1024 * 1024
-write_chunk <- 5 * 1024 * 1024
+read_chunk <- 8 * 1024 * 1024
+write_chunk <- 8 * 1024 * 1024
 ```
 
 We first compare upload/replace paths: the default Ropendal call, Ropendal with
@@ -430,6 +433,7 @@ typedef struct ropendal_demo_task {
   int status;
   int failed;
   int done;
+  const char *step;
   char message[256];
 } ropendal_demo_task_t;
 )"
@@ -449,6 +453,7 @@ static void demo_set_error(ropendal_demo_task_t *task, const char *fallback) {
   }
   if (task) {
     snprintf(task->message, sizeof(task->message), "%s", message);
+    task->step = message;
     task->failed = 1;
     if (task->err) {
       ropendal_error_release(task->err);
@@ -463,10 +468,12 @@ void *ropendal_demo_open(const char *root) {
   ropendal_demo_task_t *task = (ropendal_demo_task_t *)calloc(1, sizeof(ropendal_demo_task_t));
   if (!task) return NULL;
   PT_INIT(&task->pt);
+  task->step = "open filesystem";
 
   ropendal_kv_t cfg = { sizeof(ropendal_kv_t), "root", root };
   task->status = ropendal_fs_open("fs", &cfg, 1, &task->fs, &task->err);
   if (task->status != ROPENDAL_OK) demo_set_error(task, "ropendal_fs_open failed");
+  else task->step = "filesystem ready";
   return task;
 }
 
@@ -490,6 +497,7 @@ c_api_protothread <- r"(
 static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
   PT_BEGIN(&task->pt);
 
+  task->step = "submit write";
   memset(&task->write_opts, 0, sizeof(task->write_opts));
   task->write_opts.struct_size = sizeof(task->write_opts);
   task->write_opts.path = "native.txt";
@@ -497,6 +505,7 @@ static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
     task->fs, &task->write_opts, demo_payload, sizeof(demo_payload) - 1, &task->aio, &task->err
   );
   if (task->status != ROPENDAL_OK) DEMO_FAIL(task, "write submit failed");
+  task->step = "wait write";
   PT_YIELD(&task->pt);
   while (ropendal_aio_poll(task->aio) == ROPENDAL_AIO_PENDING) PT_YIELD(&task->pt);
   task->status = ropendal_aio_wait(task->aio, -1, &task->err);
@@ -504,8 +513,10 @@ static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
   ropendal_aio_release(task->aio);
   task->aio = 0;
 
+  task->step = "submit stat";
   task->status = ropendal_stat_aio(task->fs, "native.txt", 0, 0, &task->aio, &task->err);
   if (task->status != ROPENDAL_OK) DEMO_FAIL(task, "stat submit failed");
+  task->step = "wait stat";
   PT_YIELD(&task->pt);
   while (ropendal_aio_poll(task->aio) == ROPENDAL_AIO_PENDING) PT_YIELD(&task->pt);
   task->status = ropendal_aio_wait(task->aio, -1, &task->err);
@@ -518,11 +529,13 @@ static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
   ropendal_aio_release(task->aio);
   task->aio = 0;
 
+  task->step = "submit list";
   memset(&task->ls_opts, 0, sizeof(task->ls_opts));
   task->ls_opts.struct_size = sizeof(task->ls_opts);
   task->ls_opts.path = "";
   task->status = ropendal_ls_aio(task->fs, &task->ls_opts, &task->aio, &task->err);
   if (task->status != ROPENDAL_OK) DEMO_FAIL(task, "ls submit failed");
+  task->step = "wait list";
   PT_YIELD(&task->pt);
   while (ropendal_aio_poll(task->aio) == ROPENDAL_AIO_PENDING) PT_YIELD(&task->pt);
   task->status = ropendal_aio_wait(task->aio, -1, &task->err);
@@ -532,12 +545,14 @@ static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
   ropendal_aio_release(task->aio);
   task->aio = 0;
 
+  task->step = "submit read_into";
   memset(&task->read_opts, 0, sizeof(task->read_opts));
   memset(task->dst, 0, sizeof(task->dst));
   task->read_opts.struct_size = sizeof(task->read_opts);
   task->read_opts.path = "native.txt";
   task->status = ropendal_read_into_aio(task->fs, &task->read_opts, task->dst, sizeof(task->dst), &task->aio, &task->err);
   if (task->status != ROPENDAL_OK) DEMO_FAIL(task, "read_into submit failed");
+  task->step = "wait read_into";
   PT_YIELD(&task->pt);
   while (ropendal_aio_poll(task->aio) == ROPENDAL_AIO_PENDING) PT_YIELD(&task->pt);
   task->status = ropendal_aio_wait(task->aio, -1, &task->err);
@@ -550,6 +565,7 @@ static int ropendal_demo_resume_internal(ropendal_demo_task_t *task) {
 
   ropendal_aio_release(task->aio);
   task->aio = 0;
+  task->step = "complete";
   task->done = 1;
   PT_END(&task->pt);
 }
@@ -582,6 +598,11 @@ const char *ropendal_demo_error(void *ptr) {
   ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
   return task ? task->message : "null task";
 }
+
+const char *ropendal_demo_step(void *ptr) {
+  ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
+  return (task && task->step) ? task->step : "unknown";
+}
 )"
 ```
 
@@ -600,6 +621,7 @@ ffi <- Rtinycc::tcc_ffi() |>
     ropendal_demo_resume = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_nread = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_error = list(args = list("ptr"), returns = "cstring"),
+    ropendal_demo_step = list(args = list("ptr"), returns = "cstring"),
     ropendal_demo_free = list(args = list("ptr"), returns = "void")
   ) |>
   Rtinycc::tcc_compile()
@@ -610,25 +632,29 @@ the native code never creates R objects while OpenDAL I/O is running.
 
 ```{r native-c-api-run, eval = requireNamespace("Rtinycc", quietly = TRUE)}
 task <- ffi$ropendal_demo_open(root)
-events <- character()
+events <- list()
 status <- 1L
+status_name <- c(`-1` = "error", `0` = "done", `1` = "running")
 while (status > 0L) {
   status <- ffi$ropendal_demo_resume(task)
-  events <- c(
-    events,
-    sprintf("R tick %d: native status %d; R-side work %d", length(events) + 1L, status, sum(seq_len(1000L)))
+  tick <- length(events) + 1L
+  events[[tick]] <- data.frame(
+    tick = tick,
+    native_status = unname(status_name[as.character(status)]),
+    native_step = ffi$ropendal_demo_step(task),
+    r_work = sum(seq_len(1000L))
   )
   Sys.sleep(0.001)
 }
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
-  ffi$ropendal_demo_free(task)
+  invisible(ffi$ropendal_demo_free(task))
   stop(message, call. = FALSE)
 }
 nread <- ffi$ropendal_demo_nread(task)
-ffi$ropendal_demo_free(task)
-events
-nread
+invisible(ffi$ropendal_demo_free(task))
+do.call(rbind, events)
+c(bytes_read_into_c_buffer = nread)
 ```
 
 ## Development
