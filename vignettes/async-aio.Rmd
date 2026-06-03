@@ -38,7 +38,9 @@ val
 
 ## Poll or race
 
-`unresolved()` is a tiny sentinel for unfinished work.
+`unresolved()` is a tiny sentinel/predicate for unfinished work. Local filesystem
+operations may already be ready by the time R inspects them, so `FALSE` here is
+normal.
 
 ```{r}
 aio2 <- fs_exists_aio(fs, "value.bin")
@@ -56,7 +58,7 @@ completion.
 read_aio <- fs_read_aio(fs, "value.bin")
 cv_gate <- cv()
 mon <- aio_monitor(list(read = read_aio), cv = cv_gate)
-cv_wait(cv_gate, 1000)
+cv_until(cv_gate, 1000)
 read_monitor(mon)
 collect_aio(read_aio)
 ```

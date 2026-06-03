@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, text-mode materialization uses explicit complete-object encoding boundaries, native gzip/zlib byte codecs are wired as explicit raw-byte transforms for R and C consumers, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, read-vector, codec, metadata/existence, listing, and namespace operations against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, text-mode materialization uses explicit complete-object encoding boundaries, native gzip/zlib byte codecs are wired as explicit raw-byte transforms for R and C consumers, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, read-vector, codec, metadata/existence, listing, and namespace operations against the installed native library. The package has a public `0.0.1` release, a development version `0.0.1.9000`, public GitHub/pkgdown metadata, and an R-universe declaration.
 
 ## CI matrix
 
@@ -21,19 +21,21 @@ Ropendal currently has a working implementation through the Apache OpenDAL Rust 
 | C API source-header compile check | `make test-c-api-header` | no | yes | implemented/tested-ci |
 | Installed C API roundtrip | `make test-c-api-roundtrip` | no | yes | implemented/tested-ci |
 | Installed C API contract lint | `make test-ci` | no | yes | implemented/tested-ci |
-| R CMD check | `R CMD check --no-manual` | yes | yes | implemented in workflow |
+| R CMD check | `R CMD check --no-manual` | yes | yes | implemented in workflow on Ubuntu, Windows, and macOS |
 | Network/service tests | `make test-network` | no | opt-in | implemented for S3/HTTP/GDrive; broader services planned |
 | Local HTTP fixture tests | `make test-http` | no | opt-in | implemented with internal Rust fixture, including required-header authentication coverage |
 | Public S3-compatible tests | `make test-s3` | no | opt-in network | implemented with EMBL-EBI IDR public object store |
 | Local MinIO S3-compatible tests | `make test-s3-minio` | no | CI/local service | implemented; starts MinIO with `minio`/`mc`; wired into GitHub Actions |
 | Google Drive tests | `make test-gdrive` | no | opt-in with secrets | implemented with explicit env paths |
+| pkgdown site | `make site` / pkgdown workflow | no | yes | implemented; GitHub Pages configured for the public repo |
 
 GitHub Actions jobs:
 
-- `R API tinytest (non-network)`
-- `C API contract and CI-only tests`
-- `Local MinIO S3-compatible tests`
-- `R CMD check (no CI-only/network tests)`
+- `R API tinytest (non-network)` on Ubuntu, Windows, and macOS
+- `C API contract and CI-only tests` on Ubuntu
+- `Local MinIO S3-compatible tests` on Ubuntu
+- `R CMD check (no CI-only/network tests)` on Ubuntu, Windows, and macOS
+- `pkgdown` site build/deploy
 
 ## Repository infrastructure
 
@@ -45,10 +47,11 @@ GitHub Actions jobs:
 | Network/service gating | yes | no | partial | public S3, local MinIO, HTTP fixture, and Google Drive tests exist; other cloud service tests planned |
 | Makefile test targets | yes | yes | yes | includes R tests, C API tests, and development benchmark rendering |
 | Development MinIO benchmark | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; ignored from package build |
-| GitHub Actions workflow | yes | no local | defined | separate R/C/MinIO/check jobs |
+| GitHub Actions workflow | yes | no local | defined | R API tinytest and R CMD check run on Ubuntu/Windows/macOS; C API and MinIO jobs run on Ubuntu; pkgdown deploy workflow exists |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
 | Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `http_headers`, `io_iter`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
 | configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars`; source builds support Cargo feature selection via `SAVVY_FEATURES` and `--with-rust-features` |
+| public package metadata | yes | n/a | defined | GitHub repo is public; R-universe manifest includes Ropendal; pkgdown URL and BugReports are in `DESCRIPTION`; `NEWS.md` records the public release and current development section |
 
 ## R API contracts
 
@@ -82,12 +85,12 @@ GitHub Actions jobs:
 
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
-| generic `OpendalAio` native result future | yes | yes | yes | pending | bytes, unit, bool, metadata, entries, many, error, cancelled outcome family implemented |
+| generic `OpendalAio` native result future | yes | yes | yes | partial | bytes, unit, bool, metadata, entries, many, error, cancelled outcome family implemented; service-specific pending-state checks use HTTP fixture |
 | `_aio()` for metadata/namespace operations | yes | yes | yes | partial | stat/stats, exists, ls, mkdir, delete, copy, rename implemented; local plus HTTP/S3/MinIO service coverage added where supported |
 | `_aio()` for writes | yes | yes | yes | partial | write, replace, append API implemented; local and MinIO cover write/replace; append remains backend-dependent |
-| active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | pending | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested by default, deterministic pending behavior tested with delayed local HTTP fixture |
-| `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
-| `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
+| active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | partial | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested by default, deterministic pending behavior tested with delayed local HTTP fixture |
+| `unresolved()` | yes | yes | partial | partial | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
+| `call_aio()` / `collect_aio()` | yes | yes | yes | partial | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
 | `stop_aio()` / C Aio cancellation | yes | partial | no | yes | delayed HTTP fixture covers R pending-read cancellation; installed C roundtrip covers `ropendal_aio_cancel()`; broader race/service coverage still useful |
 | condition variables `cv_*` | yes | R polling + native C | yes | yes | R `cv()`, `cv_value()`, `cv_reset()`, `cv_signal()`, `cv_wait()`, and `cv_until()` implemented; C cv lifecycle and `ropendal_aio_notify()` covered |
 | `aio_monitor()` / `read_monitor()` | yes | yes | yes | partial | R monitor drains Aio completion events without materializing success payloads; C monitor queues native completion events |
@@ -119,7 +122,7 @@ GitHub Actions jobs:
 ## Next implementation milestones
 
 1. Add traversal fanout and stronger backend-token continuation for namespace iterators where OpenDAL/service support warrants them; `limit`, `start_after`, best-effort page `cursor` markers, and explicit entry `prefetch` buffering are implemented for listing collection and iterators.
-2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
+2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-backed optimizations; C API byte-handle accessors are implemented.
 3. Add any remaining memory/backpressure controls and service-level layers where they justify public API. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, `layer_timeout(request_timeout=, io_timeout=)`, explicit listing iterator `prefetch`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.

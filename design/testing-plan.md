@@ -9,16 +9,17 @@ Shared helpers live in `inst/tinytest/helper-ropendal.R` and must remain depende
 Primary commands:
 
 ```sh
-make test-fast      # install current source, run non-network tinytest suite
-make test-local     # same intent; reserved for local filesystem coverage
-make test-network       # opt into network/service tests via env vars
-make test-http          # opt into local HTTP fixture tests via internal Rust fixture
-make test-s3            # opt into public read-only S3-compatible endpoint tests
-make test-s3-minio      # start local MinIO and run writable S3-compatible tests
-make test-c-api-header  # compile the source C API header as pure C
-make test-ci            # run CI-only non-network API contract tests
-make test-gdrive        # opt into Google Drive tests via env vars
-make test           # build, install, run tinytest
+make test-fast            # install current source, run non-network tinytest suite
+make test-local           # same intent; reserved for local filesystem coverage
+make test-network         # opt into network/service tests via env vars
+make test-http            # opt into local HTTP fixture tests via internal Rust fixture
+make test-s3              # opt into public read-only S3-compatible endpoint tests
+make test-s3-minio        # start local MinIO and run writable S3-compatible tests
+make test-c-api-header    # compile the source C API header as pure C
+make test-c-api-roundtrip # compile/run an installed-library C API roundtrip
+make test-ci              # run C API checks plus CI-only non-network API contract tests
+make test-gdrive          # opt into Google Drive tests via env vars
+make test                 # build, install, run tinytest
 ```
 
 ## Principles
@@ -56,8 +57,8 @@ Files: `test-10-*`
 
 No OpenDAL backend required. These tests should cover:
 
-- path/range request normalization
-- `read_requests()` construction
+- path/range request normalization through the public `fs_read()` arguments
+- future public request-table helper design, if one is added
 - strict vector/list length matching rules; no R recycling
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
@@ -147,8 +148,7 @@ Coverage:
 - pure C header contract: no R headers and no `SEXP`
 - C header ABI hygiene such as `struct_size` fields
 - source and installed header compile check compilation
-- exported R symbol presence once implemented
-- generated wrapper drift checks if they can be run without network or secrets
+- exported R symbol presence and generated wrapper drift checks if they can be run without network or secrets
 
 ### 60 service integrations
 
@@ -221,20 +221,19 @@ fs_read(fs,
 )
 # list(x = list(raw, raw), y = list(raw))
 
-fs_read(fs, read_requests(c("x", "x", "y"), c(0, 10, 5), c(2, 2, 3)),
+fs_read(fs, path = c("x", "x", "y"), offset = c(0, 10, 5), size = c(2, 2, 3),
         result = "flat")
 # list(raw, raw, raw)
 ```
 
-## C API contract to test later
+## Remaining C API edge cases
 
-Public option/result structs contain `struct_size` for ABI extensibility. Future tests should check that downstream C code initializes structs with `sizeof(struct)` and that older struct sizes are accepted or rejected intentionally.
+Public option/result structs contain `struct_size` for ABI extensibility. Current tests check that downstream C code initializes structs with `sizeof(struct)`. Future tests should define and check the exact compatibility policy for older, smaller, or newer, larger struct sizes.
 
 Remaining important cases:
 
-- many async range reads as borrowed bytes or into caller buffers (implemented for C `readv_aio()` and `readv_into_aio()` happy paths)
-- cancellation before completion (implemented for R `stop_aio()` with delayed HTTP fixture and C `ropendal_aio_cancel()` roundtrip; broader race coverage still useful)
-- timeout wait
-- per-request failure in a vector read (implemented for C `readv_aio()` and `readv_into_aio()` roundtrips)
+- broader cancellation race coverage beyond the delayed HTTP fixture and installed C `ropendal_aio_cancel()` roundtrip
+- timeout wait semantics once bounded `ropendal_aio_wait()` behavior is finalized
 - release order: aio before fs and fs before aio
-- monitor/notification flow using `ropendal_cv_*` and `ropendal_monitor_*`
+- additional remote-service C API coverage beyond the local filesystem roundtrip
+- larger monitor/notification stress tests using `ropendal_cv_*` and `ropendal_monitor_*`

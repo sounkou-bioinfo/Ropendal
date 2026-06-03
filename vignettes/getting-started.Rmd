@@ -11,7 +11,7 @@ vignette: >
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-Ropendal presents one central object, `OpendalFs`, and one explicit style: every
+Ropendal presents one central object, `OpendalFs`, and an explicit rule: every
 operation is expressed as a call that returns plain values and explicit errors.
 
 A local filesystem handle is the simplest entry point. Paths are normalized to be
@@ -28,7 +28,7 @@ fs <- opendal("fs", root = root)
 
 fs_write(fs, "message.txt", charToRaw("hello ropendal\n"))
 raw <- fs_read(fs, "message.txt")
-cat(rawToChar(raw))
+rawToChar(raw)
 
 stat <- fs_stat(fs, "message.txt")
 stat[c("path", "type", "size")]

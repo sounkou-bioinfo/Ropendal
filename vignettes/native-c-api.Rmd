@@ -14,8 +14,8 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 Ropendal exposes a pure C API in `inst/include/ropendal.h` for downstream native
 packages. The purpose is direct OpenDAL-backed byte I/O from native code: submit
 async work, wait on Aio handles, and read borrowed results or fill caller-owned
-buffers without calling R while background I/O is running. The header is generated
-from the same Rust surface used by the R API.
+buffers without calling R while background I/O is running. The exported C symbols
+are implemented in Rust and documented by the installed header.
 
 ## Async-first surface
 
@@ -23,7 +23,7 @@ C calls mirror the package’s async behavior:
 
 - `*_aio()` for submission,
 - `ropendal_aio_wait()` / monitor helpers for completion,
-- explicit error values for operation errors.
+- explicit status codes plus optional error objects for operation errors.
 
 ## Usage from another R package
 
@@ -51,7 +51,12 @@ or `SEXP` values.
 // allocate a filesystem handle
 ropendal_fs_t *fs = NULL;
 ropendal_error_t *err = NULL;
-ropendal_fs_open("fs", NULL, 0, &fs, &err);
+ropendal_kv_t cfg = {
+  .struct_size = sizeof(cfg),
+  .key = "root",
+  .value = "/tmp/ropendal-example"
+};
+ropendal_fs_open("fs", &cfg, 1, &fs, &err);
 
 // submit async read and wait
 ropendal_read_options_t opts = {

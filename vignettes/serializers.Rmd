@@ -37,10 +37,15 @@ raw
 Use `serial_config()` with `mode = "serial"` for explicit object materialization.
 
 ```{r}
-sc <- serial_config("character", serialize, unserialize)
-fs_write(fs, "obj.rds", list(x = 1L, y = "ok"), mode = "serial", serial_config = sc)
+note <- structure(list(text = "ok"), class = "ropendal_note")
+sc <- serial_config(
+  "ropendal_note",
+  sfunc = function(x) charToRaw(x$text),
+  ufunc = function(x) structure(list(text = rawToChar(x)), class = "ropendal_note")
+)
+fs_write(fs, "obj.rds", note, mode = "serial", serial_config = sc)
 obj <- fs_read(fs, "obj.rds", mode = "serial", serial_config = sc)
-obj$y
+obj$text
 ```
 
 ## Native codecs

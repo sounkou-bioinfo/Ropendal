@@ -400,7 +400,8 @@ classed error values depending on the operation and mode.
 Byte-oriented filesystem operations backed by Apache OpenDAL. The current
 implementation includes local \code{fs}, HTTP, S3-compatible, and Google Drive
 handles; raw byte operations; metadata and listing where supported; error
-values; read Aio handles; and a pure C API.
+values; Aio handles for read, write, metadata, and namespace operations; and
+a pure C API.
 }
 \details{
 Filesystem failures are returned as classed error values. Invalid arguments

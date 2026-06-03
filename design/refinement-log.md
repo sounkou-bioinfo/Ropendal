@@ -5,7 +5,8 @@ This project should preserve primitive orientation while allowing API details to
 Status labels:
 
 - `resolved`: decision accepted for now
-- `provisional`: usable but may change before first release
+- `provisional`: usable but may change while the package is experimental
+- `implemented`: current code implements the decision; remaining work is refinement or broader coverage
 - `open`: needs design/testing before implementation
 
 ## Resolved / provisional decisions
@@ -14,7 +15,7 @@ Status labels:
 
 Status: `resolved`
 
-Do not export `list()` or `$list`. Use `fs_ls()` and `fs_walk()`.
+Do not export `list()` or `$list`. Use `fs_ls()` for collected enumeration, `fs_ls(..., recursive = TRUE)` for collected recursive traversal, and `fs_walk_iter()` for streaming recursive traversal.
 
 ### Range reads
 
@@ -24,7 +25,7 @@ Do not add public `fs_read_range()` / `fs_readv()` initially. Make `fs_read()` v
 
 ### Result shape
 
-Status: `provisional`
+Status: `resolved`
 
 Replace ambiguous `simplify = TRUE` with:
 
@@ -32,7 +33,7 @@ Replace ambiguous `simplify = TRUE` with:
 result = c("auto", "flat", "nested")
 ```
 
-Need tinytest contract coverage before implementation.
+The public `fs_read()` / `fs_read_aio()` shape contract is implemented and covered by tinytest through the direct `path`, `offset`, `size`, and `end` arguments. A separate public request-table helper remains optional future API rather than a current exported contract.
 
 ### Errors
 
@@ -69,31 +70,31 @@ Status: `resolved`
 
 OpenDAL's HTTP service exposes built-in auth fields but not arbitrary headers in service config. Ropendal supports `headers = list(...)` on `opendal("http", ...)` and `opendal_uri("http(s)://...", headers = ...)` by installing an OpenDAL HTTP client layer that injects validated headers per request. Header support is intentionally restricted to HTTP(S) filesystem handles so it does not interfere with signed object-store requests. Header values are credential-bearing data and must not be printed or committed in metadata/fixtures.
 
-## Open questions
+## Additional decisions and open questions
 
 ### Exact `opendalErrorValue` representation
 
-Status: `open`
+Status: `implemented`
 
-Likely a length-one integer code with S3 classes and attributes:
+Current error values are small classed lists constructed in Rust:
 
-- base classes: `opendalErrorValue`, `errorValue`
+- base classes: `opendalErrorValue`, `errorValue`, `list`
 - kind-specific class such as `opendalNotFoundValue`
-- attributes: `kind`, `message`, `operation`, `path`, `service`, `status`, redacted context
+- fields: `__ropendal_error__`, `code`, `kind`, `message`, `operation`, and `path`
 
-Need finalize exact integer code mapping and print format.
+The code mapping follows OpenDAL `ErrorKind` for the currently surfaced kinds, with `Cancelled` added for cancelled Aio handles. Future service/profile work may add redacted service/status/context fields, but the current public helpers (`is_error_value()`, `error_kind()`, `error_message()`, `error_operation()`, and `error_path()`) should remain stable.
 
 ### Partial failures in vectorized reads
 
-Status: `open`
+Status: `implemented`
 
-Shape preservation is required. Each failed element becomes an `opendalErrorValue` in the corresponding output position. Open question: should vectorized execution continue after first failure by default, or cancel pending work for fail-fast resource control while still returning already-known error values?
+Shape preservation is required and implemented. Each failed element becomes an `opendalErrorValue` in the corresponding output position. Current vectorized execution continues expanded requests and returns per-element success or error values rather than failing the whole operation. A future fail-fast policy would need an explicit design reason and should not silently change the primitive result shape.
 
 ### Directory inputs to `fs_read()`
 
 Status: `resolved`
 
-Byte ranges apply to file reads only. Directory traversal belongs to `fs_ls()` / `fs_walk()`.
+Byte ranges apply to file reads only. Directory traversal belongs to `fs_ls()` / `fs_ls(..., recursive = TRUE)` / `fs_walk_iter()`.
 
 ### Text mode and ranges
 
@@ -142,9 +143,9 @@ Do not silently weaken conditions, version IDs, metadata requirements, or consis
 
 ### Runtime ownership
 
-Status: `open`
+Status: `implemented`
 
-Need decide global shared Tokio runtime versus per-filesystem runtime. Current leaning: shared runtime with per-filesystem operator/layers and explicit global/service concurrency limits.
+Current implementation uses one Tokio runtime per `OpendalFs` handle, configured by `runtime_config(threads = )`, and stores it with the OpenDAL operator in an `Arc` so submitted Aio work can outlive the R filesystem wrapper. Service-wide request throttling remains a layer concern (`layer_concurrent_limit()`), not a runtime-thread knob. A shared runtime can be reconsidered later only if startup/resource costs justify changing the internal ownership model without changing the public API.
 
 ### C ABI versioning
 
@@ -213,9 +214,9 @@ The optional storage-format codec layer (`codec_config()`) starts explicit-only.
 
 Status: `provisional`
 
-Mirror nanonext ergonomics where possible: `stop_aio()` silently requests cancellation and waits for the Aio handle to reach a terminal state. If cancellation wins, the Aio resolves to a cancellation error value, e.g. `opendalCancelledValue`.
+Mirror nanonext ergonomics where possible: `stop_aio()` requests cancellation for an Aio and the handle resolves to a cancellation error value, e.g. `opendalCancelledValue`, if cancellation wins. The current R helper marks the handle cancelled immediately after requesting abort; callers that need to observe final state should inspect `$state`, `$error`, or collect the Aio.
 
-There are no guarantees about backend side effects unless the backend/profile primitive provides them. A remote request may already have completed or a write may already have been committed. For C `read_into_aio()`, caller-owned buffers must remain valid until the Aio reaches a terminal state.
+There are no guarantees about backend side effects unless the backend/profile primitive provides them. A remote request may already have completed or a write may already have been committed. For C `read_into_aio()` and `readv_into_aio()`, caller-owned buffers must remain valid until the Aio reaches a terminal state.
 
 ### Timeout and waiting semantics
 
@@ -231,16 +232,16 @@ Adapters may warn for whatever profile-specific reason is helpful, especially we
 
 ### Native C result model for vector reads
 
-Status: `provisional`
+Status: `implemented`
 
 Native C byte reads are buffer-oriented to avoid copies. For `read_into_aio()` and `readv_into_aio()`, the caller provides destination buffers and owns them. Ropendal fills those buffers asynchronously. The caller must keep buffers valid until the Aio reaches a terminal state.
 
-Need still define result inspection details:
+Current result inspection details:
 
-- flat result array in request order
-- per-request status and byte count
-- per-request error object or shared aggregate error
-- ownership/lifetime of result arrays
+- `ropendal_readv_aio()` returns successful borrowed bytes flattened in request order through `ropendal_aio_result_bytes()`.
+- `ropendal_readv_into_aio()` fills caller-owned buffers and reports total bytes through `ropendal_aio_result_nread()`.
+- `ropendal_aio_result_readv()` returns one `ropendal_readv_result_t` per request with status, byte count, and borrowed error details.
+- Result arrays and borrowed byte/entry pointers are owned by the Aio and valid until `ropendal_aio_release()`.
 
 ### Native C API distribution
 
@@ -272,37 +273,40 @@ Status: `provisional`
 
 Keep `R/api.R` as a very thin public surface. R should define user-facing names,
 S7/S3 generics and interfaces, documentation, optional local credential-source
-objects, and README/test orchestration. Rust should own filesystem operation
-semantics, argument validation for operation calls, strict vector length checks,
-result shaping, S3 classes and attributes for returned values, capability values,
-and error-value construction.
+objects, materialization closures, and README/test orchestration. Rust should own
+filesystem operation semantics, operation-call argument validation, strict vector
+length checks, result shaping, S3 classes and fields for returned native values,
+capability values, and error-value construction.
 
-The transitional R helpers `.decorate_error()`, `.decorate_result()`, `.check_fs()`,
-and vectorized loops such as `.write_many()` should be removed once equivalent
-Rust methods return already-classed values and enforce the contract directly.
-Hard R errors remain appropriate only for R-side interface construction, explicit
-environment/file helper setup, and generic dispatch failures.
+The current implementation has moved operation loops and error construction into
+Rust/savvy methods. Remaining R helpers are primarily interface adapters, option
+normalizers, serializer/deserializer and codec orchestration, Aio active-binding
+materialization, printing, and R-side wait helpers. Hard R errors remain
+appropriate only for R-side interface construction, explicit environment/file
+helper setup, serializer/deserializer failures, and generic dispatch failures.
 
 ### Credential provider interface
 
-Status: `open`
+Status: `implemented`
 
 A credential provider is a small explicit object/protocol that can materialize a
 service-specific OpenDAL config at filesystem construction time and can present a
 redacted summary for diagnostics. It is not an implicit global provider chain and
 not just an unclassed list of secrets.
 
-Proposed required behavior:
+Current behavior:
 
+- `CredentialProvider` is an S7 class wrapping a Rust-backed provider object and
+  supported schemes.
 - `credential_config(provider, service)` returns named scalar config values for
   Rust/OpenDAL, with secrets only in the returned construction payload.
 - `credential_summary(provider)` returns a redacted classed value for printing,
   capability diagnostics, and logs.
-- provider classes include direct token providers, refresh-token providers,
-  local `gdrive3` JSON/token-file providers, and explicit env providers.
+- built-in helpers cover S3, GCS, AzBlob, Google Drive direct credentials, and
+  local `gdrive3` JSON/token-file credentials.
 
-This can be expressed with S7 plus `s7contract`-style interfaces/traits while
-keeping Rust as the implementation owner for filesystem operations.
+A future `s7contract` interface/trait layer may still be useful for third-party
+providers, but the initial explicit provider protocol is implemented.
 
 ### Capability values and interfaces
 
@@ -445,7 +449,7 @@ bindings:
 
 - `$value`: universal value binding; returns `unresolvedValue` while pending and
   the resolved value/error after readiness or collection;
-- `$data`: alias for `$value` for read/stat/list/exists-style operations;
+- `$data`: alias for `$value` for read/stat/list/exists-like operations;
 - `$result`: alias for `$value` for unit/completion operations;
 - `$state`: native state string (`pending`, `ready`, `resolved`, `error`, or
   `cancelled`) without materializing success payloads;
@@ -469,14 +473,15 @@ background, and it uses `$error` only to classify ready/error/cancelled events.
 This gives users nanonext-like wait/race ergonomics while keeping background
 work in Rust/OpenDAL/Tokio and avoiding R API calls from worker threads.
 
-This remains a provisional bridge over the stronger native notification design.
-C `ropendal_cv_*` lifecycle primitives exist, but C `ropendal_aio_notify()` and
-monitor event queues still need a safe ownership model before they can replace
-R-side polling for completion notifications.
+This remains a provisional R-side bridge even though the native notification
+ownership model is now implemented for C consumers. C `ropendal_aio_notify()` and
+monitor event queues retain Aio/CV handles safely, but the exported R
+`aio_monitor()` remains polling-based so completion classification never requires
+background tasks to call the R API.
 
 ### Explicit native byte codecs
 
-Status: `implemented initially`
+Status: `implemented`
 
 `codec_config()` is now an explicit native byte-transform config for raw-byte
 storage codecs. The first implemented codecs are `identity`, `gzip`, and `zlib`.

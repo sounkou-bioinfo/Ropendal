@@ -317,9 +317,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace             121.6ms  128.6ms      7.92        0B
-#> 2 ropendal_replace_concurrent   77.6ms   80.1ms     12.2         0B
-#> 3 paws_put                     541.7ms  541.7ms      1.85    67.7MB
+#> 1 ropendal_replace             126.4ms  129.6ms      7.76        0B
+#> 2 ropendal_replace_concurrent   78.3ms   84.2ms     12.1         0B
+#> 3 paws_put                     532.1ms  532.1ms      1.88    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -349,11 +349,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  59.1ms   59.1ms      16.9      64MB
-#> 2 ropendal_read_concurrent       33.7ms   35.1ms      28.5      64MB
-#> 3 ropendal_read_aio              44.6ms   48.4ms      20.7      64MB
-#> 4 ropendal_read_aio_concurrent   32.5ms   32.5ms      30.8      64MB
-#> 5 paws_get                         55ms   58.1ms      17.4    64.3MB
+#> 1 ropendal_read                  47.3ms   47.3ms      21.1      64MB
+#> 2 ropendal_read_concurrent       36.3ms   36.7ms      27.3      64MB
+#> 3 ropendal_read_aio              42.8ms   58.4ms      17.1      64MB
+#> 4 ropendal_read_aio_concurrent   31.7ms   31.7ms      31.6      64MB
+#> 5 paws_get                         56ms   58.1ms      16.8    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -674,10 +674,12 @@ while (status > 0L) {
 #> native request 4: running; wait write
 #> native request 5: running; wait write
 #> native request 6: running; wait write
-#> native request 7: running; wait stat
-#> native request 8: running; wait list
-#> native request 9: running; wait read_into
-#> native request 10: done; complete
+#> native request 7: running; wait write
+#> native request 8: running; wait write
+#> native request 9: running; wait stat
+#> native request 10: running; wait list
+#> native request 11: running; wait read_into
+#> native request 12: done; complete
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
   ffi$ropendal_demo_free(task)
@@ -692,7 +694,7 @@ c(
   bytes_read_into_c_buffer = nread
 )
 #>                  r_ticks                   r_work bytes_read_into_c_buffer 
-#>                       10                  5005000                       17
+#>                       12                  6006000                       17
 ```
 
 ## Development

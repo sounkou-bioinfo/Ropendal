@@ -42,7 +42,7 @@ The package therefore uses three layers:
    representations such as `raw`, `OpendalBytes`, metadata lists, entries,
    logical values, text, serialized R objects, matrix columns, or data frames.
 3. **Adapter**: convenience surfaces such as iterators, Aio active bindings,
-   future connection wrappers, promises/later integration, or package-specific
+   future connection wrappers, event-loop integrations, or package-specific
    serializers.
 
 Read/write are intentionally asymmetric at the R boundary. Reads can complete
@@ -70,7 +70,8 @@ Do not export `list()` or expose `$list`. In R, `list` is too central and should
 
 - `fs_ls()` for listing/enumeration
 - `fs_ls_aio()` for async listing
-- `fs_walk()` for recursive traversal/streaming API
+- `fs_ls(..., recursive = TRUE)` for collected recursive traversal
+- `fs_walk_iter()` for streaming recursive traversal
 - optional `$ls` sugar if a method table is added later
 
 ## R object model
@@ -103,7 +104,7 @@ Required native state:
 
 ### Aio handles
 
-Aio objects are environments with active bindings, following nanonext. An Aio is a generic remote operation future, not just a read handle.
+Aio objects are environments with active bindings, inspired by nanonext. An Aio is a generic remote operation future, not just a read handle.
 
 ```r
 aio <- fs_stat_aio(fs, "x.bin")
@@ -146,8 +147,10 @@ Follow nanonext's resolution ergonomics: operations resolve to values, and files
 ```r
 x <- fs_read(fs, "missing.bin")
 is_error_value(x)
-ropendal_error(x)
-# "NotFound | read | missing.bin | ..."
+error_kind(x)
+# "NotFound"
+error_path(x)
+# "missing.bin"
 
 inherits(x, "opendalNotFoundValue")
 # TRUE
@@ -156,9 +159,8 @@ inherits(x, "opendalNotFoundValue")
 There is no `errors = "stop"` mode in the primitive API. Users who want condition-like programming can convert/check explicitly:
 
 ```r
-stop_for_error(x)
-# or
-stop(as_error_condition(x))
+# Future adapters can provide explicit opt-in throwing helpers, e.g.
+# stop_for_error(x) or stop(as_error_condition(x)).
 ```
 
 Rules:
@@ -170,18 +172,19 @@ Rules:
 - Vectorized operations preserve shape and place error values exactly where the corresponding success value would appear.
 - Hard errors still throw: invalid R arguments, impossible result shapes, unsafe pointer misuse, serializer/deserializer exceptions, package internal bugs, and memory/allocation failures.
 
-Error values should be small classed values, nanonext-like. Prefer an integer code plus S3 classes and attributes:
+Error values are small classed lists constructed in Rust:
 
 ```r
 structure(
-  code,
-  class = c("opendalNotFoundValue", "opendalErrorValue", "errorValue"),
-  kind = "NotFound",
-  message = "object not found",
-  operation = "read",
-  path = "missing.bin",
-  service = "s3",
-  status = "permanent"
+  list(
+    `__ropendal_error__` = TRUE,
+    code = 4L,
+    kind = "NotFound",
+    message = "object not found",
+    operation = "read",
+    path = "missing.bin"
+  ),
+  class = c("opendalNotFoundValue", "opendalErrorValue", "errorValue", "list")
 )
 ```
 
@@ -200,21 +203,21 @@ Kind-specific classes should mirror OpenDAL `ErrorKind` where possible:
 - `opendalConditionNotMatchValue`
 - `opendalRangeNotSatisfiedValue`
 
-Public helpers:
+Current public helpers:
 
 ```r
 is_error_value(x)
-is_opendal_error_value(x)
-ropendal_error(x)       # compact printable message
 error_kind(x)
 error_message(x)
 error_path(x)
 error_operation(x)
-as_error_condition(x)   # convert value to an R condition
-stop_for_error(x)       # explicit opt-in to throwing
 ```
 
-The C API analog is `ropendal_status_t` plus an optional `ropendal_error_t *` for structured inspection. Async C handles resolve to ready/error/cancelled states instead of throwing through R.
+Future adapters may add explicit conversion helpers such as `as_error_condition()`
+or `stop_for_error()`, but primitive functions should continue to resolve
+backend/filesystem failures as values. The C API analog is `ropendal_status_t`
+plus an optional `ropendal_error_t *` for structured inspection. Async C handles
+resolve to ready/error/cancelled states instead of throwing through R.
 
 ## Core R API
 
@@ -223,46 +226,54 @@ Use package-prefixed generics. The R layer should be thin wrappers over `.Call()
 ```r
 fs_info(x)
 fs_capabilities(x)
+fs_normalize_path(x, path, directory = FALSE)
 
-fs_stat(x, path, ..., batch_concurrency = NULL)
-fs_exists(x, path, ..., batch_concurrency = NULL)
-fs_ls(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL,
-      page_size = NULL, prefetch = NULL, batch_concurrency = NULL,
-      list_concurrency = NULL, result = c("auto", "nested", "flat"), ...)
-fs_walk(x, path = "", recursive = TRUE, page_size = NULL, prefetch = NULL, ...)
+fs_stat(x, path, batch_concurrency = NULL)
+fs_stats(x, path, batch_concurrency = NULL)
+fs_exists(x, path, batch_concurrency = NULL)
+fs_ls(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL)
+fs_ls_iter(x, path = "", recursive = FALSE, page_size = 1000,
+           limit = NULL, start_after = NULL, prefetch = 0)
+fs_walk_iter(x, path = "", page_size = 1000,
+             limit = NULL, start_after = NULL, prefetch = 0)
 
 fs_read(
   x, path,
   offset = 0,
   size = NULL,
   end = NULL,
-  mode = c("raw", "serial", "text", "codec"),
-  ...,
+  result = c("auto", "flat", "nested"),
   batch_concurrency = NULL,
   read_concurrency = NULL,
   chunk_size = NULL,
   coalesce_gap = NULL,
-  prefetch = NULL,
-  result = c("auto", "flat", "nested")
+  mode = c("raw", "serial", "text", "codec"),
+  encoding = "UTF-8",
+  serial_config = opt(x, "serial"),
+  codec = opt(x, "codec")
 )
 
 fs_write(
   x, path, data,
-  mode = c("raw", "serial", "text", "codec"),
-  ...,
   batch_concurrency = NULL,
   write_concurrency = NULL,
-  chunk_size = NULL
+  chunk_size = NULL,
+  mode = c("raw", "serial", "text", "codec"),
+  encoding = "UTF-8",
+  serial_config = opt(x, "serial"),
+  codec = opt(x, "codec")
 )
-fs_replace(x, path, data, mode = c("raw", "serial", "text", "codec"), ...,
-           batch_concurrency = NULL, write_concurrency = NULL, chunk_size = NULL)
-fs_append(x, path, data, mode = c("raw", "text"), ...,
-          batch_concurrency = NULL, write_concurrency = NULL, chunk_size = NULL)
+fs_replace(x, path, data, batch_concurrency = NULL,
+           write_concurrency = NULL, chunk_size = NULL,
+           mode = c("raw", "serial", "text", "codec"), ...)
+fs_append(x, path, data, batch_concurrency = NULL,
+          write_concurrency = NULL, chunk_size = NULL,
+          mode = c("raw", "serial", "text", "codec"), ...)
 
-fs_mkdir(x, path, ..., batch_concurrency = NULL)
-fs_delete(x, path, recursive = FALSE, ..., batch_concurrency = NULL)
-fs_copy(x, from, to, ..., batch_concurrency = NULL)
-fs_rename(x, from, to, ..., batch_concurrency = NULL)
+fs_mkdir(x, path)
+fs_delete(x, path, recursive = FALSE, batch_concurrency = NULL)
+fs_copy(x, from, to)
+fs_rename(x, from, to)
 ```
 
 Write semantics:
@@ -276,26 +287,27 @@ Write semantics:
 Async variants use the same vectorized arguments and return one Aio handle for the whole submitted operation. The synchronous forms should be blocking convenience wrappers over the same native operation pipeline, even if the implementation avoids literally constructing a public Aio object.
 
 ```r
-fs_stat_aio(x, path, ..., batch_concurrency = NULL, cv = NULL)
-fs_exists_aio(x, path, ..., batch_concurrency = NULL, cv = NULL)
-fs_ls_aio(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL,
-          page_size = NULL, prefetch = NULL, batch_concurrency = NULL,
-          list_concurrency = NULL, result = c("auto", "nested", "flat"),
-          ..., cv = NULL)
-fs_read_aio(x, path, offset = 0, size = NULL, end = NULL, ...,
-            batch_concurrency = NULL, read_concurrency = NULL,
-            chunk_size = NULL, coalesce_gap = NULL, prefetch = NULL,
-            result = c("auto", "flat", "nested"), cv = NULL)
-fs_write_aio(x, path, data, ..., batch_concurrency = NULL,
-             write_concurrency = NULL, chunk_size = NULL, cv = NULL)
-fs_replace_aio(x, path, data, ..., batch_concurrency = NULL,
-               write_concurrency = NULL, chunk_size = NULL, cv = NULL)
-fs_append_aio(x, path, data, ..., batch_concurrency = NULL,
-              write_concurrency = NULL, chunk_size = NULL, cv = NULL)
-fs_mkdir_aio(x, path, ..., batch_concurrency = NULL, cv = NULL)
-fs_delete_aio(x, path, recursive = FALSE, ..., batch_concurrency = NULL, cv = NULL)
-fs_copy_aio(x, from, to, ..., batch_concurrency = NULL, cv = NULL)
-fs_rename_aio(x, from, to, ..., batch_concurrency = NULL, cv = NULL)
+fs_stat_aio(x, path, batch_concurrency = NULL)
+fs_stats_aio(x, path, batch_concurrency = NULL)
+fs_exists_aio(x, path, batch_concurrency = NULL)
+fs_ls_aio(x, path = "", recursive = FALSE, limit = NULL, start_after = NULL)
+fs_read_aio(x, path, offset = 0, size = NULL, end = NULL,
+            result = c("auto", "flat", "nested"), batch_concurrency = NULL,
+            read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
+            mode = c("raw", "serial", "text", "codec"), ...)
+fs_write_aio(x, path, data, batch_concurrency = NULL,
+             write_concurrency = NULL, chunk_size = NULL,
+             mode = c("raw", "serial", "text", "codec"), ...)
+fs_replace_aio(x, path, data, batch_concurrency = NULL,
+               write_concurrency = NULL, chunk_size = NULL,
+               mode = c("raw", "serial", "text", "codec"), ...)
+fs_append_aio(x, path, data, batch_concurrency = NULL,
+              write_concurrency = NULL, chunk_size = NULL,
+              mode = c("raw", "serial", "text", "codec"), ...)
+fs_mkdir_aio(x, path, batch_concurrency = NULL)
+fs_delete_aio(x, path, recursive = FALSE, batch_concurrency = NULL)
+fs_copy_aio(x, from, to, batch_concurrency = NULL)
+fs_rename_aio(x, from, to, batch_concurrency = NULL)
 ```
 
 Operation taxonomy:
@@ -334,13 +346,9 @@ xs <- fs_read(fs,
   size = list(c(100, 100), c(200))
 )
 
-# For a fully flat request table, use an explicit request object/data frame.
-req <- read_requests(
-  path = c("a.bin", "a.bin", "b.bin"),
-  offset = c(0, 4096, 0),
-  size = c(100, 100, 200)
-)
-xs <- fs_read(fs, req, result = "flat")
+# Fully flat request-table helpers may be added later.
+# For now, use vector/list arguments and `result = "flat"` when a flat
+# return shape is desired.
 ```
 
 Semantics:
@@ -359,7 +367,7 @@ Semantics:
 - `coalesce_gap` may merge nearby backend requests internally, but the returned object is split into the originally requested ranges
 - for partial ranges, `mode = "serial"` should be rejected unless the caller explicitly opts into reading a complete serialized object; byte range reads are fundamentally `mode = "raw"`
 
-A small constructor can exist for clarity, but it should feed `fs_read()` rather than create another verb. Directory paths are for `fs_ls()`/`fs_walk()`; byte ranges apply to file reads.
+A small request-table constructor can exist later for clarity, but it should feed `fs_read()` rather than create another verb. Directory paths are for `fs_ls(recursive = TRUE)` and `fs_walk_iter()`; byte ranges apply to file reads.
 
 The native C API remains more explicit (`read_aio`, `read_into_aio`, `readv_into_aio`) because C callers need direct buffer ownership and cannot rely on R vector/list recycling.
 
@@ -467,7 +475,7 @@ Example policy:
 | `fs_read()` byte ranges | Supported if profile declares `read_range`; implementation may be native or adapter-owned, but R API is identical. |
 | `fs_write()` | Supported if profile declares `write`. |
 | `fs_stat()` | Supported if profile declares `stat`; adapters must provide the documented metadata shape. |
-| `fs_ls()` / `fs_walk()` | Supported if profile declares `ls` / `walk`; adapter may perform pagination or iterative traversal internally. |
+| `fs_ls()` / `fs_walk_iter()` | Supported if profile declares listing/recursive traversal support; adapter may perform pagination or iterative traversal internally. |
 | `fs_delete()` | Supported if profile declares `delete`; recursive delete requires `delete_recursive`. |
 | `fs_copy()` | Supported if profile declares `copy`; if implemented by adapter composition, that is not a user option. |
 | `fs_rename()` | Supported if profile declares `rename`; if non-atomic, the capability table must say so. |
@@ -500,7 +508,9 @@ fs_read(fs, paths, batch_concurrency = 32, read_concurrency = 1)
 
 # Indexed/range-heavy readers: many ranges, with nearby ranges coalesced.
 fs_read(fs,
-  read_requests(index$path, index$offset, index$size),
+  path = index$path,
+  offset = as.list(index$offset),
+  size = as.list(index$size),
   result = "flat",
   batch_concurrency = 64,
   read_concurrency = 4,
@@ -607,7 +617,7 @@ fs_read(fs, "x.rds", mode = "serial")
 
 ### nanonext-like serialization config
 
-Mirror nanonext exactly at the user level: `serial_config()` registers both serialize and unserialize hooks.
+Mirror the relevant nanonext ergonomics at the user level: `serial_config()` registers both serialize and unserialize hooks.
 
 ```r
 cfg <- serial_config(
@@ -807,7 +817,7 @@ Design rules:
 
 - Signalling happens from Rust/Tokio without calling the R API.
 - The signal increments an atomic/mutex-protected counter, like nanonext `cv`.
-- `stop_aio()` mirrors nanonext ergonomics where possible: it silently requests cancellation and waits for the Aio handle to reach a terminal state, but it cannot guarantee that a backend request or remote write did not already happen. If cancellation wins, the value resolves to a classed cancellation error value.
+- `stop_aio()` mirrors nanonext ergonomics where possible: it requests cancellation for the Aio handle and resolves the handle to a classed cancellation error value if cancellation wins, but it cannot guarantee that a backend request or remote write did not already happen.
 - `race_aio(aios, cv)` can be implemented on top of the same primitive.
 - Monitors are for completion notifications and event draining; they do not materialize R values in the background.
 - Avoid exporting `pipe_notify()` unless Ropendal later has a real connection/stream concept. Use `aio_notify()` or `aio_monitor()` instead.
@@ -823,6 +833,8 @@ ropendal_cv_until(cv, 100, &err);
 ropendal_monitor_create(cv, &mon, &err);
 ropendal_monitor_add_aio(mon, aio, id, &err);
 ropendal_monitor_read(mon, &events, &len, &err);
+ropendal_monitor_release(mon);
+ropendal_cv_release(cv);
 ```
 
 This gives C callers a lightweight completion queue without forcing one callback per request, while preserving the simpler `ropendal_aio_wait()` path for one-off operations.
@@ -843,7 +855,7 @@ The native API is pure C and async-first. It does not include R headers and shou
 
 ### C types
 
-See `inst/include/ropendal.h` for the draft public header. Public option/result structs start with `size_t struct_size` so the ABI can grow without silently misreading older caller memory.
+See `inst/include/ropendal.h` for the public header. Public option/result structs start with `size_t struct_size` so the ABI can grow without silently misreading older caller memory.
 
 Core status enum:
 
@@ -867,6 +879,7 @@ ropendal_status_t ropendal_fs_open(const char *scheme,
 ropendal_status_t ropendal_fs_from_uri(const char *uri,
                                        ropendal_fs_t **out,
                                        ropendal_error_t **err);
+void ropendal_fs_retain(ropendal_fs_t *fs);
 void ropendal_fs_release(ropendal_fs_t *fs);
 
 ropendal_status_t ropendal_codec_encode(const char *codec,

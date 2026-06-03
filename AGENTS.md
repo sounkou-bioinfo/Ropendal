@@ -61,6 +61,8 @@ Follow the R package workflow. Use the Makefile once present:
 - `make test-gdrive` for opt-in Google Drive tests
 - `make site` for pkgdown
 
+Use `Rtinycc` for live native C API demos/checks where possible: compile and run the tiny downstream C consumer in memory from R, and avoid shelling out through `system()` / `system2()` or managing temporary compiler invocations when `Rtinycc` can exercise the same contract.
+
 Tinytest infrastructure lives in `tests/tinytest.R` and `inst/tinytest/`. Keep helper code in `inst/tinytest/helper-ropendal.R`. See `design/testing-plan.md` for the test matrix and required env vars. See `design/STATUS.md` for the implementation/test checklist.
 
 Keep `NAMESPACE`, generated wrappers, Rd files, and `README.md` synchronized with sources. Do not hand-edit generated files when roxygen2, savvy, or R Markdown owns them. Edit `README.Rmd`, then run `make rdm`.

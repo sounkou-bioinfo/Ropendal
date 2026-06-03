@@ -6,6 +6,8 @@
 - Documentation: expanded README examples for batched I/O, async Aio handles,
   serializers/codecs, Arrow IPC streams via nanoarrow, lower-level iterators,
   S3-compatible MinIO benchmarking, and native C API scheduling.
+- Documentation: aligned design notes, roxygen docs, and vignettes with the
+  current async, credential, serializer, and native C API behavior.
 
 ## Ropendal 0.0.1
 
