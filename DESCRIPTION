@@ -19,7 +19,7 @@ Description: Provides a byte-oriented abstract filesystem interface for R backed
 License: GPL (>= 3)
 URL: https://github.com/sounkou-bioinfo/Ropendal, https://sounkou-bioinfo.github.io/Ropendal
 BugReports: https://github.com/sounkou-bioinfo/Ropendal/issues
-SystemRequirements: Cargo (Rust's package manager), rustc >= 1.88.0
+SystemRequirements: Cargo (Rust's package manager), rustc >= 1.88.0, GNU make
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
