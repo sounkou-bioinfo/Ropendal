@@ -254,21 +254,36 @@ readme_set_aws_env <- function(minio) {
 We set up a temporary MinIO instance behind the scenes, then check that the
 S3-compatible store supports the same byte API.
 
-```{r api-tour-s3, eval = readme_run_s3}
+```{r api-tour-s3-start, include = FALSE, eval = readme_run_s3}
 minio <- readme_start_minio()
 s3_fs <- minio$fs
+```
 
+We write, read, stat, and list objects with the same `fs_*` functions.
+
+```{r api-tour-s3-ops, eval = readme_run_s3}
 fs_write(s3_fs, "notes/a.txt", charToRaw("hello s3-compatible store\n"))
 fs_write(s3_fs, "notes/b.txt", charToRaw("another object\n"))
 
 rawToChar(fs_read(s3_fs, "notes/a.txt"))
 fs_stat(s3_fs, "notes/a.txt")[c("path", "type", "size")]
 vapply(fs_ls(s3_fs, "notes/"), `[[`, character(1), "path")
+```
 
+The async path returns an Aio handle; we wait and collect when we need the
+payload.
+
+```{r api-tour-s3-async, eval = readme_run_s3}
 aio <- fs_read_aio(s3_fs, "notes/b.txt")
 call_aio(aio)
 rawToChar(collect_aio(aio))
+```
 
+For a small local comparison, we use a larger object to compare Ropendal's
+default path with its chunked/concurrent path. `paws.storage` is included as a
+single-GET baseline.
+
+```{r api-tour-s3-bench-setup, eval = readme_run_s3}
 restore_aws_env <- readme_set_aws_env(minio)
 paws_s3 <- paws.storage::s3(
   endpoint = minio$endpoint,
@@ -276,11 +291,22 @@ paws_s3 <- paws.storage::s3(
   config = list(s3_force_path_style = TRUE)
 )
 
-payload <- as.raw(sample.int(256L, 1024L * 1024L, replace = TRUE) - 1L)
+payload <- as.raw(sample.int(256L, 8L * 1024L * 1024L, replace = TRUE) - 1L)
 bench_key <- "bench/payload.bin"
+read_chunk <- 1024 * 1024
+write_chunk <- 5 * 1024 * 1024
+```
 
+```{r api-tour-s3-bench-write, eval = readme_run_s3}
 bench::mark(
   ropendal_replace = fs_replace(s3_fs, bench_key, payload),
+  ropendal_replace_concurrent = fs_replace(
+    s3_fs,
+    bench_key,
+    payload,
+    write_concurrency = 4,
+    chunk_size = write_chunk
+  ),
   paws_put = {
     paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload)
     TRUE
@@ -288,15 +314,31 @@ bench::mark(
   iterations = 3,
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+```
 
+```{r api-tour-s3-bench-read, eval = readme_run_s3}
 bench::mark(
   ropendal_read = fs_read(s3_fs, bench_key),
+  ropendal_read_concurrent = fs_read(
+    s3_fs,
+    bench_key,
+    read_concurrency = 4,
+    chunk_size = read_chunk
+  ),
   ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key)),
+  ropendal_read_aio_concurrent = collect_aio(fs_read_aio(
+    s3_fs,
+    bench_key,
+    read_concurrency = 4,
+    chunk_size = read_chunk
+  )),
   paws_get = paws_s3$get_object(Bucket = minio$bucket, Key = bench_key)$Body,
   iterations = 3,
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+```
 
+```{r api-tour-s3-cleanup, include = FALSE, eval = readme_run_s3}
 restore_aws_env()
 minio$stop()
 ```

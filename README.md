@@ -155,10 +155,9 @@ fixture$stop()
 We set up a temporary MinIO instance behind the scenes, then check that
 the S3-compatible store supports the same byte API.
 
-``` r
-minio <- readme_start_minio()
-s3_fs <- minio$fs
+We write, read, stat, and list objects with the same `fs_*` functions.
 
+``` r
 fs_write(s3_fs, "notes/a.txt", charToRaw("hello s3-compatible store\n"))
 #> [1] TRUE
 fs_write(s3_fs, "notes/b.txt", charToRaw("another object\n"))
@@ -177,12 +176,23 @@ fs_stat(s3_fs, "notes/a.txt")[c("path", "type", "size")]
 #> [1] 26
 vapply(fs_ls(s3_fs, "notes/"), `[[`, character(1), "path")
 #> [1] "notes/a.txt" "notes/b.txt"
+```
 
+The async path returns an Aio handle; we wait and collect when we need
+the payload.
+
+``` r
 aio <- fs_read_aio(s3_fs, "notes/b.txt")
 call_aio(aio)
 rawToChar(collect_aio(aio))
 #> [1] "another object\n"
+```
 
+For a small local comparison, we use a larger object to compare
+Ropendal’s default path with its chunked/concurrent path. `paws.storage`
+is included as a single-GET baseline.
+
+``` r
 restore_aws_env <- readme_set_aws_env(minio)
 paws_s3 <- paws.storage::s3(
   endpoint = minio$endpoint,
@@ -190,11 +200,22 @@ paws_s3 <- paws.storage::s3(
   config = list(s3_force_path_style = TRUE)
 )
 
-payload <- as.raw(sample.int(256L, 1024L * 1024L, replace = TRUE) - 1L)
+payload <- as.raw(sample.int(256L, 8L * 1024L * 1024L, replace = TRUE) - 1L)
 bench_key <- "bench/payload.bin"
+read_chunk <- 1024 * 1024
+write_chunk <- 5 * 1024 * 1024
+```
 
+``` r
 bench::mark(
   ropendal_replace = fs_replace(s3_fs, bench_key, payload),
+  ropendal_replace_concurrent = fs_replace(
+    s3_fs,
+    bench_key,
+    payload,
+    write_concurrency = 4,
+    chunk_size = write_chunk
+  ),
   paws_put = {
     paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload)
     TRUE
@@ -202,28 +223,42 @@ bench::mark(
   iterations = 3,
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
-#> # A tibble: 2 × 5
-#>   expression            min   median `itr/sec` mem_alloc
-#>   <bch:expr>       <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace   6.19ms   6.32ms     127.    10.46KB
-#> 2 paws_put          18.29ms   20.5ms      48.8    4.68MB
+#> # A tibble: 3 × 5
+#>   expression                       min   median `itr/sec` mem_alloc
+#>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_replace              19.7ms   22.3ms      45.0    10.5KB
+#> 2 ropendal_replace_concurrent   19.1ms     24ms      41.3        0B
+#> 3 paws_put                      78.6ms   79.8ms      12.3    11.7MB
+```
 
+``` r
 bench::mark(
   ropendal_read = fs_read(s3_fs, bench_key),
+  ropendal_read_concurrent = fs_read(
+    s3_fs,
+    bench_key,
+    read_concurrency = 4,
+    chunk_size = read_chunk
+  ),
   ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key)),
+  ropendal_read_aio_concurrent = collect_aio(fs_read_aio(
+    s3_fs,
+    bench_key,
+    read_concurrency = 4,
+    chunk_size = read_chunk
+  )),
   paws_get = paws_s3$get_object(Bucket = minio$bucket, Key = bench_key)$Body,
   iterations = 3,
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
-#> # A tibble: 3 × 5
-#>   expression             min   median `itr/sec` mem_alloc
-#>   <bch:expr>        <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read       1.65ms   1.67ms      573.       1MB
-#> 2 ropendal_read_aio   1.41ms   1.46ms      682.       1MB
-#> 3 paws_get            6.57ms   6.92ms      145.    1.29MB
-
-restore_aws_env()
-minio$stop()
+#> # A tibble: 5 × 5
+#>   expression                        min   median `itr/sec` mem_alloc
+#>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_read                  5.73ms   5.73ms     175.        8MB
+#> 2 ropendal_read_concurrent       4.77ms   5.98ms     175.        8MB
+#> 3 ropendal_read_aio             11.98ms  12.54ms      79.8       8MB
+#> 4 ropendal_read_aio_concurrent   7.13ms   8.47ms     118.        8MB
+#> 5 paws_get                      12.91ms  15.15ms      66.0    8.29MB
 ```
 
 ### Google Drive read example (credentials explicit)
