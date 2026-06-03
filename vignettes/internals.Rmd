@@ -1,0 +1,67 @@
+---
+title: "Internals"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Internals}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This article is an implementation note, not a compatibility guarantee.
+
+## Dataflow
+
+At runtime, all operations go through three explicit stages:
+
+1. **R wrapper** builds a typed argument object and lightweight error checks,
+2. **Rust layer** executes async OpenDAL operations,
+3. **R result or C result object** surfaces either a value or an
+   `opendalErrorValue`.
+
+`OpendalFs` is the stable user-facing handle. Async completion is represented by
+`OpendalAio`, which carries completion state and result storage.
+
+## Async and thread safety
+
+Background work runs in a Rust Tokio runtime. Callbacks and completion paths do
+not call into the R C API directly; this is intentional, so synchronization and
+waiting are explicit on the R side (`call_aio()`, `collect_aio()`, `cv_wait()`,
+`aio_monitor()`).
+
+## Serialization and codecs pipeline
+
+The package keeps bytes as the storage contract and applies optional transforms in
+this order:
+
+- serializer for R object/text materialization (`raw`, `text`, `serial`),
+- optional native codec (`identity`, `gzip`, `zlib`),
+- backend transport.
+
+That means byte-level options remain explicit and inspectable in both sync and
+async paths.
+
+## Layer controls
+
+Layer constructors are opt-in and composable:
+
+- `runtime_config(threads = ...)`
+- `layer_concurrent_limit(max = ...)`
+- `layer_timeout(request_timeout = ..., io_timeout = ...)`
+
+All are attached at handle construction so behavior is consistent per `OpendalFs`.
+
+## API boundaries by function family
+
+Public functions are split by surface, with async forms sharing the same shape as
+sync forms where practical:
+
+- filesystem operations: read/write/stat/exists/list/ls/delete/copy/rename/mkdir
+- stream readers/writers: `fs_read_iter()`, `fs_write_iter()`
+- monitors and collection: `collect_aio()`, `read_monitor()`, `aio_monitor()`
+
+The C header mirrors this boundary as a separate pure-C API for downstream users
+who need async bytes or completions without R-specific dependencies.

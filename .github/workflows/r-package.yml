@@ -9,8 +9,12 @@ on:
 
 jobs:
   r-api-tinytest:
-    name: R API tinytest (non-network)
-    runs-on: ubuntu-latest
+    name: R API tinytest (non-network) (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     env:
       ROPENDAL_TEST_NETWORK: "false"
     steps:
@@ -68,8 +72,12 @@ jobs:
         run: make test-s3-minio
 
   r-cmd-check:
-    name: R CMD check (no CI-only/network tests)
-    runs-on: ubuntu-latest
+    name: R CMD check (no CI-only/network tests) (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     env:
       ROPENDAL_TEST_CI: "false"
       ROPENDAL_TEST_NETWORK: "false"

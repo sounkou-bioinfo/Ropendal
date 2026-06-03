@@ -1,0 +1,62 @@
+---
+title: "Async Aio workflow"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Async Aio workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Ropendal’s async handles are **non-blocking by default** and are designed for
+explicit waiting/inspection.
+
+```{r}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-aio")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "value.bin", as.raw(1:4))
+```
+
+## Submit and wait
+
+`*_aio()` variants return an `OpendalAio` handle.
+
+```{r}
+aio <- fs_read_aio(fs, "value.bin")
+call_aio(aio)
+val <- collect_aio(aio)
+val
+```
+
+## Poll or race
+
+`unresolved()` is a tiny sentinel for unfinished work.
+
+```{r}
+aio2 <- fs_exists_aio(fs, "value.bin")
+unresolved(aio2$value)
+race_aio(aio2, timeout = 100)
+collect_aio(aio2)
+```
+
+## Coordinating several handles with condition variables
+
+`cv()` is a lightweight wait gate that pairs with `aio_monitor()` for batched
+completion.
+
+```{r}
+read_aio <- fs_read_aio(fs, "value.bin")
+cv_gate <- cv()
+mon <- aio_monitor(list(read = read_aio), cv = cv_gate)
+cv_wait(cv_gate, 1000)
+read_monitor(mon)
+collect_aio(read_aio)
+```

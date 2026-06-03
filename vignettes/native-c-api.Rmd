@@ -1,0 +1,59 @@
+---
+title: "Native C API"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Native C API}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Ropendal exposes a pure C API in `inst/include/ropendal.h` for downstream native
+packages. The header is generated from the same Rust surface used by the R API.
+
+## Async-first surface
+
+C calls mirror the package’s async behavior:
+
+- `*_aio()` for submission,
+- `ropendal_aio_wait()` / monitor helpers for completion,
+- explicit error values for operation errors.
+
+## Minimal usage pattern
+
+```{r, eval = FALSE}
+// allocate a filesystem handle
+ropendal_fs_t *fs = NULL;
+ropendal_error_t *err = NULL;
+ropendal_fs_open("fs", NULL, 0, &fs, &err);
+
+// submit async read and wait
+ropendal_read_options_t opts = {
+  .struct_size = sizeof(opts),
+  .path = "object.bin"
+};
+
+ropendal_aio_t *aio = NULL;
+ropendal_status_t status = ropendal_read_aio(fs, &opts, &aio, &err);
+if (status == ROPENDAL_OK) {
+  ropendal_aio_wait(aio, -1, &err);
+  const uint8_t *data = NULL;
+  size_t len = 0;
+  ropendal_aio_result_bytes(aio, &data, &len, &err);
+}
+
+// always release native resources
+ropendal_aio_release(aio);
+ropendal_fs_release(fs);
+ropendal_error_release(err);
+```
+
+## Why this exists
+
+Downstream packages can perform byte-oriented async operations without going through
+R-level raw allocation. This keeps the native path fast and explicit while using
+the same transport semantics as the user-facing R API.

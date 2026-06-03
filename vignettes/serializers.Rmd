@@ -1,0 +1,61 @@
+---
+title: "Serializers and codecs"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Serializers and codecs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Ropendal keeps bytes as the transport primitive and makes conversion explicit.
+
+```{r}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-serializers")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+fs <- opendal("fs", root = root)
+```
+
+## Raw and text modes
+
+`mode = "raw"` is the default. `mode = "text"` wraps UTF-8 text conversions.
+
+```{r}
+fs_write(fs, "text.txt", "hello", mode = "text")
+raw <- fs_read(fs, "text.txt", mode = "text")
+raw
+```
+
+## Serializers for R objects
+
+Use `serial_config()` with `mode = "serial"` for explicit object materialization.
+
+```{r}
+sc <- serial_config("character", serialize, unserialize)
+fs_write(fs, "obj.rds", list(x = 1L, y = "ok"), mode = "serial", serial_config = sc)
+obj <- fs_read(fs, "obj.rds", mode = "serial", serial_config = sc)
+obj$y
+```
+
+## Native codecs
+
+`codec_config()` is a byte transform layer (`identity`, `gzip`, `zlib`) that
+applies around transport bytes.
+
+```{r}
+cc <- codec_config("gzip")
+fs_write(
+  fs,
+  "blob.bin",
+  as.raw(1:6),
+  mode = "codec",
+  codec = cc
+)
+fs_read(fs, "blob.bin", mode = "codec", codec = cc)
+```

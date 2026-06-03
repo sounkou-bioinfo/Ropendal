@@ -2,7 +2,7 @@
 output: github_document
 ---
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
+<!-- README.md is generated from README.Rmd. Please edit this file -->
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
@@ -10,359 +10,95 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 # Ropendal
 
-Ropendal is an abstract remote filesystem operation interface for R backed by the Rust crate of [Apache OpenDAL](https://opendal.apache.org/). The R/Rust interface is built with the [`savvy`](https://github.com/yutannihilation/savvy) crate, which generates the R wrappers and native registration used by the package.
+Ropendal is an abstract filesystem interface for R backed by the Rust crate of
+[Apache OpenDAL](https://opendal.apache.org/). The package is byte-first:
+operations move raw bytes, then explicitly materialize into R objects through modes
+and serializers.
 
-The central abstraction is an `OpendalFs` handle: a root-relative, byte-addressable filesystem over local files, HTTP endpoints, S3-compatible services, Google Drive, and other OpenDAL-backed providers as support is added. Operations move raw bytes and byte ranges, but metadata and namespace operations such as stat, exists, listing, delete, copy, rename, and mkdir are remote I/O too; backend failures resolve to classed error values; credentials are explicit rather than discovered through hidden ambient provider chains.
+```{r badges, echo = FALSE}
+# Keep this block intentionally minimal in README to avoid rendering noise.
+```
 
-Aio handles are a core part of the interface. Reads, writes, metadata checks, listings, and namespace mutations can return nanonext-like handles that callers poll, collect, or cancel explicitly, while background Rust tasks never call R APIs. The package also exposes immutable `OpendalBytes` handles, chunked read/write iterators, paged listing/walking iterators for streaming-style transfer and namespace traversal, and installs `inst/include/ropendal.h`, a pure C API for downstream native packages that want async byte, metadata, and namespace operations.
+## Quick start
 
-See `design/api-design.md` for API design notes and `design/STATUS.md` for the implementation/test checklist.
+```{r quick-start}
+library(Ropendal)
 
-## Core concepts
+root <- file.path(tempdir(), "ropendal-readme")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
 
-- `OpendalFs` is a filesystem handle rooted at one local or remote location; all paths are normalized relative to that root.
-- The core layer moves bytes. Text materialization, R object serialization, and native byte codecs are explicit layers above bytes.
-- Backend failures are returned as classed values such as `opendalErrorValue`, so ordinary filesystem failures can be inspected without surprise throws.
-- Every remote I/O family has Aio forms where practical; callers explicitly wait, collect, race, or cancel `OpendalAio` handles.
-- Credentials and request headers are explicit inputs to constructors, not hidden provider-chain lookup.
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
+raw <- fs_read(fs, "note.txt")
+raw
+
+stat <- fs_stat(fs, "note.txt")
+stat[c("path", "type", "size")]
+
+entries <- fs_ls(fs)
+vapply(entries, `[[`, character(1), "path")
+```
+
+## Async reads and explicit wait
+
+```{r quick-async}
+aio <- fs_read_aio(fs, "note.txt")
+call_aio(aio)
+collect_aio(aio)
+```
+
+## Documentation and concepts
+
+The README now points to full vignette guidance.
+
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/getting-started.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/abstract-filesystem.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/async-aio.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/serializers.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/credentials.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/native-c-api.html>
+- <https://sounkou-bioinfo.github.io/Ropendal/articles/internals.html>
+
+More implementation notes and completion status are tracked in
+`design/STATUS.md`.
 
 ## Installation
 
-Source installs require a Rust toolchain. The default source build enables the currently wired OpenDAL service features for local filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure Blob, and Google Drive. Since the core is backed by the OpenDAL Rust crate, Ropendal can grow to support additional OpenDAL services; adding a service still needs Ropendal-side configuration, credential, and test coverage.
+Ropendal is available from R-universe:
+
+```{r install-default, eval = FALSE}
+install.packages(
+  "Ropendal",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+Source builds can still use explicit OpenDAL feature flags when you need custom
+provider wiring.
 
 ```{r install-source-features, eval = FALSE}
 # Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
 install.packages(
-  "Ropendal_0.0.0.9000.tar.gz",
-  repos = NULL,
+  "Ropendal",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
   type = "source",
   configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
 )
 
 # Add the current cloud-service feature group explicitly.
 install.packages(
-  "Ropendal_0.0.0.9000.tar.gz",
-  repos = NULL,
+  "Ropendal",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", "https://cloud.r-project.org"),
   type = "source",
   configure.args = "--enable-cloud"
 )
 ```
 
-Equivalent environment-variable control is also supported for source builds. From R, set the variable before installing; child `R CMD INSTALL` processes inherit it.
-
-```{r install-source-env, eval = FALSE}
-Sys.setenv(SAVVY_FEATURES = "fs http s3 gdrive")
-install.packages("Ropendal_0.0.0.9000.tar.gz", repos = NULL, type = "source")
-```
-
-From a shell, use the same variable inline with `R CMD INSTALL`.
-
-```{bash install-source-env-shell, eval = FALSE}
-SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
-```
-
-## Getting started
-
-Start with a local filesystem handle. The same API shape is used for remote
-services: paths are root-relative, reads and writes move bytes, metadata and
-listing are filesystem operations, backend failures are values, and Aio helpers
-wait on background Rust work.
-
-### Local filesystem
-
-Create a root-relative filesystem handle. The same `fs` object shape is used
-for local files, S3-compatible buckets, HTTP roots, Google Drive folders, and
-other providers.
-
-```{r local-fs-setup}
-library(Ropendal)
-
-root <- file.path(tempdir(), "ropendal-readme-example")
-unlink(root, recursive = TRUE)
-dir.create(root, recursive = TRUE)
-
-fs <- opendal("fs", root = root)
-```
-
-Byte operations are explicit. `fs_write()` is create-only, `fs_read()` returns a
-raw vector, and byte ranges avoid downloading the whole object.
-
-```{r local-fs-bytes}
-fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
-fs_read(fs, "data.bin")
-fs_read(fs, "data.bin", offset = 1, size = 2)
-```
-
-Metadata, byte handles, and listings are ordinary filesystem operations too.
-`OpendalBytes` keeps bytes Rust-owned until `as.raw()` materializes them.
-
-```{r local-fs-metadata}
-fs_stat(fs, "data.bin")[c("path", "type", "size")]
-bytes_handle <- fs_read_bytes(fs, "data.bin")
-length(bytes_handle)
-as.raw(bytes_handle)
-vapply(fs_ls(fs), `[[`, character(1), "path")
-```
-
-Paged listing iterators let callers drain namespaces incrementally; positive
-`prefetch` values let Rust/Tokio start bounded entry read-ahead while R keeps
-page-level backpressure.
-
-```{r local-fs-list-iter}
-it <- fs_ls_iter(fs, page_size = 1)
-page <- ls_iter_next(it)
-page$done
-page$cursor
-vapply(page$entries, `[[`, character(1), "path")
-```
-
-Backend failures are values. A second create-only write returns an
-`opendalErrorValue` instead of overwriting `data.bin`.
-
-```{r local-fs-errors}
-err <- fs_write(fs, "data.bin", as.raw(9))
-is_error_value(err)
-error_kind(err)
-```
-
-Aio variants submit the same I/O to background Rust tasks and are collected
-explicitly from R.
-
-```{r local-fs-aio}
-aio <- fs_read_aio(fs, "data.bin")
-call_aio(aio)
-aio$value
-
-stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
-stat$path
-stat$size
-collect_aio(fs_exists_aio(fs, "data.bin"))
-entry <- collect_aio(fs_ls_aio(fs))[[1]]
-entry$path
-entry$type
-collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
-fs_read(fs, "data.bin")
-```
-
-Monitors let callers wait for one or more Aio completions and drain completion
-events without immediately materializing every success payload.
-
-```{r local-fs-monitor}
-read_aio <- fs_read_aio(fs, "data.bin")
-monitor_cv <- cv()
-monitor <- aio_monitor(list(read = read_aio), cv = monitor_cv)
-cv_until(monitor_cv, 1000)
-read_monitor(monitor)
-collect_aio(read_aio)
-```
-
-## Service examples
-
-### Public S3-compatible endpoint
-
-Public S3-compatible endpoints can be opened without credentials by explicitly
-skipping request signing and disabling ambient config loading. Private
-S3-compatible services should use an explicit credential provider such as
-`credentials_s3(access_key_id, secret_access_key)` rather than hidden ambient
-credential lookup. This example uses the public 1000 Genomes AWS S3 bucket to
-range-read the beginning of a large reference FASTA and inspect a small VCF
-object without downloading an entire genome-scale file.
-
-```{r public-s3-example}
-# Public AWS S3 bucket — no credentials needed.
-s3fs <- opendal(
-  "s3",
-  endpoint = "https://s3.amazonaws.com",
-  bucket = "1000genomes",
-  root = "/",
-  region = "us-east-1",
-  skip_signature = TRUE,
-  disable_config_load = TRUE
-)
-
-fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
-fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
-cat(fasta_head, "\n", sep = "")
-
-fasta_stat <- fs_stat(s3fs, fasta_path)
-data.frame(path = fasta_stat$path, type = fasta_stat$type, size = fasta_stat$size)
-
-vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
-vcf_stat <- fs_stat(s3fs, vcf_path)
-data.frame(path = vcf_stat$path, type = vcf_stat$type, size = vcf_stat$size)
-
-vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
-con <- gzcon(rawConnection(vcf_head_gz))
-vcf_header <- readLines(con, n = 3)
-close(con)
-cat(vcf_header, sep = "\n")
-```
-
-### HTTP endpoint
-
-HTTP endpoints are useful for read-only byte access too. Full reads and byte
-ranges work when the server returns byte-range responses. For authenticated
-HTTP(S) endpoints, pass explicit request headers such as `headers =
-list(Authorization = "Bearer ...")`; Ropendal does not print these header
-values.
-
-```{r http-endpoint-example}
-http_fs <- opendal(
-  "http",
-  endpoint = "https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr",
-  root = "/"
-)
-
-zarray_head <- rawToChar(fs_read(http_fs, "0/.zarray", offset = 0, size = 40))
-grepl('"chunks"', zarray_head, fixed = TRUE)
-
-fs_stat(http_fs, "0/.zarray")[c("path", "type", "size")]
-
-chunk_head <- fs_read(http_fs, "0/0/0/0/0", offset = 0, size = 16)
-length(chunk_head)
-```
-
-### Google Drive
-
-Google Drive handles use explicit credentials. The Makefile defaults point at a
-local `gdrive3` account directory for the JSON files. Run
-`make ROPENDAL_README_GDRIVE=true rdm` to execute this README chunk locally.
-
-```{r gdrive-example, eval = identical(Sys.getenv("ROPENDAL_README_GDRIVE"), "true") && file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
-gdrive_fs <- opendal(
-  "gdrive",
-  root = "Ropendal",
-  auth = credentials_gdrive3(
-    secret_json = Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON"),
-    tokens_json = Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON")
-  )
-)
-
-fs_stat(gdrive_fs, "map_catalog.txt")[c("path", "type", "size")]
-
-catalog_head <- rawToChar(fs_read(gdrive_fs, "map_catalog.txt", offset = 0, size = 80))
-catalog_head
-```
-
-## API at a glance
-
-The tables below are generated from progress data frames in this README source.
-
-```{r api-progress-tables, echo = FALSE, results = "asis"}
-details_table <- function(title, data) {
-  cat("<details>\n")
-  cat("<summary>", title, "</summary>\n\n", sep = "")
-  cat(knitr::kable(data, format = "pipe"), sep = "\n")
-  cat("\n</details>\n\n")
-}
-
-operation_progress <- data.frame(
-  operation = c("read", "write", "stat/exists", "list", "mkdir/delete", "copy", "rename", "append"),
-  surface = c("sync, Aio, iterator", "sync, Aio, iterator", "sync, Aio", "sync, Aio, iterator", "sync, Aio", "sync, Aio", "sync, Aio", "sync, Aio, iterator"),
-  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "backend-dependent", "backend-dependent"),
-  notes = c(
-    "range reads, batch concurrency, iterators, seek/tell, per-object read tuning",
-    "create/replace, batch concurrency, iterators, tell, per-object write tuning",
-    "metadata and existence values",
-    "collectable or paged where provider supports listing",
-    "root-relative path normalization",
-    "direct provider copy",
-    "no silent S3-style emulation of atomic rename",
-    "returns unsupported where OpenDAL reports no append capability"
-  )
-)
-
-aio_progress <- data.frame(
-  abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "cv()/aio_monitor()/race_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented as R polling helpers", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, unit, CV, and monitor operations"),
-  role = c(
-    "nanonext-like handle for background Rust work",
-    "$value/$data/$result plus $state/$resolved/$error",
-    "non-blocking readiness check",
-    "collect returns value; call waits/updates and returns the Aio invisibly",
-    "condition-variable style wait helpers and completion event draining",
-    "explicit cancellation request",
-    "downstream native packages can submit async filesystem operations and drain completion notifications"
-  )
-)
-
-control_progress <- data.frame(
-  control = c("runtime_config(threads=)", "layer_concurrent_limit(max=)", "layer_timeout(request_timeout=, io_timeout=)", "batch_concurrency", "read_concurrency/write_concurrency"),
-  status = c("implemented", "implemented", "implemented", "implemented", "implemented"),
-  scope = c(
-    "Tokio worker threads for one filesystem handle",
-    "service-wide in-flight backend operation throttle",
-    "service-wide operation and I/O deadlines",
-    "many independent paths/ranges in one call",
-    "per-object chunk/part transfer fanout where OpenDAL supports it"
-  )
-)
-
-read_progress <- data.frame(
-  function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_bytes()/fs_read_bytes_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_aio()/read_into_aio()/readv_aio()/readv_into_aio()"),
-  status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
-  tuning = c(
-    "batch_concurrency, read_concurrency, chunk_size, coalesce_gap",
-    "same as fs_read()",
-    "Rust-owned OpendalBytes handles; explicit as.raw() materialization",
-    "one path returns a handle; many paths return a list of handles",
-    "next chunk as raw bytes",
-    "remaining chunks into one raw vector",
-    "read iterator position within its read window",
-    "borrowed result bytes or caller-owned output buffers"
-  )
-)
-
-write_progress <- data.frame(
-  function_or_path = c("fs_write()/fs_write_aio()", "fs_replace()/fs_replace_aio()", "fs_append()/fs_append_aio()", "fs_write_iter()", "write_iter_write()", "write_iter_close()", "fs_tell()", "C write/replace/append Aio"),
-  status = c("implemented", "implemented", "backend-dependent", "implemented", "implemented", "implemented", "implemented", "implemented"),
-  tuning = c(
-    "batch_concurrency, write_concurrency, chunk_size; accepts raw or OpendalBytes",
-    "same as fs_write(); accepts raw or OpendalBytes",
-    "same where append is supported; accepts raw or OpendalBytes",
-    "one path returns a sink; many paths return a list of sinks",
-    "submit one raw chunk",
-    "finalize multipart/streaming write",
-    "bytes submitted to write sink; seek is intentionally unsupported",
-    "caller-owned input buffer"
-  )
-)
-
-provider_progress <- data.frame(
-  provider = c("fs", "http", "s3-compatible", "gdrive", "gcs", "azblob", "other OpenDAL services"),
-  status = c("implemented/tested", "implemented/tested read-only", "implemented/tested with public S3 and MinIO", "implemented/opt-in tested", "feature wired", "feature wired", "extension path"),
-  credentials = c("none", "optional explicit headers", "explicit credentials_s3() or unsigned public config", "explicit credentials_gdrive()/credentials_gdrive3()", "explicit credentials_gcs()", "explicit credentials_azblob()", "needs config, credential, and tests")
-)
-
-serializer_progress <- data.frame(
-  layer = c("raw bytes", "text", "R serialize/unserialize", "codecs/compression"),
-  status = c("implemented", "implemented", "implemented", "implemented"),
-  notes = c(
-    "core storage contract uses R raw vectors and OpendalBytes handles",
-    "mode = text plus encoding=; complete-object reads; NUL-producing encodings rejected",
-    "mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread",
-    "explicit codec_config()/codec= native byte transforms; gzip and zlib wired for R and C"
-  )
-)
-
-details_table("Supported operations", operation_progress)
-details_table("Aio interface", aio_progress)
-details_table("Concurrency controls", control_progress)
-details_table("Read operations", read_progress)
-details_table("Write operations", write_progress)
-details_table("Supported providers", provider_progress)
-details_table("Serializers and codecs", serializer_progress)
-```
-
-## Related work
-
-Apache OpenDAL supplies the Rust backend abstraction that Ropendal binds into R. The R [`objectstore`](https://github.com/Bisaloo/objectstore) package is related work for object-store access, and its [`store_filesystem.R`](https://github.com/Bisaloo/objectstore/blob/main/R/store_filesystem.R) implementation is a useful reference for filesystem-like surfaces in R. Ropendal takes a more opinionated byte-filesystem stance, with root-relative path normalization, explicit credentials, errors-as-values, async handles, and an exported native C API as part of the core contract.
-
-The async API is inspired by [`nanonext`](https://github.com/shikokuchuo/nanonext)'s Aio model: operations return handles, callers can poll or wait explicitly, and notification primitives are designed so background workers never call R APIs.
-
 ## Development
 
-Common development and opt-in service test targets are listed by `make help`.
+Common targets:
 
 ```{bash make-help, comment = ""}
 make --no-print-directory help

@@ -1,0 +1,69 @@
+---
+title: "Filesystem and URI construction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Filesystem and URI construction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+The core package contract is a byte-oriented filesystem handle with explicit service
+selection.
+
+```{r}
+library(Ropendal)
+
+# Local filesystem via constructor.
+root <- file.path(tempdir(), "ropendal-abstract-fs")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+fs <- opendal("fs", root = root)
+
+# The same contract via URI.
+uri_fs <- opendal_uri(paste0("fs://", root))
+isTRUE(identical(fs_info(uri_fs)$scheme, fs_info(fs)$scheme))
+```
+
+### Root-relative paths
+
+All paths are normalized to the handle root before any operation, so clients can use
+portable relative paths.
+
+```{r}
+fs_write(fs, "a/b/c.bin", as.raw(c(1, 2, 3)))
+fs_read(fs, "a/b/c.bin")
+fs_stat(fs, "a/b/c.bin")$path
+```
+
+### Control knobs belong in handles
+
+`runtime_config()`, `layer_concurrent_limit()`, and `layer_timeout()` are attached
+at construction time so all operations share the same behavior.
+
+```{r}
+fs <- opendal(
+  "fs",
+  root = root,
+  runtime = runtime_config(threads = 2),
+  layers = list(
+    layer_concurrent_limit(2),
+    layer_timeout(request_timeout = 30, io_timeout = 30)
+  )
+)
+```
+
+## Error values are first-class
+
+Failed object creation returns values instead of throwing, which keeps remote
+control flow explicit.
+
+```{r}
+fs_write(fs, "a.bin", as.raw(1))
+second <- fs_write(fs, "a.bin", as.raw(2))
+is_error_value(second)
+if (is_error_value(second)) error_kind(second) else NULL
+```

@@ -1,0 +1,59 @@
+---
+title: "Getting Started with Ropendal"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with Ropendal}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Ropendal presents one central object, `OpendalFs`, and one explicit style: every
+operation is expressed as a call that returns plain values and explicit errors.
+
+A local filesystem handle is the simplest entry point. Paths are normalized to be
+relative to `root` at the handle level.
+
+```{r}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-quickstart")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "message.txt", charToRaw("hello ropendal\n"))
+raw <- fs_read(fs, "message.txt")
+cat(rawToChar(raw))
+
+stat <- fs_stat(fs, "message.txt")
+stat[c("path", "type", "size")]
+
+listing <- fs_ls(fs)
+vapply(listing, `[[`, character(1), "path")
+```
+
+## Aio pattern with the same API
+
+Async operations reuse the same shape (`path`, `mode`, config, etc.) and return an
+`OpendalAio` handle that you can wait for or poll.
+
+```{r}
+aio <- fs_read_aio(fs, "message.txt")
+call_aio(aio)
+aio$value
+```
+
+`collect_aio()` waits and returns a value, while the active binding contract means
+the Aio object is also inspectable while pending.
+
+```{r}
+io <- fs_stat_aio(fs, "message.txt")
+unresolved(io$value)
+res <- collect_aio(io)
+res$size
+```
