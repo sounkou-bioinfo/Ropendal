@@ -1,9 +1,12 @@
 PKGNAME := $(shell sed -n 's/Package: *\([^ ]*\)/\1/p' DESCRIPTION 2>/dev/null)
 PKGVERS := $(shell sed -n 's/Version: *\([^ ]*\)/\1/p' DESCRIPTION 2>/dev/null)
-ROPENDAL_GDRIVE_SECRET_JSON ?=
-ROPENDAL_GDRIVE_TOKENS_JSON ?=
-ROPENDAL_GDRIVE_ROOT ?=
-ROPENDAL_GDRIVE_FILE ?=
+ROPENDAL_GDRIVE_ACCOUNT ?= sounkoutoure@gmail.com
+ROPENDAL_GDRIVE3_DIR ?= $(HOME)/.config/gdrive3/$(ROPENDAL_GDRIVE_ACCOUNT)
+ROPENDAL_GDRIVE_SECRET_JSON ?= $(ROPENDAL_GDRIVE3_DIR)/secret.json
+ROPENDAL_GDRIVE_TOKENS_JSON ?= $(ROPENDAL_GDRIVE3_DIR)/tokens.json
+ROPENDAL_GDRIVE_ROOT ?= Ropendal
+ROPENDAL_GDRIVE_FILE ?= map_catalog.txt
+ROPENDAL_README_GDRIVE ?=
 ROPENDAL_S3_PUBLIC_ENDPOINT ?= https://uk1s3.embassy.ebi.ac.uk
 ROPENDAL_S3_PUBLIC_BUCKET ?= idr
 ROPENDAL_S3_PUBLIC_ROOT ?= /zarr/v0.4/idr0062A/6001240.zarr
@@ -24,9 +27,9 @@ help:
 	  '  make test-http       run opt-in local HTTP fixture tests' \
 	  '  make test-s3         run opt-in public read-only S3-compatible tests' \
 	  '  make test-s3-minio   start local MinIO and run writable S3-compatible tests' \
-	  '  make test-gdrive     run opt-in Google Drive tests using explicit env paths' \
+	  '  make test-gdrive     run opt-in Google Drive tests using local gdrive3 JSON defaults' \
 	  '  make test-ci         run C API checks and CI-only tinytest' \
-	  '  make rdm             render README.md from README.Rmd without private credentials' \
+	  '  make rdm             render README.md from README.Rmd; GDrive execution stays opt-in' \
 	  '  make bench-minio-paws render development MinIO benchmark' \
 	  '  make check           build and run R CMD check --as-cran --no-manual'
 
@@ -119,6 +122,7 @@ test: install
 	R -e "tinytest::test_package('$(PKGNAME)', testdir = 'inst/tinytest')"
 
 rdm:
+	ROPENDAL_README_GDRIVE="$(ROPENDAL_README_GDRIVE)" \
 	ROPENDAL_GDRIVE_SECRET_JSON="$(ROPENDAL_GDRIVE_SECRET_JSON)" \
 	ROPENDAL_GDRIVE_TOKENS_JSON="$(ROPENDAL_GDRIVE_TOKENS_JSON)" \
 	ROPENDAL_GDRIVE_ROOT="$(ROPENDAL_GDRIVE_ROOT)" \

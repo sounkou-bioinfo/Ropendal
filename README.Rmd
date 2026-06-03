@@ -18,6 +18,182 @@ Aio handles are a core part of the interface. Reads, writes, metadata checks, li
 
 See `design/api-design.md` for API design notes and `design/STATUS.md` for the implementation/test checklist.
 
+## Core concepts
+
+- `OpendalFs` is a filesystem handle rooted at one local or remote location; all paths are normalized relative to that root.
+- The core layer moves bytes. R object serialization and native byte codecs are explicit layers above bytes.
+- Backend failures are returned as classed values such as `opendalErrorValue`, so ordinary filesystem failures can be inspected without surprise throws.
+- Every remote I/O family has Aio forms where practical; callers explicitly wait, collect, race, or cancel `OpendalAio` handles.
+- Credentials and request headers are explicit inputs to constructors, not hidden provider-chain lookup.
+
+## Installation
+
+Source installs require a Rust toolchain. The default source build enables the currently wired OpenDAL service features for local filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure Blob, and Google Drive. Since the core is backed by the OpenDAL Rust crate, Ropendal can grow to support additional OpenDAL services; adding a service still needs Ropendal-side configuration, credential, and test coverage.
+
+```{r install-source-features, eval = FALSE}
+# Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
+install.packages(
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
+  type = "source",
+  configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
+)
+
+# Add the current cloud-service feature group explicitly.
+install.packages(
+  "Ropendal_0.0.0.9000.tar.gz",
+  repos = NULL,
+  type = "source",
+  configure.args = "--enable-cloud"
+)
+```
+
+Equivalent environment-variable control is also supported for source builds.
+
+```{bash install-source-env, eval = FALSE}
+SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
+```
+
+## Getting started
+
+Start with a local filesystem handle. The same API shape is used for remote
+services: paths are root-relative, reads and writes move bytes, metadata and
+listing are filesystem operations, backend failures are values, and Aio helpers
+wait on background Rust work.
+
+### Local filesystem: bytes, metadata, errors, and Aio
+
+```{r local-fs-example}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-readme-example")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
+fs_read(fs, "data.bin")
+fs_read(fs, "data.bin", offset = 1, size = 2)
+
+fs_stat(fs, "data.bin")[c("path", "type", "size")]
+bytes_handle <- fs_read_bytes(fs, "data.bin")
+length(bytes_handle)
+as.raw(bytes_handle)
+vapply(fs_ls(fs), `[[`, character(1), "path")
+
+it <- fs_ls_iter(fs, page_size = 1)
+page <- ls_iter_next(it)
+page$done
+vapply(page$entries, `[[`, character(1), "path")
+
+# Create-only writes return an error value when the object already exists.
+err <- fs_write(fs, "data.bin", as.raw(9))
+is_error_value(err)
+error_kind(err)
+
+# Aio variants run the same filesystem operations on background Rust tasks.
+aio <- fs_read_aio(fs, "data.bin")
+call_aio(aio)
+aio$value
+
+stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
+stat$path
+stat$size
+collect_aio(fs_exists_aio(fs, "data.bin"))
+entry <- collect_aio(fs_ls_aio(fs))[[1]]
+entry$path
+entry$type
+collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
+fs_read(fs, "data.bin")
+```
+
+## Service examples
+
+### Public S3-compatible endpoint
+
+Public S3-compatible endpoints can be opened without credentials by explicitly
+skipping request signing and disabling ambient config loading. Private
+S3-compatible services should use an explicit credential provider such as
+`credentials_s3(access_key_id, secret_access_key)` rather than hidden ambient
+credential lookup. This example uses the public 1000 Genomes AWS S3 bucket to
+range-read the beginning of a large reference FASTA and inspect a small VCF
+object without downloading an entire genome-scale file.
+
+```{r public-s3-example, eval = FALSE}
+# Public AWS S3 bucket — no credentials needed.
+s3fs <- opendal(
+  "s3",
+  endpoint = "https://s3.amazonaws.com",
+  bucket = "1000genomes",
+  root = "/",
+  region = "us-east-1",
+  skip_signature = TRUE,
+  disable_config_load = TRUE
+)
+
+fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
+fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
+fasta_head
+
+fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
+
+vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
+fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
+
+vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
+con <- gzcon(rawConnection(vcf_head_gz))
+vcf_header <- readLines(con, n = 3)
+close(con)
+vcf_header
+```
+
+### HTTP endpoint
+
+HTTP endpoints are useful for read-only byte access too. Full reads and byte
+ranges work when the server returns byte-range responses. For authenticated
+HTTP(S) endpoints, pass explicit request headers such as `headers =
+list(Authorization = "Bearer ...")`; Ropendal does not print these header
+values.
+
+```{r http-endpoint-example}
+http_fs <- opendal(
+  "http",
+  endpoint = "https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr",
+  root = "/"
+)
+
+zarray_head <- rawToChar(fs_read(http_fs, "0/.zarray", offset = 0, size = 40))
+grepl('"chunks"', zarray_head, fixed = TRUE)
+
+fs_stat(http_fs, "0/.zarray")[c("path", "type", "size")]
+
+chunk_head <- fs_read(http_fs, "0/0/0/0/0", offset = 0, size = 16)
+length(chunk_head)
+```
+
+### Google Drive
+
+Google Drive handles use explicit credentials. The Makefile defaults point at a
+local `gdrive3` account directory for the JSON files. Run
+`make ROPENDAL_README_GDRIVE=true rdm` to execute this README chunk locally.
+
+```{r gdrive-example, eval = identical(Sys.getenv("ROPENDAL_README_GDRIVE"), "true") && file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
+gdrive_fs <- opendal(
+  "gdrive",
+  root = "Ropendal",
+  auth = credentials_gdrive3(
+    secret_json = Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON"),
+    tokens_json = Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON")
+  )
+)
+
+fs_stat(gdrive_fs, "map_catalog.txt")[c("path", "type", "size")]
+
+catalog_head <- rawToChar(fs_read(gdrive_fs, "map_catalog.txt", offset = 0, size = 80))
+catalog_head
+```
+
 ## API at a glance
 
 The tables below are generated from progress data frames in this README source.
@@ -115,171 +291,6 @@ details_table("Supported providers", provider_progress)
 details_table("Serializers and codecs", serializer_progress)
 ```
 
-## Installation
-
-Source installs require a Rust toolchain. The default source build enables the currently wired OpenDAL service features for local filesystems, HTTP, S3-compatible storage, Google Cloud Storage, Azure Blob, and Google Drive. Since the core is backed by the OpenDAL Rust crate, Ropendal can grow to support additional OpenDAL services; adding a service still needs Ropendal-side configuration, credential, and test coverage.
-
-```{r install-source-features, eval = FALSE}
-# Keep only local filesystem, HTTP, S3-compatible, and Google Drive support.
-install.packages(
-  "Ropendal_0.0.0.9000.tar.gz",
-  repos = NULL,
-  type = "source",
-  configure.args = "--without-default-rust-features --with-rust-features=fs,http,s3,gdrive"
-)
-
-# Add the current cloud-service feature group explicitly.
-install.packages(
-  "Ropendal_0.0.0.9000.tar.gz",
-  repos = NULL,
-  type = "source",
-  configure.args = "--enable-cloud"
-)
-```
-
-Equivalent environment-variable control is also supported for source builds.
-
-```{bash install-source-env, eval = FALSE}
-SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
-```
-
-## Local filesystem example
-
-```{r local-fs-example}
-library(Ropendal)
-
-root <- file.path(tempdir(), "ropendal-readme-example")
-unlink(root, recursive = TRUE)
-dir.create(root, recursive = TRUE)
-
-fs <- opendal("fs", root = root)
-
-fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
-fs_read(fs, "data.bin")
-fs_read(fs, "data.bin", offset = 1, size = 2)
-
-fs_stat(fs, "data.bin")[c("path", "type", "size")]
-bytes_handle <- fs_read_bytes(fs, "data.bin")
-length(bytes_handle)
-as.raw(bytes_handle)
-vapply(fs_ls(fs), `[[`, character(1), "path")
-
-it <- fs_ls_iter(fs, page_size = 1)
-page <- ls_iter_next(it)
-page$done
-vapply(page$entries, `[[`, character(1), "path")
-```
-
-## Public S3-compatible endpoint example
-
-Public S3-compatible endpoints can be opened without credentials by explicitly
-skipping request signing and disabling ambient config loading. Private
-S3-compatible services should use an explicit credential provider such as
-`credentials_s3(access_key_id, secret_access_key)` rather than hidden ambient
-credential lookup. This example uses the public 1000 Genomes AWS S3 bucket to
-range-read the beginning of a large reference FASTA and inspect a small VCF
-object without downloading an entire genome-scale file.
-
-```{r public-s3-example, eval = FALSE}
-# Public AWS S3 bucket — no credentials needed.
-s3fs <- opendal(
-  "s3",
-  endpoint = "https://s3.amazonaws.com",
-  bucket = "1000genomes",
-  root = "/",
-  region = "us-east-1",
-  skip_signature = TRUE,
-  disable_config_load = TRUE
-)
-
-fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
-fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
-fasta_head
-
-fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
-
-vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
-fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
-
-vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
-con <- gzcon(rawConnection(vcf_head_gz))
-vcf_header <- readLines(con, n = 3)
-close(con)
-vcf_header
-```
-
-HTTP endpoints are useful for read-only byte access too. Full reads and byte
-ranges work when the server returns byte-range responses. For authenticated
-HTTP(S) endpoints, pass explicit request headers such as `headers =
-list(Authorization = "Bearer ...")`; Ropendal does not print these header
-values.
-
-```{r http-endpoint-example}
-http_fs <- opendal(
-  "http",
-  endpoint = "https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr",
-  root = "/"
-)
-
-zarray_head <- rawToChar(fs_read(http_fs, "0/.zarray", offset = 0, size = 40))
-grepl('"chunks"', zarray_head, fixed = TRUE)
-
-fs_stat(http_fs, "0/.zarray")[c("path", "type", "size")]
-
-chunk_head <- fs_read(http_fs, "0/0/0/0/0", offset = 0, size = 16)
-length(chunk_head)
-```
-
-## Google Drive example
-
-Google Drive handles use explicit credentials. The README render does not supply
-or discover credentials. To run this chunk locally, set `ROPENDAL_README_GDRIVE=true`
-plus `ROPENDAL_GDRIVE_SECRET_JSON`, `ROPENDAL_GDRIVE_TOKENS_JSON`, and
-`ROPENDAL_GDRIVE_ROOT` in the environment before rendering.
-
-```{r gdrive-example, eval = identical(Sys.getenv("ROPENDAL_README_GDRIVE"), "true") && file.exists(Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON", "")) && file.exists(Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", ""))}
-gdrive_fs <- opendal(
-  "gdrive",
-  root = Sys.getenv("ROPENDAL_GDRIVE_ROOT", "Ropendal"),
-  auth = credentials_gdrive3(
-    secret_json = Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON"),
-    tokens_json = Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON")
-  )
-)
-
-gdrive_path <- Sys.getenv("ROPENDAL_GDRIVE_FILE", "map_catalog.txt")
-fs_stat(gdrive_fs, gdrive_path)[c("path", "type", "size")]
-
-catalog_head <- fs_read(gdrive_fs, gdrive_path, offset = 0, size = 80)
-length(catalog_head)
-```
-
-Filesystem failures are returned as values.
-
-```{r errors-as-values}
-err <- fs_write(fs, "data.bin", as.raw(9))
-is_error_value(err)
-error_kind(err)
-```
-
-Remote operations can also return Aio handles.
-
-```{r aio-read}
-aio <- fs_read_aio(fs, "data.bin")
-poll_aio(aio)
-call_aio(aio)
-aio$value
-
-stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
-stat$path
-stat$size
-collect_aio(fs_exists_aio(fs, "data.bin"))
-entry <- collect_aio(fs_ls_aio(fs))[[1]]
-entry$path
-entry$type
-collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
-```
-
 ## Related work
 
 Apache OpenDAL supplies the Rust backend abstraction that Ropendal binds into R. The R [`objectstore`](https://github.com/Bisaloo/objectstore) package is related work for object-store access, and its [`store_filesystem.R`](https://github.com/Bisaloo/objectstore/blob/main/R/store_filesystem.R) implementation is a useful reference for filesystem-like surfaces in R. Ropendal takes a more opinionated byte-filesystem stance, with root-relative path normalization, explicit credentials, errors-as-values, async handles, and an exported native C API as part of the core contract.
@@ -291,5 +302,5 @@ The async API is inspired by [`nanonext`](https://github.com/shikokuchuo/nanonex
 Common development and opt-in service test targets are listed by `make help`.
 
 ```{bash make-help, comment = ""}
-make help
+make --no-print-directory help
 ```
