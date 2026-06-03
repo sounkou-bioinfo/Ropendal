@@ -30,7 +30,7 @@ SEXP savvy_OpendalFs_delete__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recu
 SEXP savvy_OpendalFs_delete_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_exists__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_exists_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
-SEXP savvy_OpendalFs_from_uri__ffi(SEXP c_arg__uri, SEXP c_arg__headers);
+SEXP savvy_OpendalFs_from_uri__ffi(SEXP c_arg__uri, SEXP c_arg__headers, SEXP c_arg__runtime_threads, SEXP c_arg__max_inflight);
 SEXP savvy_OpendalFs_info__ffi(SEXP self__);
 SEXP savvy_OpendalFs_ls__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__limit, SEXP c_arg__start_after);
 SEXP savvy_OpendalFs_ls_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__limit, SEXP c_arg__start_after);
@@ -38,7 +38,7 @@ SEXP savvy_OpendalFs_ls_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__rec
 SEXP savvy_OpendalFs_mkdir__ffi(SEXP self__, SEXP c_arg__path);
 SEXP savvy_OpendalFs_mkdir_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_normalize_path__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__directory);
-SEXP savvy_OpendalFs_open__ffi(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg__config, SEXP c_arg__root, SEXP c_arg__auth_config, SEXP c_arg__headers);
+SEXP savvy_OpendalFs_open__ffi(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg__config, SEXP c_arg__root, SEXP c_arg__auth_config, SEXP c_arg__headers, SEXP c_arg__runtime_threads, SEXP c_arg__max_inflight);
 SEXP savvy_OpendalFs_read__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap);
 SEXP savvy_OpendalFs_read_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap);
 SEXP savvy_OpendalFs_read_bytes__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__offset, SEXP c_arg__size, SEXP c_arg__end, SEXP c_arg__result, SEXP c_arg__batch_concurrency, SEXP c_arg__read_concurrency, SEXP c_arg__chunk_size, SEXP c_arg__coalesce_gap);

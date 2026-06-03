@@ -181,7 +181,7 @@ Coverage:
 - local MinIO write/read/stat/list/copy/delete in an isolated prefix plus async write/read/stat/exists/list/copy/rename/delete coverage
 - unsupported S3-compatible atomic rename returns an error value rather than silent emulation, sync and async
 - range reads
-- concurrency options accepted and bounded
+- concurrency options accepted and bounded, including `runtime_config(threads=)` and `layer_concurrent_limit(max=)` on filesystem constructors
 - service-specific rate-limit defaults are conservative
 
 ## Environment and skip helpers

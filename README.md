@@ -75,7 +75,15 @@ install.packages(
 ```
 
 Equivalent environment-variable control is also supported for source
-builds.
+builds. From R, set the variable before installing; child
+`R CMD INSTALL` processes inherit it.
+
+``` r
+Sys.setenv(SAVVY_FEATURES = "fs http s3 gdrive")
+install.packages("Ropendal_0.0.0.9000.tar.gz", repos = NULL, type = "source")
+```
+
+From a shell, use the same variable inline with `R CMD INSTALL`.
 
 ``` bash
 SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
@@ -355,6 +363,19 @@ Aio interface
 | cv()/aio_monitor()/race_aio() | implemented as R polling helpers                                                                | condition-variable style wait helpers and completion event draining                                  |
 | stop_aio()                    | implemented with delayed HTTP cancellation coverage                                             | explicit cancellation request                                                                        |
 | native C Aio                  | implemented for byte, read-vector, metadata, entry/list, bool, unit, CV, and monitor operations | downstream native packages can submit async filesystem operations and drain completion notifications |
+
+</details>
+<details>
+<summary>
+Concurrency controls
+</summary>
+
+| control                            | status      | scope                                                           |
+|:-----------------------------------|:------------|:----------------------------------------------------------------|
+| runtime_config(threads=)           | implemented | Tokio worker threads for one filesystem handle                  |
+| layer_concurrent_limit(max=)       | implemented | service-wide in-flight backend operation throttle               |
+| batch_concurrency                  | implemented | many independent paths/ranges in one call                       |
+| read_concurrency/write_concurrency | implemented | per-object chunk/part transfer fanout where OpenDAL supports it |
 
 </details>
 <details>

@@ -48,9 +48,16 @@ install.packages(
 )
 ```
 
-Equivalent environment-variable control is also supported for source builds.
+Equivalent environment-variable control is also supported for source builds. From R, set the variable before installing; child `R CMD INSTALL` processes inherit it.
 
-```{bash install-source-env, eval = FALSE}
+```{r install-source-env, eval = FALSE}
+Sys.setenv(SAVVY_FEATURES = "fs http s3 gdrive")
+install.packages("Ropendal_0.0.0.9000.tar.gz", repos = NULL, type = "source")
+```
+
+From a shell, use the same variable inline with `R CMD INSTALL`.
+
+```{bash install-source-env-shell, eval = FALSE}
 SAVVY_FEATURES="fs http s3 gdrive" R CMD INSTALL Ropendal_0.0.0.9000.tar.gz
 ```
 
@@ -276,6 +283,17 @@ aio_progress <- data.frame(
   )
 )
 
+control_progress <- data.frame(
+  control = c("runtime_config(threads=)", "layer_concurrent_limit(max=)", "batch_concurrency", "read_concurrency/write_concurrency"),
+  status = c("implemented", "implemented", "implemented", "implemented"),
+  scope = c(
+    "Tokio worker threads for one filesystem handle",
+    "service-wide in-flight backend operation throttle",
+    "many independent paths/ranges in one call",
+    "per-object chunk/part transfer fanout where OpenDAL supports it"
+  )
+)
+
 read_progress <- data.frame(
   function_or_path = c("fs_read()", "fs_read_aio()", "fs_read_bytes()/fs_read_bytes_aio()", "fs_read_iter()", "read_iter_next()", "read_iter_collect()", "fs_seek()/fs_tell()", "C read_aio()/read_into_aio()/readv_aio()/readv_into_aio()"),
   status = c("implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented", "implemented"),
@@ -325,6 +343,7 @@ serializer_progress <- data.frame(
 
 details_table("Supported operations", operation_progress)
 details_table("Aio interface", aio_progress)
+details_table("Concurrency controls", control_progress)
 details_table("Read operations", read_progress)
 details_table("Write operations", write_progress)
 details_table("Supported providers", provider_progress)

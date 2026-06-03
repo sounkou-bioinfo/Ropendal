@@ -8,7 +8,7 @@
 #' @name Ropendal-api
 #' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gcs
 #'   credentials_azblob credentials_gdrive credentials_gdrive3 credential_schemes
-#'   credential_config credential_summary
+#'   credential_config credential_summary runtime_config layer_concurrent_limit
 #'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
 #'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
@@ -32,6 +32,11 @@
 #' @param headers Named scalar character list/vector of HTTP headers for
 #'   `http`/`https` filesystems; values may contain credentials and are not
 #'   printed by Ropendal.
+#' @param runtime Runtime configuration from `runtime_config()`.
+#' @param layers List of explicit filesystem layers, currently including
+#'   `layer_concurrent_limit()`.
+#' @param threads Number of Tokio worker threads for a filesystem handle.
+#' @param max Maximum total in-flight backend operations for a filesystem handle.
 #' @param uri OpenDAL URI.
 #' @param access_key_id,secret_access_key S3-compatible access key fields.
 #' @param session_token Optional S3-compatible session token.
@@ -106,8 +111,8 @@
 #' @param x Object to inspect.
 #' @usage
 #' opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
-#'         headers = NULL)
-#' opendal_uri(uri, headers = NULL)
+#'         headers = NULL, runtime = runtime_config(), layers = list())
+#' opendal_uri(uri, headers = NULL, runtime = runtime_config(), layers = list())
 #' credentials_s3(access_key_id, secret_access_key,
 #'                session_token = "", region = "", source = "direct")
 #' credentials_gcs(token = "", service_account_key = "",
@@ -122,6 +127,8 @@
 #' credential_schemes(provider)
 #' credential_config(provider, service)
 #' credential_summary(provider)
+#' runtime_config(threads = NULL)
+#' layer_concurrent_limit(max)
 #' fs_info(fs)
 #' fs_capabilities(fs)
 #' fs_normalize_path(fs, path, directory = FALSE)
@@ -310,7 +317,7 @@ credential_summary <- S7::new_generic(
 #' @export
 #' @noRd
 opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
-                    headers = NULL) {
+                    headers = NULL, runtime = runtime_config(), layers = list()) {
   if (!is.null(headers)) headers <- as.list(headers)
   OpendalFs$open(
     scheme,
@@ -318,15 +325,65 @@ opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NUL
     config,
     root,
     if (is.null(auth)) NULL else credential_config(auth, scheme),
-    headers
+    headers,
+    .ropendal_runtime_threads(runtime),
+    .ropendal_layer_max_inflight(layers)
   )
 }
 
 #' @export
 #' @noRd
-opendal_uri <- function(uri, headers = NULL) {
+opendal_uri <- function(uri, headers = NULL, runtime = runtime_config(), layers = list()) {
   if (!is.null(headers)) headers <- as.list(headers)
-  OpendalFs$from_uri(uri, headers)
+  OpendalFs$from_uri(
+    uri,
+    headers,
+    .ropendal_runtime_threads(runtime),
+    .ropendal_layer_max_inflight(layers)
+  )
+}
+
+#' @export
+#' @noRd
+runtime_config <- function(threads = NULL) {
+  structure(list(threads = threads), class = "ropendalRuntimeConfig")
+}
+
+#' @export
+#' @noRd
+layer_concurrent_limit <- function(max) {
+  if (missing(max)) stop("max is required", call. = FALSE)
+  structure(
+    list(type = "concurrent_limit", max = max),
+    class = c("ropendalConcurrentLimitLayer", "ropendalLayerConfig")
+  )
+}
+
+.ropendal_runtime_threads <- function(runtime) {
+  if (is.null(runtime)) return(NULL)
+  if (!inherits(runtime, "ropendalRuntimeConfig")) {
+    stop("runtime must be created by runtime_config()", call. = FALSE)
+  }
+  runtime$threads
+}
+
+.ropendal_layer_max_inflight <- function(layers) {
+  if (is.null(layers)) return(NULL)
+  if (inherits(layers, "ropendalLayerConfig")) layers <- list(layers)
+  if (!is.list(layers)) stop("layers must be a list of layer config objects", call. = FALSE)
+  max_inflight <- NULL
+  for (layer in layers) {
+    if (!inherits(layer, "ropendalLayerConfig")) {
+      stop("layers must contain only layer config objects", call. = FALSE)
+    }
+    if (identical(layer$type, "concurrent_limit")) {
+      if (!is.null(max_inflight)) stop("only one layer_concurrent_limit() is allowed", call. = FALSE)
+      max_inflight <- layer$max
+    } else {
+      stop("unsupported layer config", call. = FALSE)
+    }
+  }
+  max_inflight
 }
 
 #' @export

@@ -118,7 +118,7 @@ GitHub Actions jobs:
 
 1. Add prefetch, traversal fanout, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them; `limit` and `start_after` controls are implemented for listing collection and iterators.
 2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
-3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
+3. Add remaining memory/backpressure limits and any additional service-level layers. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.
 6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.

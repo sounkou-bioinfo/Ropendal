@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use futures::{StreamExt, stream};
+use opendal::layers::ConcurrentLimitLayer;
 use opendal::options::{DeleteOptions, ListOptions};
 use opendal::{Buffer, Metadata, Operator};
 use savvy::savvy;
@@ -37,6 +38,8 @@ impl OpendalFs {
         root: Option<&str>,
         auth_config: Option<ListSexp>,
         headers: Option<ListSexp>,
+        runtime_threads: Option<f64>,
+        max_inflight: Option<f64>,
     ) -> savvy::Result<Self> {
         let mut pairs = Vec::new();
         let headers = header_pairs_from_list(headers)?;
@@ -50,21 +53,29 @@ impl OpendalFs {
                 pairs.push(("root".to_string(), root.to_string()));
             }
         }
-        Self::open_from_pairs(scheme, pairs, headers)
+        Self::open_from_pairs(scheme, pairs, headers, runtime_threads, max_inflight)
     }
 
     /// Open an OpenDAL filesystem from a URI.
     /// @export
-    fn from_uri(uri: &str, headers: Option<ListSexp>) -> savvy::Result<Self> {
+    fn from_uri(
+        uri: &str,
+        headers: Option<ListSexp>,
+        runtime_threads: Option<f64>,
+        max_inflight: Option<f64>,
+    ) -> savvy::Result<Self> {
         init_registry();
         let headers = header_pairs_from_list(headers)?;
+        let runtime_threads = checked_positive_usize(runtime_threads, "runtime_threads")?;
+        let max_inflight = checked_positive_usize(max_inflight, "max_inflight")?;
         let op = Operator::from_uri(uri)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL URI: {e}")))?;
         let op = apply_http_headers(op, headers)?;
+        let op = apply_concurrent_limit(op, max_inflight);
         let info = op.info();
         let native = NativeFs {
             op,
-            runtime: build_runtime()?,
+            runtime: build_runtime(runtime_threads)?,
             scheme: info.scheme().to_string(),
             root: info.root(),
         };
@@ -1087,15 +1098,20 @@ impl OpendalFs {
         scheme: &str,
         config: Vec<(String, String)>,
         headers: Vec<(String, String)>,
+        runtime_threads: Option<f64>,
+        max_inflight: Option<f64>,
     ) -> savvy::Result<Self> {
         init_registry();
+        let runtime_threads = checked_positive_usize(runtime_threads, "runtime_threads")?;
+        let max_inflight = checked_positive_usize(max_inflight, "max_inflight")?;
         let op = Operator::via_iter(scheme, config)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL operator: {e}")))?;
         let op = apply_http_headers(op, headers)?;
+        let op = apply_concurrent_limit(op, max_inflight);
         let info = op.info();
         let native = NativeFs {
             op,
-            runtime: build_runtime()?,
+            runtime: build_runtime(runtime_threads)?,
             scheme: info.scheme().to_string(),
             root: info.root(),
         };
@@ -2185,6 +2201,28 @@ fn checked_page_size(value: f64, name: &str) -> savvy::Result<usize> {
         )));
     }
     usize::try_from(value).map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn checked_positive_usize(value: Option<f64>, name: &str) -> savvy::Result<Option<usize>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = checked_u64(value, name)?;
+    if value == 0 {
+        return Err(savvy::Error::new(&format!(
+            "{name} must be greater than zero"
+        )));
+    }
+    usize::try_from(value)
+        .map(Some)
+        .map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn apply_concurrent_limit(op: Operator, max_inflight: Option<usize>) -> Operator {
+    match max_inflight {
+        Some(max) => op.layer(ConcurrentLimitLayer::new(max)),
+        None => op,
+    }
 }
 
 fn checked_limit(value: Option<f64>, name: &str) -> savvy::Result<Option<usize>> {

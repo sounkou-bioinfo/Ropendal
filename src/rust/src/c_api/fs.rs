@@ -85,7 +85,7 @@ pub unsafe extern "C" fn ropendal_fs_open(
         }
     };
     let info = op.info();
-    let runtime = match build_runtime() {
+    let runtime = match build_runtime(None) {
         Ok(rt) => rt,
         Err(e) => {
             set_c_error(
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn ropendal_fs_from_uri(
         }
     };
     let info = op.info();
-    let runtime = match build_runtime() {
+    let runtime = match build_runtime(None) {
         Ok(rt) => rt,
         Err(e) => {
             set_c_error(

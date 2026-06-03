@@ -14,6 +14,8 @@
 \alias{credential_schemes}
 \alias{credential_config}
 \alias{credential_summary}
+\alias{runtime_config}
+\alias{layer_concurrent_limit}
 \alias{opt}
 \alias{opt<-}
 \alias{serial_config}
@@ -89,8 +91,8 @@
 \title{Ropendal filesystem API}
 \usage{
 opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
-        headers = NULL)
-opendal_uri(uri, headers = NULL)
+        headers = NULL, runtime = runtime_config(), layers = list())
+opendal_uri(uri, headers = NULL, runtime = runtime_config(), layers = list())
 credentials_s3(access_key_id, secret_access_key,
                session_token = "", region = "", source = "direct")
 credentials_gcs(token = "", service_account_key = "",
@@ -105,6 +107,8 @@ credentials_gdrive3(secret_json,
 credential_schemes(provider)
 credential_config(provider, service)
 credential_summary(provider)
+runtime_config(threads = NULL)
+layer_concurrent_limit(max)
 fs_info(fs)
 fs_capabilities(fs)
 fs_normalize_path(fs, path, directory = FALSE)
@@ -228,6 +232,15 @@ For \code{serialize_raw()} / \code{deserialize_raw()}, serialization config.}
 \item{headers}{Named scalar character list/vector of HTTP headers for
 \code{http}/\code{https} filesystems; values may contain credentials and are not
 printed by Ropendal.}
+
+\item{runtime}{Runtime configuration from \code{runtime_config()}.}
+
+\item{layers}{List of explicit filesystem layers, currently including
+\code{layer_concurrent_limit()}.}
+
+\item{threads}{Number of Tokio worker threads for a filesystem handle.}
+
+\item{max}{Maximum total in-flight backend operations for a filesystem handle.}
 
 \item{uri}{OpenDAL URI.}
 

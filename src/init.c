@@ -170,8 +170,8 @@ SEXP savvy_OpendalFs_exists_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg_
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_from_uri__impl(SEXP c_arg__uri, SEXP c_arg__headers) {
-    SEXP res = savvy_OpendalFs_from_uri__ffi(c_arg__uri, c_arg__headers);
+SEXP savvy_OpendalFs_from_uri__impl(SEXP c_arg__uri, SEXP c_arg__headers, SEXP c_arg__runtime_threads, SEXP c_arg__max_inflight) {
+    SEXP res = savvy_OpendalFs_from_uri__ffi(c_arg__uri, c_arg__headers, c_arg__runtime_threads, c_arg__max_inflight);
     return handle_result(res);
 }
 
@@ -210,8 +210,8 @@ SEXP savvy_OpendalFs_normalize_path__impl(SEXP self__, SEXP c_arg__path, SEXP c_
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_open__impl(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg__config, SEXP c_arg__root, SEXP c_arg__auth_config, SEXP c_arg__headers) {
-    SEXP res = savvy_OpendalFs_open__ffi(c_arg__scheme, c_arg__dots, c_arg__config, c_arg__root, c_arg__auth_config, c_arg__headers);
+SEXP savvy_OpendalFs_open__impl(SEXP c_arg__scheme, SEXP c_arg__dots, SEXP c_arg__config, SEXP c_arg__root, SEXP c_arg__auth_config, SEXP c_arg__headers, SEXP c_arg__runtime_threads, SEXP c_arg__max_inflight) {
+    SEXP res = savvy_OpendalFs_open__ffi(c_arg__scheme, c_arg__dots, c_arg__config, c_arg__root, c_arg__auth_config, c_arg__headers, c_arg__runtime_threads, c_arg__max_inflight);
     return handle_result(res);
 }
 
@@ -384,7 +384,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_delete_aio__impl", (DL_FUNC) &savvy_OpendalFs_delete_aio__impl, 4},
     {"savvy_OpendalFs_exists__impl", (DL_FUNC) &savvy_OpendalFs_exists__impl, 3},
     {"savvy_OpendalFs_exists_aio__impl", (DL_FUNC) &savvy_OpendalFs_exists_aio__impl, 3},
-    {"savvy_OpendalFs_from_uri__impl", (DL_FUNC) &savvy_OpendalFs_from_uri__impl, 2},
+    {"savvy_OpendalFs_from_uri__impl", (DL_FUNC) &savvy_OpendalFs_from_uri__impl, 4},
     {"savvy_OpendalFs_info__impl", (DL_FUNC) &savvy_OpendalFs_info__impl, 1},
     {"savvy_OpendalFs_ls__impl", (DL_FUNC) &savvy_OpendalFs_ls__impl, 5},
     {"savvy_OpendalFs_ls_aio__impl", (DL_FUNC) &savvy_OpendalFs_ls_aio__impl, 5},
@@ -392,7 +392,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_mkdir__impl", (DL_FUNC) &savvy_OpendalFs_mkdir__impl, 2},
     {"savvy_OpendalFs_mkdir_aio__impl", (DL_FUNC) &savvy_OpendalFs_mkdir_aio__impl, 3},
     {"savvy_OpendalFs_normalize_path__impl", (DL_FUNC) &savvy_OpendalFs_normalize_path__impl, 3},
-    {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 6},
+    {"savvy_OpendalFs_open__impl", (DL_FUNC) &savvy_OpendalFs_open__impl, 8},
     {"savvy_OpendalFs_read__impl", (DL_FUNC) &savvy_OpendalFs_read__impl, 10},
     {"savvy_OpendalFs_read_aio__impl", (DL_FUNC) &savvy_OpendalFs_read_aio__impl, 10},
     {"savvy_OpendalFs_read_bytes__impl", (DL_FUNC) &savvy_OpendalFs_read_bytes__impl, 10},
