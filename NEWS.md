@@ -1,20 +1,5 @@
 # Ropendal News
 
-<!--
-Update this file for user-facing changes before release.
-
-Guidelines:
-- Keep entries in reverse chronological order: newest release/development
-  section first.
-- Use a heading for each version, e.g. `## Ropendal 0.0.2`.
-- Keep bullets concise and user-facing. Prefer `Added`, `Changed`, `Fixed`,
-  `Deprecated`, `Removed`, or `Documentation` phrasing when useful.
-- Mention API changes, behavior changes, new backends, important bug fixes,
-  documentation improvements, and migration notes.
-- Do not include secrets, local paths, CI-only noise, or exhaustive internal
-  implementation details.
--->
-
 ## Ropendal 0.0.1.9000
 
 - Development version after 0.0.1.
