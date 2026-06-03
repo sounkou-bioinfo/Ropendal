@@ -950,25 +950,44 @@ impl OpendalFs {
 
     /// List entries under a directory.
     /// @export
-    fn ls(&self, path: &str, recursive: bool) -> savvy::Result<savvy::Sexp> {
+    fn ls(
+        &self,
+        path: &str,
+        recursive: bool,
+        limit: Option<f64>,
+        start_after: Option<&str>,
+    ) -> savvy::Result<savvy::Sexp> {
         let path = match normalize_user_path(path, true) {
             Ok(p) => p,
             Err(e) => return crate::error::error_list("InvalidArgument", 14, &e, "ls", path),
         };
+        let limit = checked_limit(limit, "limit")?;
+        let start_after = normalize_optional_start_after(start_after)
+            .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
         let op = self.inner.op.clone();
         let path_for_error = path.clone();
         let mut opts = ListOptions::default();
         opts.recursive = recursive;
+        opts.limit = limit.filter(|value| *value > 0);
+        opts.start_after = start_after.clone();
         match self
             .inner
             .runtime
             .block_on(async move { op.list_options(&path, opts).await })
         {
             Ok(entries) => {
-                let entries = entries
+                let mut entries = entries
                     .iter()
                     .filter(|entry| entry.path() != "/" && !entry.path().is_empty())
+                    .filter(|entry| {
+                        start_after
+                            .as_ref()
+                            .is_none_or(|start_after| entry.path() > start_after.as_str())
+                    })
                     .collect::<Vec<_>>();
+                if let Some(limit) = limit {
+                    entries.truncate(limit);
+                }
                 let mut out = OwnedListSexp::new(entries.len(), false)?;
                 for (i, entry) in entries.iter().enumerate() {
                     out.set_value(i, metadata_list(entry.path(), entry.metadata())?)?;
@@ -981,7 +1000,13 @@ impl OpendalFs {
 
     /// Submit asynchronous listing request.
     /// @export
-    fn ls_aio(&self, path: &str, recursive: bool) -> savvy::Result<OpendalAio> {
+    fn ls_aio(
+        &self,
+        path: &str,
+        recursive: bool,
+        limit: Option<f64>,
+        start_after: Option<&str>,
+    ) -> savvy::Result<OpendalAio> {
         let path = match normalize_user_path(path, true) {
             Ok(p) => p,
             Err(e) => {
@@ -993,11 +1018,13 @@ impl OpendalFs {
                 return Ok(OpendalAio::new(self.inner.runtime.clone(), handle));
             }
         };
+        let limit = checked_limit(limit, "limit")?;
+        let start_after = normalize_optional_start_after(start_after)
+            .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
         let op = self.inner.op.clone();
-        let handle = self
-            .inner
-            .runtime
-            .spawn(async move { ls_request_outcome(op, path, recursive).await });
+        let handle = self.inner.runtime.spawn(async move {
+            ls_request_outcome(op, path, recursive, limit, start_after).await
+        });
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
 
@@ -1008,26 +1035,50 @@ impl OpendalFs {
         path: &str,
         recursive: Option<bool>,
         page_size: Option<f64>,
+        limit: Option<f64>,
+        start_after: Option<&str>,
     ) -> savvy::Result<OpendalLsIter> {
         let path = normalize_user_path(path, true)
             .map_err(|e| savvy::Error::new(&format!("ls_iter: {e}")))?;
         let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
+        let limit = checked_limit(limit, "limit")?;
+        let start_after = normalize_optional_start_after(start_after)
+            .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
         OpendalLsIter::new(
             self.inner.clone(),
             path,
             recursive.unwrap_or(false),
             page_size,
+            limit,
+            start_after,
             "ls_iter",
         )
     }
 
     /// Create a streaming recursive traversal iterator.
     /// @export
-    fn walk_iter(&self, path: &str, page_size: Option<f64>) -> savvy::Result<OpendalLsIter> {
+    fn walk_iter(
+        &self,
+        path: &str,
+        page_size: Option<f64>,
+        limit: Option<f64>,
+        start_after: Option<&str>,
+    ) -> savvy::Result<OpendalLsIter> {
         let path = normalize_user_path(path, true)
             .map_err(|e| savvy::Error::new(&format!("walk_iter: {e}")))?;
         let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
-        OpendalLsIter::new(self.inner.clone(), path, true, page_size, "walk_iter")
+        let limit = checked_limit(limit, "limit")?;
+        let start_after = normalize_optional_start_after(start_after)
+            .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
+        OpendalLsIter::new(
+            self.inner.clone(),
+            path,
+            true,
+            page_size,
+            limit,
+            start_after,
+            "walk_iter",
+        )
     }
 }
 
@@ -1787,21 +1838,38 @@ async fn rename_request_outcome(op: Operator, from: String, to: String) -> AioOu
     }
 }
 
-async fn ls_request_outcome(op: Operator, path: String, recursive: bool) -> AioOutcome {
+async fn ls_request_outcome(
+    op: Operator,
+    path: String,
+    recursive: bool,
+    limit: Option<usize>,
+    start_after: Option<String>,
+) -> AioOutcome {
     let path_for_error = path.clone();
     let mut opts = ListOptions::default();
     opts.recursive = recursive;
+    opts.limit = limit.filter(|value| *value > 0);
+    opts.start_after = start_after.clone();
     match op.list_options(&path, opts).await {
-        Ok(entries) => AioOutcome::Entries(
-            entries
+        Ok(entries) => {
+            let mut entries = entries
                 .iter()
                 .filter(|entry| entry.path() != "/" && !entry.path().is_empty())
+                .filter(|entry| {
+                    start_after
+                        .as_ref()
+                        .is_none_or(|start_after| entry.path() > start_after.as_str())
+                })
                 .map(|entry| EntryOutcome {
                     path: entry.path().to_string(),
                     meta: entry.metadata().clone(),
                 })
-                .collect(),
-        ),
+                .collect::<Vec<_>>();
+            if let Some(limit) = limit {
+                entries.truncate(limit);
+            }
+            AioOutcome::Entries(entries)
+        }
         Err(e) => op_error_outcome(e, "ls", &path_for_error),
     }
 }
@@ -2117,6 +2185,29 @@ fn checked_page_size(value: f64, name: &str) -> savvy::Result<usize> {
         )));
     }
     usize::try_from(value).map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn checked_limit(value: Option<f64>, name: &str) -> savvy::Result<Option<usize>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = checked_u64(value, name)?;
+    usize::try_from(value)
+        .map(Some)
+        .map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn normalize_optional_start_after(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let directory = value.trim().ends_with('/');
+    let value = normalize_user_path(value, directory)?;
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(value))
+    }
 }
 
 fn config_value_to_string(value: Sexp, name: &str) -> savvy::Result<String> {

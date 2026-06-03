@@ -235,6 +235,32 @@ expect_true(walk_iter_next(walk_iter)$done)
 ls_iter_collect_paths <- vapply(ls_iter_collect(fs_ls_iter(fs)), `[[`, "", "path")
 expect_true("a.bin" %in% ls_iter_collect_paths)
 
+limited_entries <- fs_ls(fs, limit = 1)
+expect_true(length(limited_entries) <= 1)
+expect_equal(fs_ls(fs, limit = 0), list())
+after_entries <- fs_ls(fs, start_after = "a.bin")
+after_paths <- vapply(after_entries, `[[`, "", "path")
+expect_false("a.bin" %in% after_paths)
+expect_true(all(after_paths > "a.bin"))
+limited_aio_entries <- collect_aio(fs_ls_aio(fs, limit = 2))
+expect_true(length(limited_aio_entries) <= 2)
+after_aio_paths <- vapply(collect_aio(fs_ls_aio(fs, start_after = "a.bin")), `[[`, "", "path")
+expect_false("a.bin" %in% after_aio_paths)
+expect_true(all(after_aio_paths > "a.bin"))
+limited_iter_entries <- ls_iter_collect(fs_ls_iter(fs, page_size = 1, limit = 2))
+expect_true(length(limited_iter_entries) <= 2)
+expect_equal(ls_iter_collect(fs_ls_iter(fs, limit = 0)), list())
+iter_after_paths <- vapply(
+  ls_iter_collect(fs_ls_iter(fs, start_after = "a.bin")),
+  `[[`,
+  "",
+  "path"
+)
+expect_false("a.bin" %in% iter_after_paths)
+expect_true(all(iter_after_paths > "a.bin"))
+walk_limited_entries <- walk_iter_collect(fs_walk_iter(fs, page_size = 1, limit = 1))
+expect_true(length(walk_limited_entries) <= 1)
+
 expect_true(identical(fs_delete(fs, "dir/c.bin"), TRUE))
 
 expect_error(fs_read(fs, c("a.bin", "a.bin"), offset = 0))

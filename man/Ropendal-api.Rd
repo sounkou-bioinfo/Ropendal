@@ -166,10 +166,13 @@ fs_stats(fs, path, batch_concurrency = NULL)
 fs_stats_aio(fs, path, batch_concurrency = NULL)
 fs_exists(fs, path, batch_concurrency = NULL)
 fs_exists_aio(fs, path, batch_concurrency = NULL)
-fs_ls(fs, path = "", recursive = FALSE)
-fs_ls_aio(fs, path = "", recursive = FALSE)
-fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000)
-fs_walk_iter(fs, path = "", page_size = 1000)
+fs_ls(fs, path = "", recursive = FALSE, limit = NULL, start_after = NULL)
+fs_ls_aio(fs, path = "", recursive = FALSE,
+          limit = NULL, start_after = NULL)
+fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000,
+           limit = NULL, start_after = NULL)
+fs_walk_iter(fs, path = "", page_size = 1000,
+             limit = NULL, start_after = NULL)
 ls_iter_next(iter)
 ls_iter_collect(iter)
 walk_iter_next(iter)
@@ -308,6 +311,12 @@ object or list of objects in serial mode.}
 \item{append}{Whether a write iterator should append rather than replace.}
 
 \item{recursive}{Whether to recurse for operations that support it.}
+
+\item{limit}{Optional maximum number of listing entries to materialize or
+return across an iterator.}
+
+\item{start_after}{Optional root-relative listing continuation marker;
+entries less than or equal to this path are skipped where supported.}
 
 \item{page_size}{Maximum number of entries returned by one iterator page.}
 

@@ -388,12 +388,12 @@ Semantics:
 - `fs_ls_iter()` pages a listing and provides caller-driven backpressure.
 - `fs_walk_iter()` recursively traverses and streams pages.
 - Current iterator pages return `list(done, entries)` and expose `*_next()` plus `*_collect()`.
-- `page_size` currently bounds the number of R entries yielded per iterator page; backend request sizing may remain service-specific.
+- `page_size` bounds the number of R entries yielded per iterator page and is also passed as an OpenDAL backend request-size hint where possible.
+- `limit` bounds materialized results for collectable listing APIs and total entries yielded by listing/walk iterators.
+- `start_after` is a root-relative continuation marker passed through OpenDAL list options and also enforced by client-side filtering.
 - Future `batch_concurrency` controls many independent roots/prefixes.
 - Future `list_concurrency` controls recursive traversal fanout where implemented.
 - Future `prefetch` controls how many listing pages may be buffered ahead.
-- Future `limit` bounds materialized results for collectable listing APIs.
-- Future `start_after` or continuation-like options allow resuming object-store listings.
 
 A lightweight `opendalEntries` value can wrap returned entries with
 `as.list()`/`as.data.frame()` adapters. Primitive errors remain per-root/per-page

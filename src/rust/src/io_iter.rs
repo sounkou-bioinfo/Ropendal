@@ -236,6 +236,8 @@ pub struct OpendalLsIter {
     initial_error: Mutex<Option<InitialError>>,
     done: Mutex<bool>,
     page_size: usize,
+    remaining: Mutex<Option<usize>>,
+    start_after: Option<String>,
 }
 
 struct InitialError {
@@ -250,10 +252,18 @@ impl OpendalLsIter {
         path: String,
         recursive: bool,
         page_size: usize,
+        limit: Option<usize>,
+        start_after: Option<String>,
         operation: &str,
     ) -> savvy::Result<Self> {
         let mut opts = opendal::options::ListOptions::default();
         opts.recursive = recursive;
+        opts.limit = Some(
+            limit
+                .filter(|value| *value > 0)
+                .map_or(page_size, |value| page_size.min(value)),
+        );
+        opts.start_after = start_after.clone();
         let path_for_error = path.clone();
         let runtime = inner.runtime.clone();
         let op = inner.op.clone();
@@ -278,11 +288,19 @@ impl OpendalLsIter {
             initial_error: Mutex::new(initial_error),
             done: Mutex::new(false),
             page_size,
+            remaining: Mutex::new(limit),
+            start_after,
         })
     }
 
     fn keep_entry(&self, path: &str) -> bool {
-        path != "/" && !path.is_empty() && path != self.path.as_str()
+        path != "/"
+            && !path.is_empty()
+            && path != self.path.as_str()
+            && self
+                .start_after
+                .as_ref()
+                .is_none_or(|start_after| path > start_after.as_str())
     }
 }
 
@@ -317,6 +335,24 @@ impl OpendalLsIter {
             );
         }
 
+        let target =
+            {
+                let remaining = self
+                    .remaining
+                    .lock()
+                    .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?;
+                match *remaining {
+                    Some(0) => {
+                        *self.done.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator done lock poisoned")
+                        })? = true;
+                        return iter_entries_page(true, Vec::new());
+                    }
+                    Some(value) => self.page_size.min(value),
+                    None => self.page_size,
+                }
+            };
+
         let mut lister =
             {
                 let mut guard = self
@@ -336,7 +372,7 @@ impl OpendalLsIter {
 
         let mut entries = Vec::new();
         let mut exhausted = false;
-        while entries.len() < self.page_size {
+        while entries.len() < target {
             match self.runtime.block_on(lister.try_next()) {
                 Ok(Some(entry)) => {
                     if self.keep_entry(entry.path()) {
@@ -358,7 +394,20 @@ impl OpendalLsIter {
             }
         }
 
-        if exhausted {
+        let limit_reached = {
+            let mut remaining = self
+                .remaining
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?;
+            if let Some(value) = remaining.as_mut() {
+                *value = value.saturating_sub(entries.len());
+                *value == 0
+            } else {
+                false
+            }
+        };
+        let done_now = exhausted || limit_reached;
+        if done_now {
             *self
                 .done
                 .lock()
@@ -371,7 +420,7 @@ impl OpendalLsIter {
             *guard = Some(lister);
         }
 
-        if exhausted && entries.is_empty() {
+        if done_now && entries.is_empty() {
             iter_entries_page(true, Vec::new())
         } else {
             iter_entries_page(false, entries)
@@ -409,6 +458,18 @@ impl OpendalLsIter {
             {
                 break;
             }
+            if self
+                .remaining
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?
+                .is_some_and(|value| value == 0)
+            {
+                *self
+                    .done
+                    .lock()
+                    .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+                break;
+            }
 
             let mut lister = {
                 let mut guard = self
@@ -424,8 +485,22 @@ impl OpendalLsIter {
             let result = self.runtime.block_on(lister.try_next());
             match result {
                 Ok(Some(entry)) => {
+                    let mut limit_reached = false;
                     if self.keep_entry(entry.path()) {
                         all.push((entry.path().to_string(), entry.metadata().clone()));
+                        let mut remaining = self.remaining.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator limit lock poisoned")
+                        })?;
+                        if let Some(value) = remaining.as_mut() {
+                            *value = value.saturating_sub(1);
+                            limit_reached = *value == 0;
+                        }
+                    }
+                    if limit_reached {
+                        *self.done.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator done lock poisoned")
+                        })? = true;
+                        break;
                     }
                     let mut guard = self
                         .lister

@@ -30,9 +30,9 @@ SEXP savvy_OpendalFs_exists__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batc
 SEXP savvy_OpendalFs_exists_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_from_uri__ffi(SEXP c_arg__uri, SEXP c_arg__headers);
 SEXP savvy_OpendalFs_info__ffi(SEXP self__);
-SEXP savvy_OpendalFs_ls__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive);
-SEXP savvy_OpendalFs_ls_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive);
-SEXP savvy_OpendalFs_ls_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__page_size);
+SEXP savvy_OpendalFs_ls__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__limit, SEXP c_arg__start_after);
+SEXP savvy_OpendalFs_ls_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__limit, SEXP c_arg__start_after);
+SEXP savvy_OpendalFs_ls_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after);
 SEXP savvy_OpendalFs_mkdir__ffi(SEXP self__, SEXP c_arg__path);
 SEXP savvy_OpendalFs_mkdir_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_normalize_path__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__directory);
@@ -48,7 +48,7 @@ SEXP savvy_OpendalFs_replace__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__dat
 SEXP savvy_OpendalFs_replace_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
 SEXP savvy_OpendalFs_stat__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
 SEXP savvy_OpendalFs_stat_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__batch_concurrency);
-SEXP savvy_OpendalFs_walk_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__page_size);
+SEXP savvy_OpendalFs_walk_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after);
 SEXP savvy_OpendalFs_write__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
 SEXP savvy_OpendalFs_write_aio__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__data, SEXP c_arg__batch_concurrency, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);
 SEXP savvy_OpendalFs_write_iter__ffi(SEXP self__, SEXP c_arg__path, SEXP c_arg__create, SEXP c_arg__append, SEXP c_arg__write_concurrency, SEXP c_arg__chunk_size);

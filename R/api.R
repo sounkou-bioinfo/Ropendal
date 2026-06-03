@@ -82,6 +82,10 @@
 #' @param create Whether a write iterator should create only and fail if the target exists.
 #' @param append Whether a write iterator should append rather than replace.
 #' @param recursive Whether to recurse for operations that support it.
+#' @param limit Optional maximum number of listing entries to materialize or
+#'   return across an iterator.
+#' @param start_after Optional root-relative listing continuation marker;
+#'   entries less than or equal to this path are skipped where supported.
 #' @param page_size Maximum number of entries returned by one iterator page.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.
@@ -172,10 +176,13 @@
 #' fs_stats_aio(fs, path, batch_concurrency = NULL)
 #' fs_exists(fs, path, batch_concurrency = NULL)
 #' fs_exists_aio(fs, path, batch_concurrency = NULL)
-#' fs_ls(fs, path = "", recursive = FALSE)
-#' fs_ls_aio(fs, path = "", recursive = FALSE)
-#' fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000)
-#' fs_walk_iter(fs, path = "", page_size = 1000)
+#' fs_ls(fs, path = "", recursive = FALSE, limit = NULL, start_after = NULL)
+#' fs_ls_aio(fs, path = "", recursive = FALSE,
+#'           limit = NULL, start_after = NULL)
+#' fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000,
+#'            limit = NULL, start_after = NULL)
+#' fs_walk_iter(fs, path = "", page_size = 1000,
+#'              limit = NULL, start_after = NULL)
 #' ls_iter_next(iter)
 #' ls_iter_collect(iter)
 #' walk_iter_next(iter)
@@ -1025,26 +1032,28 @@ fs_exists_aio <- function(fs, path, batch_concurrency = NULL) {
 
 #' @export
 #' @noRd
-fs_ls <- function(fs, path = "", recursive = FALSE) {
-  fs$ls(path, recursive)
+fs_ls <- function(fs, path = "", recursive = FALSE, limit = NULL, start_after = NULL) {
+  fs$ls(path, recursive, limit, start_after)
 }
 
 #' @export
 #' @noRd
-fs_ls_aio <- function(fs, path = "", recursive = FALSE) {
-  opendal_aio_with_bindings(fs$ls_aio(path, recursive))
+fs_ls_aio <- function(fs, path = "", recursive = FALSE, limit = NULL, start_after = NULL) {
+  opendal_aio_with_bindings(fs$ls_aio(path, recursive, limit, start_after))
 }
 
 #' @export
 #' @noRd
-fs_ls_iter <- function(fs, path = "", recursive = FALSE, page_size = 1000) {
-  fs$ls_iter(path, recursive, page_size)
+fs_ls_iter <- function(fs, path = "", recursive = FALSE, page_size = 1000,
+                       limit = NULL, start_after = NULL) {
+  fs$ls_iter(path, recursive, page_size, limit, start_after)
 }
 
 #' @export
 #' @noRd
-fs_walk_iter <- function(fs, path = "", page_size = 1000) {
-  fs$walk_iter(path, page_size)
+fs_walk_iter <- function(fs, path = "", page_size = 1000,
+                         limit = NULL, start_after = NULL) {
+  fs$walk_iter(path, page_size, limit, start_after)
 }
 
 #' @export

@@ -266,20 +266,20 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 }
 
 `OpendalFs_ls` <- function(self) {
-  function(`path`, `recursive`) {
-    .Call(savvy_OpendalFs_ls__impl, `self`, `path`, `recursive`)
+  function(`path`, `recursive`, `limit` = NULL, `start_after` = NULL) {
+    .Call(savvy_OpendalFs_ls__impl, `self`, `path`, `recursive`, `limit`, `start_after`)
   }
 }
 
 `OpendalFs_ls_aio` <- function(self) {
-  function(`path`, `recursive`) {
-    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_ls_aio__impl, `self`, `path`, `recursive`))
+  function(`path`, `recursive`, `limit` = NULL, `start_after` = NULL) {
+    .savvy_wrap_OpendalAio(.Call(savvy_OpendalFs_ls_aio__impl, `self`, `path`, `recursive`, `limit`, `start_after`))
   }
 }
 
 `OpendalFs_ls_iter` <- function(self) {
-  function(`path`, `recursive` = NULL, `page_size` = NULL) {
-    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_ls_iter__impl, `self`, `path`, `recursive`, `page_size`))
+  function(`path`, `recursive` = NULL, `page_size` = NULL, `limit` = NULL, `start_after` = NULL) {
+    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_ls_iter__impl, `self`, `path`, `recursive`, `page_size`, `limit`, `start_after`))
   }
 }
 
@@ -368,8 +368,8 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 }
 
 `OpendalFs_walk_iter` <- function(self) {
-  function(`path`, `page_size` = NULL) {
-    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_walk_iter__impl, `self`, `path`, `page_size`))
+  function(`path`, `page_size` = NULL, `limit` = NULL, `start_after` = NULL) {
+    .savvy_wrap_OpendalLsIter(.Call(savvy_OpendalFs_walk_iter__impl, `self`, `path`, `page_size`, `limit`, `start_after`))
   }
 }
 
