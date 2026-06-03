@@ -2,6 +2,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 mod aio;
+mod codec;
 mod error;
 mod fs;
 mod ops;

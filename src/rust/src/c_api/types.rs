@@ -10,6 +10,10 @@ use crate::common::NativeFs;
 
 pub(crate) type AioCallback = Option<extern "C" fn(*mut ropendal_aio, *mut c_void)>;
 
+pub struct ropendal_bytes {
+    pub(crate) bytes: Vec<u8>,
+}
+
 #[repr(C)]
 pub struct ropendal_kv {
     pub(crate) struct_size: usize,

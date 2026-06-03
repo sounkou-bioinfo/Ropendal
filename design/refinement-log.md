@@ -490,6 +490,7 @@ those bytes before upload; reads decode bytes first and only then deserialize fo
 byte ranges remain raw-mode operations unless a future codec explicitly supports
 partial decode.
 
-The Rust implementation is R-free, but the public C API does not yet expose codec
-helpers. That remains the next step for sharing the native transforms with C
-consumers.
+The Rust implementation is R-free, and the public C API now exposes borrowed
+byte-handle helpers through `ropendal_codec_encode()`, `ropendal_codec_decode()`,
+`ropendal_bytes_data()`, `ropendal_bytes_len()`, and `ropendal_bytes_release()`.
+C callers can roundtrip gzip/zlib bytes without using R's C API or R raw vectors.

@@ -15,8 +15,9 @@
  * ropendal_monitor_create(), and the *_aio() submission functions allocate such
  * handles. The caller must eventually release each owned reference with the
  * matching release function: ropendal_fs_release(), ropendal_cv_release(),
- * ropendal_monitor_release(), or ropendal_aio_release(). ropendal_fs_retain()
- * creates one additional filesystem reference that must also be released.
+ * ropendal_monitor_release(), ropendal_bytes_release(), or
+ * ropendal_aio_release(). ropendal_fs_retain() creates one additional
+ * filesystem reference that must also be released.
  * Passing NULL to a release function is allowed and has no effect.
  *
  * Errors are also allocated values. When a function accepts ropendal_error_t
@@ -63,6 +64,7 @@ extern "C" {
 
 typedef struct ropendal_fs ropendal_fs_t;
 typedef struct ropendal_aio ropendal_aio_t;
+typedef struct ropendal_bytes ropendal_bytes_t;
 typedef struct ropendal_error ropendal_error_t;
 typedef struct ropendal_cv ropendal_cv_t;
 typedef struct ropendal_monitor ropendal_monitor_t;
@@ -256,6 +258,31 @@ ropendal_status_t ropendal_fs_from_uri(const char *uri,
                                        ropendal_error_t **err);
 void ropendal_fs_retain(ropendal_fs_t *fs);
 void ropendal_fs_release(ropendal_fs_t *fs);
+
+/*
+ * Native byte codecs.
+ *
+ * ropendal_codec_encode() and ropendal_codec_decode() are synchronous, pure-C
+ * byte transforms for codecs that do not touch R's C API. The current built-in
+ * codecs are "identity", "gzip", and "zlib". src is borrowed only for the
+ * duration of the call and may be NULL only when src_len == 0. On success, *out
+ * owns an immutable byte handle that must be released with
+ * ropendal_bytes_release(). ropendal_bytes_data() returns a borrowed pointer
+ * valid until that release; empty byte handles return NULL with length 0.
+ */
+ropendal_status_t ropendal_codec_encode(const char *codec,
+                                        const uint8_t *src,
+                                        size_t src_len,
+                                        ropendal_bytes_t **out,
+                                        ropendal_error_t **err);
+ropendal_status_t ropendal_codec_decode(const char *codec,
+                                        const uint8_t *src,
+                                        size_t src_len,
+                                        ropendal_bytes_t **out,
+                                        ropendal_error_t **err);
+const uint8_t *ropendal_bytes_data(const ropendal_bytes_t *bytes);
+size_t ropendal_bytes_len(const ropendal_bytes_t *bytes);
+void ropendal_bytes_release(ropendal_bytes_t *bytes);
 
 /*
  * Async filesystem operations.

@@ -26,6 +26,9 @@ expect_match(header_text, "ropendal_readv_into_aio")
 expect_match(header_text, "ropendal_aio_result_readv")
 expect_match(header_text, "ropendal_exists_aio")
 expect_match(header_text, "ropendal_aio_result_bool")
+expect_match(header_text, "ropendal_codec_encode")
+expect_match(header_text, "ropendal_codec_decode")
+expect_match(header_text, "ropendal_bytes_release")
 
 # Notification/monitor primitives inspired by nanonext condition variables.
 expect_match(header_text, "ropendal_cv_alloc")
@@ -57,6 +60,10 @@ if (length(cc_candidates) > 0L) {
     '  ropendal_delete_options_t delete_opts = {0};',
     '  ropendal_entry_t entry = {0};',
     '  ropendal_monitor_event_t event = {0};',
+    '  ropendal_bytes_t *bytes = 0;',
+    '  const uint8_t *byte_ptr = ropendal_bytes_data(bytes);',
+    '  size_t byte_len = ropendal_bytes_len(bytes);',
+    '  ropendal_status_t (*codec_fn)(const char *, const uint8_t *, size_t, ropendal_bytes_t **, ropendal_error_t **) = ropendal_codec_decode;',
     '  kv.struct_size = sizeof kv;',
     '  read_opts.struct_size = sizeof read_opts;',
     '  read_req.struct_size = sizeof read_req;',
@@ -70,7 +77,7 @@ if (length(cc_candidates) > 0L) {
     '  event.struct_size = sizeof event;',
     '  (void)kv; (void)read_opts; (void)read_req; (void)read_into_req;',
     '  (void)readv_opts; (void)readv_result; (void)write_opts; (void)ls_opts; (void)delete_opts;',
-    '  (void)entry; (void)event;',
+    '  (void)entry; (void)event; (void)byte_ptr; (void)byte_len; (void)codec_fn;',
     '}'
   ), src)
   out <- system2(cc, c("-std=c99", "-Wall", "-Wextra", "-Werror", "-I", include_dir,

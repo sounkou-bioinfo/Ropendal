@@ -130,7 +130,7 @@ Serializers and codecs
 | raw bytes               | implemented | core storage contract uses R raw vectors and OpendalBytes handles                                       |
 | R serialize/unserialize | implemented | mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread |
 | text                    | planned     | explicit encoding boundary                                                                              |
-| codecs/compression      | implemented | explicit codec_config()/codec= native byte transforms; gzip and zlib wired                              |
+| codecs/compression      | implemented | explicit codec_config()/codec= native byte transforms; gzip and zlib wired for R and C                  |
 
 </details>
 

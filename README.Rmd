@@ -103,7 +103,7 @@ serializer_progress <- data.frame(
     "core storage contract uses R raw vectors and OpendalBytes handles",
     "mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread",
     "explicit encoding boundary",
-    "explicit codec_config()/codec= native byte transforms; gzip and zlib wired"
+    "explicit codec_config()/codec= native byte transforms; gzip and zlib wired for R and C"
   )
 )
 

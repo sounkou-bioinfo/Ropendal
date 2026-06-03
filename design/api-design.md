@@ -827,6 +827,7 @@ The native API is pure C and async-first. It does not include R headers and shou
 
 - `ropendal_fs_t` is an opaque retained handle around the Rust filesystem. It must be released.
 - `ropendal_aio_t` is an opaque task handle. It owns any Rust result buffers until released.
+- `ropendal_bytes_t` is an opaque immutable byte handle for synchronous native byte transforms such as codecs. It must be released.
 - Callbacks may run on Rust/Tokio worker threads and must not call R's C API unless the caller independently arranges safe handoff to R's main thread.
 - For `read_into_aio`, the caller owns `dst` and must keep it valid until the Aio reaches a terminal state.
 - Returned buffer pointers from `ropendal_aio_result_bytes()` are owned by the Aio and valid until `ropendal_aio_release()`.
@@ -859,6 +860,18 @@ ropendal_status_t ropendal_fs_from_uri(const char *uri,
                                        ropendal_fs_t **out,
                                        ropendal_error_t **err);
 void ropendal_fs_release(ropendal_fs_t *fs);
+
+ropendal_status_t ropendal_codec_encode(const char *codec,
+                                        const uint8_t *src, size_t src_len,
+                                        ropendal_bytes_t **out,
+                                        ropendal_error_t **err);
+ropendal_status_t ropendal_codec_decode(const char *codec,
+                                        const uint8_t *src, size_t src_len,
+                                        ropendal_bytes_t **out,
+                                        ropendal_error_t **err);
+const uint8_t *ropendal_bytes_data(const ropendal_bytes_t *bytes);
+size_t ropendal_bytes_len(const ropendal_bytes_t *bytes);
+void ropendal_bytes_release(ropendal_bytes_t *bytes);
 
 ropendal_status_t ropendal_read_aio(ropendal_fs_t *fs,
                                     const ropendal_read_options_t *opts,

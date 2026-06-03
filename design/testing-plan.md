@@ -123,6 +123,7 @@ Coverage:
 - pure C header compiles without R headers or `SEXP`
 - `ropendal_api_version()` and exported C symbols remain link-visible through the installed native library
 - pure C `ropendal_fs_open()` and `ropendal_fs_from_uri()` lifecycle contract
+- `ropendal_codec_encode()` / `ropendal_codec_decode()` plus `ropendal_bytes_*()` cover R-free native byte codec transforms
 - `ropendal_write_aio()`, `ropendal_replace_aio()`, `ropendal_append_aio()`, `ropendal_read_aio()`, `ropendal_readv_aio()`, `ropendal_read_into_aio()`, and `ropendal_readv_into_aio()` cover borrowed byte results and caller-owned buffers
 - `ropendal_exists_aio()` plus `ropendal_aio_result_bool()`
 - `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
