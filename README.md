@@ -309,9 +309,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace             125.4ms  131.9ms      7.68        0B
-#> 2 ropendal_replace_concurrent   77.6ms   80.2ms     12.2         0B
-#> 3 paws_put                     544.3ms  544.3ms      1.84    67.7MB
+#> 1 ropendal_replace             128.9ms  131.7ms      7.60        0B
+#> 2 ropendal_replace_concurrent   80.4ms   81.9ms     11.8         0B
+#> 3 paws_put                     551.3ms  551.3ms      1.81    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -341,11 +341,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  67.3ms   67.3ms      14.9      64MB
-#> 2 ropendal_read_concurrent       35.1ms   35.7ms      28.0      64MB
-#> 3 ropendal_read_aio              46.2ms   46.5ms      21.5      64MB
-#> 4 ropendal_read_aio_concurrent   31.4ms   31.4ms      31.8      64MB
-#> 5 paws_get                       51.5ms   53.4ms      18.7    64.3MB
+#> 1 ropendal_read                    57ms     57ms      17.5      64MB
+#> 2 ropendal_read_concurrent       34.8ms   34.8ms      28.7      64MB
+#> 3 ropendal_read_aio              46.6ms   48.3ms      20.7      64MB
+#> 4 ropendal_read_aio_concurrent     33ms     33ms      30.3      64MB
+#> 5 paws_get                       51.5ms   55.3ms      18.1    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -650,42 +650,41 @@ ordinary R work; the native code never creates R objects while OpenDAL
 I/O is running.
 
 ``` r
-task <- ffi$ropendal_demo_open(root)
-status <- 1L
-r_ticks <- 0L
-r_work <- 0L
-while (status > 0L) {
-  status <- ffi$ropendal_demo_resume(task)
-  r_ticks <- r_ticks + 1L
-  r_work <- r_work + sum(seq_len(1000L))
-  Sys.sleep(0.001)
+run_native_roundtrip <- function() {
+  task <- ffi$ropendal_demo_open(root)
+  on.exit(ffi$ropendal_demo_free(task), add = TRUE)
+
+  status <- 1L
+  r_ticks <- 0L
+  r_work <- 0L
+  while (status > 0L) {
+    status <- ffi$ropendal_demo_resume(task)
+    r_ticks <- r_ticks + 1L
+    r_work <- r_work + sum(seq_len(1000L))
+    Sys.sleep(0.001)
+  }
+  if (status < 0L) stop(ffi$ropendal_demo_error(task), call. = FALSE)
+
+  c(
+    r_ticks = r_ticks,
+    r_work = r_work,
+    bytes_read_into_c_buffer = ffi$ropendal_demo_nread(task)
+  )
 }
+
+run_native_roundtrip()
 #> native request 1: running; wait write
 #> native request 2: running; wait write
 #> native request 3: running; wait write
 #> native request 4: running; wait write
 #> native request 5: running; wait write
 #> native request 6: running; wait write
-#> native request 7: running; wait write
-#> native request 8: running; wait write
-#> native request 9: running; wait stat
-#> native request 10: running; wait list
-#> native request 11: running; wait read_into
-#> native request 12: done; complete
-if (status < 0L) {
-  message <- ffi$ropendal_demo_error(task)
-  invisible(ffi$ropendal_demo_free(task))
-  stop(message, call. = FALSE)
-}
-nread <- ffi$ropendal_demo_nread(task)
-invisible(ffi$ropendal_demo_free(task))
-c(
-  r_ticks = r_ticks,
-  r_work = r_work,
-  bytes_read_into_c_buffer = nread
-)
+#> native request 7: running; wait stat
+#> native request 8: running; wait list
+#> native request 9: running; wait read_into
+#> native request 10: done; complete
 #>                  r_ticks                   r_work bytes_read_into_c_buffer 
-#>                       12                  6006000                       17
+#>                       10                  5005000                       17
 ```
 
 ## Development

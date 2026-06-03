@@ -713,28 +713,29 @@ R controls the scheduling loop. Between native resumptions we do ordinary R work
 the native code never creates R objects while OpenDAL I/O is running.
 
 ```{r native-c-api-run, eval = requireNamespace("Rtinycc", quietly = TRUE)}
-task <- ffi$ropendal_demo_open(root)
-status <- 1L
-r_ticks <- 0L
-r_work <- 0L
-while (status > 0L) {
-  status <- ffi$ropendal_demo_resume(task)
-  r_ticks <- r_ticks + 1L
-  r_work <- r_work + sum(seq_len(1000L))
-  Sys.sleep(0.001)
+run_native_roundtrip <- function() {
+  task <- ffi$ropendal_demo_open(root)
+  on.exit(ffi$ropendal_demo_free(task), add = TRUE)
+
+  status <- 1L
+  r_ticks <- 0L
+  r_work <- 0L
+  while (status > 0L) {
+    status <- ffi$ropendal_demo_resume(task)
+    r_ticks <- r_ticks + 1L
+    r_work <- r_work + sum(seq_len(1000L))
+    Sys.sleep(0.001)
+  }
+  if (status < 0L) stop(ffi$ropendal_demo_error(task), call. = FALSE)
+
+  c(
+    r_ticks = r_ticks,
+    r_work = r_work,
+    bytes_read_into_c_buffer = ffi$ropendal_demo_nread(task)
+  )
 }
-if (status < 0L) {
-  message <- ffi$ropendal_demo_error(task)
-  invisible(ffi$ropendal_demo_free(task))
-  stop(message, call. = FALSE)
-}
-nread <- ffi$ropendal_demo_nread(task)
-invisible(ffi$ropendal_demo_free(task))
-c(
-  r_ticks = r_ticks,
-  r_work = r_work,
-  bytes_read_into_c_buffer = nread
-)
+
+run_native_roundtrip()
 ```
 
 ## Development
