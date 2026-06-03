@@ -4,7 +4,6 @@ output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Native C API}
   %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
@@ -13,7 +12,10 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
 Ropendal exposes a pure C API in `inst/include/ropendal.h` for downstream native
-packages. The header is generated from the same Rust surface used by the R API.
+packages. The purpose is direct OpenDAL-backed byte I/O from native code: submit
+async work, wait on Aio handles, and read borrowed results or fill caller-owned
+buffers without calling R while background I/O is running. The header is generated
+from the same Rust surface used by the R API.
 
 ## Async-first surface
 
@@ -23,9 +25,29 @@ C calls mirror the package’s async behavior:
 - `ropendal_aio_wait()` / monitor helpers for completion,
 - explicit error values for operation errors.
 
+## Usage from another R package
+
+A downstream package uses the normal R package mechanism to get the header:
+
+```text
+LinkingTo: Ropendal
+Imports: Ropendal
+```
+
+Native code can then include the installed header:
+
+```c
+#include <ropendal.h>
+```
+
+If the downstream shared library calls Ropendal symbols directly, its build
+system must also arrange for Ropendal's native library to be loaded/linked before
+those calls. The C interface itself remains pure C and does not require R headers
+or `SEXP` values.
+
 ## Minimal usage pattern
 
-```{r, eval = FALSE}
+```c
 // allocate a filesystem handle
 ropendal_fs_t *fs = NULL;
 ropendal_error_t *err = NULL;

@@ -23,8 +23,10 @@ unlink(root, recursive = TRUE)
 dir.create(root, recursive = TRUE)
 fs <- opendal("fs", root = root)
 
-# The same contract via URI.
-uri_fs <- opendal_uri(paste0("fs://", root))
+# The same contract via URI. Put the local root in the query string so the
+# example is portable across POSIX and Windows path syntax.
+uri <- paste0("fs:///?root=", utils::URLencode(root, reserved = TRUE))
+uri_fs <- opendal_uri(uri)
 isTRUE(identical(fs_info(uri_fs)$scheme, fs_info(fs)$scheme))
 ```
 

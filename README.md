@@ -11,15 +11,27 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-Ropendal: **Abstract Filesystem Access for R** via [Apache
-OpenDAL](https://opendal.apache.org/). The package is byte-first:
-operations move raw bytes, then explicitly materialize into R objects
-through modes and serializers.
+Ropendal: **Abstract Filesystem Access Interface for R** via the Rust
+crate [`opendal`](https://crates.io/crates/opendal), using
+[`savvy`](https://github.com/yutannihilation/savvy) for R/Rust FFI. We
+keep the bottom layer byte-first: filesystem operations move raw bytes,
+and serializers or codecs explicitly materialize those bytes into R
+objects.
 
-The async API is inspired by `nanonext`-style Aio handles: issue async
-work with `fs_*_aio()`, then `call_aio()` to wait for completion and
-update the Aio object, and `collect_aio()` to retrieve the result (or an
-`opendalErrorValue`).
+Async work uses Aio handles inspired by
+[`nanonext`](https://nanonext.r-lib.org/): we issue work with
+`fs_*_aio()`, wait with `call_aio()`, and retrieve the payload (or an
+`opendalErrorValue`) with `collect_aio()`.
+
+We expose the same principles to native packages through a pure C API in
+`inst/include/ropendal.h`: submit async work, wait on an Aio, then read
+borrowed results or fill caller-owned buffers without routing data
+through R raw vectors.
+
+Backends are configured explicitly. We pass HTTP headers to
+`opendal("http")` with `headers`, and we pass credential provider
+objects such as `credentials_s3()`, `credentials_gcs()`,
+`credentials_azblob()`, and `credentials_gdrive()` with `auth`.
 
 ## Installation
 
@@ -88,6 +100,11 @@ vapply(entries, `[[`, character(1), "path")
 
 ## Async reads and explicit wait
 
+We get an Aio handle, wait for it, and collect the result when needed.
+`fs_read()` is vectorized too: we can pass several paths with
+`batch_concurrency` when we want one call to launch multiple reads at
+the same time.
+
 ``` r
 aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
@@ -99,78 +116,257 @@ collect_aio(aio)
 
 The same `fs_*` calls apply to HTTP(S), S3, and Google Drive handles.
 
-### HTTP/HTTPS read example (uses the package-provided HTTP fixture server)
+### HTTP/HTTPS read example
+
+We define the headers once, require them on the local fixture, and pass
+the same headers to the HTTP filesystem handle.
 
 ``` r
-# Uses the fixture HTTP server provided by this package for a reproducible example.
 root <- tempfile("ropendal-http-readme-")
 dir.create(root, recursive = TRUE)
 writeLines("hello http example", file.path(root, "hello.txt"))
 
-fixture <- OpendalHttpFixture$start(root)
-http_fs <- opendal("http", endpoint = fixture$endpoint(), root = "/")
-http_head <- rawToChar(fs_read(http_fs, "hello.txt"))
-http_head
+headers <- list(
+  Authorization = "Bearer ropendal-readme",
+  `X-Ropendal-Example` = "headers"
+)
+
+fixture <- OpendalHttpFixture$start(root, required_headers = headers)
+http_fs <- opendal("http", endpoint = fixture$endpoint(), root = "/", headers = headers)
+
+rawToChar(fs_read(http_fs, "hello.txt"))
+#> [1] "hello http example\n"
+fs_stat(http_fs, "hello.txt")[c("path", "type", "size")]
+#> $path
+#> [1] "hello.txt"
+#> 
+#> $type
+#> [1] "file"
+#> 
+#> $size
+#> [1] 19
+
 fixture$stop()
+#> [1] TRUE
 ```
 
-### Public S3-compatible read example (VCF header)
+### S3-compatible store (local MinIO)
+
+We set up a temporary MinIO instance behind the scenes, then check that
+the S3-compatible store supports the same byte API.
 
 ``` r
-if (!identical(Sys.getenv("ROPENDAL_README_S3", ""), "true")) {
-  cat("Set ROPENDAL_README_S3=true and network access to run this public S3 example.\n")
-} else {
-  s3_fs <- opendal(
-    "s3",
-    endpoint = Sys.getenv("ROPENDAL_S3_PUBLIC_ENDPOINT", "https://uk1s3.embassy.ebi.ac.uk"),
-    bucket = Sys.getenv("ROPENDAL_S3_PUBLIC_BUCKET", "idr"),
-    root = Sys.getenv("ROPENDAL_S3_PUBLIC_ROOT", "/zarr/v0.4/idr0062A/6001240.zarr"),
-    region = Sys.getenv("ROPENDAL_S3_PUBLIC_REGION", "us-east-1"),
-    skip_signature = TRUE,
-    disable_config_load = TRUE
-  )
+minio <- readme_start_minio()
+s3_fs <- minio$fs
 
-  vcf_gz <- fs_read(
-    s3_fs,
-    "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz",
-    size = 16384
-  )
-  con <- gzcon(rawConnection(vcf_gz))
-  vcf_header <- readLines(con, n = 5)
-  close(con)
-  cat(vcf_header, sep = "\n")
-  cat("\n")
-}
-#> Set ROPENDAL_README_S3=true and network access to run this public S3 example.
+fs_write(s3_fs, "notes/a.txt", charToRaw("hello s3-compatible store\n"))
+#> [1] TRUE
+fs_write(s3_fs, "notes/b.txt", charToRaw("another object\n"))
+#> [1] TRUE
+
+rawToChar(fs_read(s3_fs, "notes/a.txt"))
+#> [1] "hello s3-compatible store\n"
+fs_stat(s3_fs, "notes/a.txt")[c("path", "type", "size")]
+#> $path
+#> [1] "notes/a.txt"
+#> 
+#> $type
+#> [1] "file"
+#> 
+#> $size
+#> [1] 26
+vapply(fs_ls(s3_fs, "notes/"), `[[`, character(1), "path")
+#> [1] "notes/a.txt" "notes/b.txt"
+
+aio <- fs_read_aio(s3_fs, "notes/b.txt")
+call_aio(aio)
+rawToChar(collect_aio(aio))
+#> [1] "another object\n"
+
+restore_aws_env <- readme_set_aws_env(minio)
+paws_s3 <- paws.storage::s3(
+  endpoint = minio$endpoint,
+  region = minio$region,
+  config = list(s3_force_path_style = TRUE)
+)
+
+payload <- as.raw(sample.int(256L, 1024L * 1024L, replace = TRUE) - 1L)
+bench_key <- "bench/payload.bin"
+invisible(fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024))
+invisible(paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload))
+
+bench::mark(
+  ropendal_replace = fs_replace(s3_fs, bench_key, payload, write_concurrency = 4, chunk_size = 512 * 1024),
+  paws_put = {
+    paws_s3$put_object(Bucket = minio$bucket, Key = bench_key, Body = payload)
+    TRUE
+  },
+  iterations = 3,
+  check = FALSE
+)[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+#> # A tibble: 2 × 5
+#>   expression            min   median `itr/sec` mem_alloc
+#>   <bch:expr>       <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_replace   7.57ms   8.48ms     121.         0B
+#> 2 paws_put          20.94ms  21.56ms      46.4    1.16MB
+
+bench::mark(
+  ropendal_read = fs_read(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024),
+  ropendal_read_aio = collect_aio(fs_read_aio(s3_fs, bench_key, read_concurrency = 4, chunk_size = 512 * 1024)),
+  paws_get = paws_s3$get_object(Bucket = minio$bucket, Key = bench_key)$Body,
+  iterations = 3,
+  check = FALSE
+)[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
+#> # A tibble: 3 × 5
+#>   expression             min   median `itr/sec` mem_alloc
+#>   <bch:expr>        <bch:tm> <bch:tm>     <dbl> <bch:byt>
+#> 1 ropendal_read        2.1ms   2.14ms      455.       1MB
+#> 2 ropendal_read_aio   2.04ms   2.11ms      476.       1MB
+#> 3 paws_get            7.27ms   7.85ms      127.    1.29MB
+
+restore_aws_env()
+minio$stop()
 ```
 
 ### Google Drive read example (credentials explicit)
 
+For Google Drive, we pass a credential provider object through `auth`
+and keep secret material outside the filesystem handle printout.
+
 ``` r
-if (!identical(Sys.getenv("ROPENDAL_README_GDRIVE", ""), "true")) {
-  cat("Set ROPENDAL_README_GDRIVE=true with credentials to run this Google Drive example.\n")
-} else {
-  secret_json <- Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON")
-  tokens_json <- Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", unset = file.path(dirname(secret_json), "tokens.json"))
-  if (!nzchar(secret_json) || !nzchar(tokens_json) || !file.exists(secret_json) || !file.exists(tokens_json)) {
-    cat("Set valid ROPENDAL_GDRIVE_SECRET_JSON and ROPENDAL_GDRIVE_TOKENS_JSON paths to run this example.\n")
-  } else {
-    gdrive_root <- Sys.getenv("ROPENDAL_GDRIVE_ROOT", unset = "Ropendal")
-    gdrive_file <- Sys.getenv("ROPENDAL_GDRIVE_FILE", unset = "map_catalog.txt")
-    drive_fs <- opendal(
-      "gdrive",
-      root = gdrive_root,
-      auth = credentials_gdrive3(
-        secret_json = secret_json,
-        tokens_json = tokens_json,
-        scope = "https://www.googleapis.com/auth/drive"
-      )
-    )
-    drive_head <- rawToChar(fs_read(drive_fs, gdrive_file, size = 64))
-    cat(drive_head, "\n")
-  }
+secret_json <- Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON")
+tokens_json <- Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", unset = file.path(dirname(secret_json), "tokens.json"))
+gdrive_root <- Sys.getenv("ROPENDAL_GDRIVE_ROOT", unset = "Ropendal")
+gdrive_file <- Sys.getenv("ROPENDAL_GDRIVE_FILE", unset = "map_catalog.txt")
+
+drive_fs <- opendal(
+  "gdrive",
+  root = gdrive_root,
+  auth = credentials_gdrive3(
+    secret_json = secret_json,
+    tokens_json = tokens_json,
+    scope = "https://www.googleapis.com/auth/drive"
+  )
+)
+drive_head <- rawToChar(fs_read(drive_fs, gdrive_file, size = 64))
+drive_head
+```
+
+## Native C API smoke test
+
+The native API is for other R packages that want OpenDAL-backed byte I/O
+without calling R while async work is running. A downstream package can
+declare `LinkingTo: Ropendal`, include `<ropendal.h>`, submit async
+work, wait on Aio handles, and read borrowed results or fill
+caller-owned buffers.
+
+We exercise that installed C API in-process with
+[`Rtinycc`](https://github.com/sounkou-bioinfo/Rtinycc). The C code
+submits async work, waits on Aio handles, checks metadata, lists
+entries, and reads into a caller-owned buffer.
+
+``` r
+root <- tempfile("ropendal-c-api-readme-")
+dir.create(root, recursive = TRUE)
+
+ropendal_lib <- list.files(
+  system.file("libs", package = "Ropendal"),
+  pattern = paste0("Ropendal", .Platform$dynlib.ext, "$"),
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+c_api_code <- '
+#include <stdint.h>
+#include <string.h>
+#include "ropendal.h"
+
+static int cleanup(ropendal_fs_t *fs, ropendal_aio_t *aio, ropendal_error_t *err) {
+  if (aio) ropendal_aio_release(aio);
+  if (fs) ropendal_fs_release(fs);
+  if (err) ropendal_error_release(err);
+  return -1;
 }
-#> Set ROPENDAL_README_GDRIVE=true with credentials to run this Google Drive example.
+
+int ropendal_c_api_smoke(const char *root) {
+  ropendal_error_t *err = 0;
+  ropendal_fs_t *fs = 0;
+  ropendal_aio_t *aio = 0;
+  ropendal_kv_t cfg = { sizeof(ropendal_kv_t), "root", root };
+
+  ropendal_status_t st = ropendal_fs_open("fs", &cfg, 1, &fs, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+
+  const uint8_t payload[] = "hello native api\\n";
+  const size_t payload_len = sizeof(payload) - 1;
+  ropendal_write_options_t w = {0};
+  w.struct_size = sizeof(w);
+  w.path = "native.txt";
+
+  st = ropendal_write_aio(fs, &w, payload, payload_len, &aio, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  st = ropendal_aio_wait(aio, -1, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  ropendal_aio_release(aio);
+  aio = 0;
+
+  st = ropendal_stat_aio(fs, "native.txt", 0, 0, &aio, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  st = ropendal_aio_wait(aio, -1, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  const ropendal_entry_t *entry = 0;
+  st = ropendal_aio_result_entry(aio, &entry, &err);
+  if (st != ROPENDAL_OK || !entry || !entry->has_content_length || entry->content_length != payload_len) {
+    return cleanup(fs, aio, err);
+  }
+  ropendal_aio_release(aio);
+  aio = 0;
+
+  ropendal_ls_options_t ls = {0};
+  ls.struct_size = sizeof(ls);
+  ls.path = "";
+  st = ropendal_ls_aio(fs, &ls, &aio, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  st = ropendal_aio_wait(aio, -1, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  const ropendal_entry_t *entries = 0;
+  size_t nentries = 0;
+  st = ropendal_aio_result_entries(aio, &entries, &nentries, &err);
+  if (st != ROPENDAL_OK || nentries == 0) return cleanup(fs, aio, err);
+  ropendal_aio_release(aio);
+  aio = 0;
+
+  uint8_t dst[64] = {0};
+  ropendal_read_options_t r = {0};
+  r.struct_size = sizeof(r);
+  r.path = "native.txt";
+  st = ropendal_read_into_aio(fs, &r, dst, sizeof(dst), &aio, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  st = ropendal_aio_wait(aio, -1, &err);
+  if (st != ROPENDAL_OK) return cleanup(fs, aio, err);
+  size_t nread = 0;
+  st = ropendal_aio_result_nread(aio, &nread, &err);
+  if (st != ROPENDAL_OK || nread != payload_len || memcmp(dst, payload, payload_len) != 0) {
+    return cleanup(fs, aio, err);
+  }
+
+  ropendal_aio_release(aio);
+  ropendal_fs_release(fs);
+  return (int)nread;
+}
+'
+
+ffi <- Rtinycc::tcc_ffi() |>
+  Rtinycc::tcc_include(system.file("include", package = "Ropendal")) |>
+  Rtinycc::tcc_library(ropendal_lib[[1]]) |>
+  Rtinycc::tcc_source(c_api_code) |>
+  Rtinycc::tcc_bind(
+    ropendal_c_api_smoke = list(args = list("cstring"), returns = "i32")
+  ) |>
+  Rtinycc::tcc_compile()
+
+ffi$ropendal_c_api_smoke(root)
+#> [1] 17
 ```
 
 ## Development
@@ -187,7 +383,7 @@ Common development targets:
   make test-s3-minio   start local MinIO and run writable S3-compatible tests
   make test-gdrive     run opt-in Google Drive tests using local gdrive3 JSON defaults
   make test-ci         run C API checks and CI-only tinytest
-  make rdm             render README.md from README.Rmd; GDrive execution stays opt-in
+  make rdm             render README.md from README.Rmd
   make bench-minio-paws render development MinIO benchmark
   make check           build and run R CMD check --as-cran --no-manual
 ```
