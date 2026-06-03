@@ -28,6 +28,12 @@ We expose the same principles to native packages through a pure C API in
 borrowed results or fill caller-owned buffers without routing data
 through R raw vectors.
 
+Serializers and codecs are first-class. Serializer/deserializer pairs
+control R-object materialization; native codecs such as `gzip` and
+`zlib` transform raw bytes. Both layers stay explicit through `mode`,
+`serial_config()`, `codec_config()`, `serialize_raw()`, and
+`deserialize_raw()`.
+
 Backends are configured explicitly. We pass HTTP headers to
 `opendal("http")` with `headers`, and we pass credential provider
 objects such as `credentials_s3()`, `credentials_gcs()`,
@@ -65,7 +71,10 @@ install.packages(
 )
 ```
 
-## Quick start
+## Quick start: one handle, many byte surfaces
+
+A single filesystem handle gives us byte primitives, vectorized batches,
+Aio handles, explicit serializers/codecs, and lower-level iterators.
 
 ``` r
 library(Ropendal)
@@ -76,14 +85,12 @@ dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
 
+# Byte primitives: write, read, stat, list.
 fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
 #> [1] TRUE
-raw <- fs_read(fs, "note.txt")
-rawToChar(raw)
+rawToChar(fs_read(fs, "note.txt"))
 #> [1] "hello ropendal\n"
-
-stat <- fs_stat(fs, "note.txt")
-stat[c("path", "type", "size")]
+fs_stat(fs, "note.txt")[c("path", "type", "size")]
 #> $path
 #> [1] "note.txt"
 #> 
@@ -92,24 +99,78 @@ stat[c("path", "type", "size")]
 #> 
 #> $size
 #> [1] 15
-
-entries <- fs_ls(fs)
-vapply(entries, `[[`, character(1), "path")
+vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "note.txt"
-```
 
-## Async reads and explicit wait
+# Batch submission: one call can launch multiple object operations.
+paths <- c("batch/one.txt", "batch/two.txt")
+fs_write(
+  fs,
+  paths,
+  list(charToRaw("one\n"), charToRaw("two\n")),
+  batch_concurrency = 2
+)
+#> [[1]]
+#> [1] TRUE
+#> 
+#> [[2]]
+#> [1] TRUE
+many <- fs_read(fs, paths, offset = c(0, 0), batch_concurrency = 2)
+vapply(many, rawToChar, character(1))
+#> [1] "one\n" "two\n"
 
-We get an Aio handle, wait for it, and collect the result when needed.
-`fs_read()` is vectorized too: we can pass several paths with
-`batch_concurrency` when we want one call to launch multiple reads at
-the same time.
-
-``` r
+# Async: get an Aio handle, wait, then collect the payload.
 aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
-collect_aio(aio)
-#>  [1] 68 65 6c 6c 6f 20 72 6f 70 65 6e 64 61 6c 0a
+rawToChar(collect_aio(aio))
+#> [1] "hello ropendal\n"
+
+# Serializers and codecs are explicit byte materialization layers.
+point_config <- serial_config(
+  "ropendal_point",
+  sfunc = function(x) charToRaw(sprintf("%s,%s", x$x, x$y)),
+  ufunc = function(raw) {
+    xy <- as.numeric(strsplit(rawToChar(raw), ",", fixed = TRUE)[[1]])
+    structure(list(x = xy[[1]], y = xy[[2]]), class = "ropendal_point")
+  }
+)
+point <- structure(list(x = 1, y = 2), class = "ropendal_point")
+fs_replace(fs, "objects/point.txt", point, mode = "serial", serial_config = point_config)
+#> [1] TRUE
+fs_read(fs, "objects/point.txt", mode = "serial", serial_config = point_config)
+#> $x
+#> [1] 1
+#> 
+#> $y
+#> [1] 2
+#> 
+#> attr(,"class")
+#> [1] "ropendal_point"
+
+fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
+#> [1] TRUE
+rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
+#> [1] "compressed bytes\n"
+
+# Lower-level iterators expose chunked write/read control.
+writer <- fs_write_iter(fs, "stream.txt")
+write_iter_write(writer, charToRaw("hello "))
+#> [1] TRUE
+write_iter_write(writer, charToRaw("iterator\n"))
+#> [1] TRUE
+write_iter_close(writer)
+#> [1] TRUE
+
+reader <- fs_read_iter(fs, "stream.txt", chunk_size = 5)
+first <- read_iter_next(reader)
+rawToChar(first$data)
+#> [1] "hello"
+fs_tell(reader)
+#> [1] 5
+fs_seek(reader, 6)
+#> [1] 6
+rawToChar(read_iter_collect(reader))
+#> [1] "iterator\n"
 ```
 
 ## Tour of the API across backends
@@ -234,9 +295,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace               127ms    268ms      4.23    10.5KB
-#> 2 ropendal_replace_concurrent    245ms    252ms      3.85        0B
-#> 3 paws_put                       534ms    534ms      1.87    67.7MB
+#> 1 ropendal_replace             121.8ms  126.7ms      7.90        0B
+#> 2 ropendal_replace_concurrent   76.4ms   83.7ms     11.8         0B
+#> 3 paws_put                     566.1ms  566.1ms      1.77    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -268,17 +329,18 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  58.7ms   77.7ms      13.1      64MB
-#> 2 ropendal_read_concurrent       31.8ms   36.2ms      27.5      64MB
-#> 3 ropendal_read_aio              57.5ms   61.4ms      16.3      64MB
-#> 4 ropendal_read_aio_concurrent   33.2ms   34.4ms      27.7      64MB
-#> 5 paws_get                       52.5ms   56.3ms      18.0    64.3MB
+#> 1 ropendal_read                  50.9ms   53.4ms      15.2      64MB
+#> 2 ropendal_read_concurrent       32.3ms   33.3ms      30.1      64MB
+#> 3 ropendal_read_aio              45.3ms   48.4ms      19.2      64MB
+#> 4 ropendal_read_aio_concurrent   35.1ms   37.7ms      25.9      64MB
+#> 5 paws_get                       51.4ms   51.8ms      18.9    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
 
 For Google Drive, we pass a credential provider object through `auth`
-and keep secret material outside the filesystem handle printout.
+and keep secret material outside the filesystem handle printout. The
+chunk evaluates when local credential files are available.
 
 ``` r
 secret_json <- Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON")
@@ -297,6 +359,7 @@ drive_fs <- opendal(
 )
 drive_head <- rawToChar(fs_read(drive_fs, gdrive_file, size = 64))
 drive_head
+#> [1] "tr \":\" \" \" < hglft_genome_58b39_637d30_hdl_metal.bed | tr \"-\" \" "
 ```
 
 ## Native C API roundtrip
@@ -580,15 +643,17 @@ if (status < 0L) {
 nread <- ffi$ropendal_demo_nread(task)
 invisible(ffi$ropendal_demo_free(task))
 do.call(rbind, events)
-#>   tick native_status    native_step r_work
-#> 1    1       running     wait write 500500
-#> 2    2       running     wait write 500500
-#> 3    3       running     wait write 500500
-#> 4    4       running     wait write 500500
-#> 5    5       running      wait stat 500500
-#> 6    6       running      wait list 500500
-#> 7    7       running wait read_into 500500
-#> 8    8          done       complete 500500
+#>    tick native_status    native_step r_work
+#> 1     1       running     wait write 500500
+#> 2     2       running     wait write 500500
+#> 3     3       running     wait write 500500
+#> 4     4       running     wait write 500500
+#> 5     5       running     wait write 500500
+#> 6     6       running     wait write 500500
+#> 7     7       running      wait stat 500500
+#> 8     8       running      wait list 500500
+#> 9     9       running wait read_into 500500
+#> 10   10          done       complete 500500
 c(bytes_read_into_c_buffer = nread)
 #> bytes_read_into_c_buffer 
 #>                       17

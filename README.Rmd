@@ -31,6 +31,11 @@ We expose the same principles to native packages through a pure C API in
 `inst/include/ropendal.h`: submit async work, wait on an Aio, then read borrowed
 results or fill caller-owned buffers without routing data through R raw vectors.
 
+Serializers and codecs are first-class. Serializer/deserializer pairs control
+R-object materialization; native codecs such as `gzip` and `zlib` transform raw
+bytes. Both layers stay explicit through `mode`, `serial_config()`,
+`codec_config()`, `serialize_raw()`, and `deserialize_raw()`.
+
 Backends are configured explicitly. We pass HTTP headers to `opendal("http")`
 with `headers`, and we pass credential provider objects such as
 `credentials_s3()`, `credentials_gcs()`, `credentials_azblob()`, and
@@ -72,7 +77,10 @@ install.packages(
 )
 ```
 
-## Quick start
+## Quick start: one handle, many byte surfaces
+
+A single filesystem handle gives us byte primitives, vectorized batches, Aio
+handles, explicit serializers/codecs, and lower-level iterators.
 
 ```{r quick-start}
 library(Ropendal)
@@ -83,27 +91,56 @@ dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
 
+# Byte primitives: write, read, stat, list.
 fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
-raw <- fs_read(fs, "note.txt")
-rawToChar(raw)
+rawToChar(fs_read(fs, "note.txt"))
+fs_stat(fs, "note.txt")[c("path", "type", "size")]
+vapply(fs_ls(fs), `[[`, character(1), "path")
 
-stat <- fs_stat(fs, "note.txt")
-stat[c("path", "type", "size")]
+# Batch submission: one call can launch multiple object operations.
+paths <- c("batch/one.txt", "batch/two.txt")
+fs_write(
+  fs,
+  paths,
+  list(charToRaw("one\n"), charToRaw("two\n")),
+  batch_concurrency = 2
+)
+many <- fs_read(fs, paths, offset = c(0, 0), batch_concurrency = 2)
+vapply(many, rawToChar, character(1))
 
-entries <- fs_ls(fs)
-vapply(entries, `[[`, character(1), "path")
-```
-
-## Async reads and explicit wait
-
-We get an Aio handle, wait for it, and collect the result when needed. `fs_read()`
-is vectorized too: we can pass several paths with `batch_concurrency` when we
-want one call to launch multiple reads at the same time.
-
-```{r quick-async}
+# Async: get an Aio handle, wait, then collect the payload.
 aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
-collect_aio(aio)
+rawToChar(collect_aio(aio))
+
+# Serializers and codecs are explicit byte materialization layers.
+point_config <- serial_config(
+  "ropendal_point",
+  sfunc = function(x) charToRaw(sprintf("%s,%s", x$x, x$y)),
+  ufunc = function(raw) {
+    xy <- as.numeric(strsplit(rawToChar(raw), ",", fixed = TRUE)[[1]])
+    structure(list(x = xy[[1]], y = xy[[2]]), class = "ropendal_point")
+  }
+)
+point <- structure(list(x = 1, y = 2), class = "ropendal_point")
+fs_replace(fs, "objects/point.txt", point, mode = "serial", serial_config = point_config)
+fs_read(fs, "objects/point.txt", mode = "serial", serial_config = point_config)
+
+fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
+rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
+
+# Lower-level iterators expose chunked write/read control.
+writer <- fs_write_iter(fs, "stream.txt")
+write_iter_write(writer, charToRaw("hello "))
+write_iter_write(writer, charToRaw("iterator\n"))
+write_iter_close(writer)
+
+reader <- fs_read_iter(fs, "stream.txt", chunk_size = 5)
+first <- read_iter_next(reader)
+rawToChar(first$data)
+fs_tell(reader)
+fs_seek(reader, 6)
+rawToChar(read_iter_collect(reader))
 ```
 
 ## Tour of the API across backends
@@ -356,9 +393,22 @@ minio$stop()
 ### Google Drive read example (credentials explicit)
 
 For Google Drive, we pass a credential provider object through `auth` and keep
-secret material outside the filesystem handle printout.
+secret material outside the filesystem handle printout. The chunk evaluates when
+local credential files are available.
 
-```{r api-tour-gdrive, eval = identical(Sys.getenv("ROPENDAL_README_GDRIVE", "false"), "true")}
+```{r readme-gdrive-helper, include = FALSE}
+readme_gdrive_secret_json <- Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON")
+readme_gdrive_tokens_json <- Sys.getenv(
+  "ROPENDAL_GDRIVE_TOKENS_JSON",
+  unset = if (nzchar(readme_gdrive_secret_json)) file.path(dirname(readme_gdrive_secret_json), "tokens.json") else ""
+)
+readme_run_gdrive <- nzchar(readme_gdrive_secret_json) &&
+  nzchar(readme_gdrive_tokens_json) &&
+  file.exists(readme_gdrive_secret_json) &&
+  file.exists(readme_gdrive_tokens_json)
+```
+
+```{r api-tour-gdrive, eval = readme_run_gdrive}
 secret_json <- Sys.getenv("ROPENDAL_GDRIVE_SECRET_JSON")
 tokens_json <- Sys.getenv("ROPENDAL_GDRIVE_TOKENS_JSON", unset = file.path(dirname(secret_json), "tokens.json"))
 gdrive_root <- Sys.getenv("ROPENDAL_GDRIVE_ROOT", unset = "Ropendal")
