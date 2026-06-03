@@ -175,11 +175,11 @@ Service env vars:
 Coverage:
 
 - auth construction redacts secrets
-- public S3-compatible read/stat/list/range reads
-- HTTP fixture read/stat/range reads, unsupported listing value, explicit `headers=` authentication path, and delayed-response pending Aio state
+- public S3-compatible read/stat/list/range reads plus async read/stat/exists/list coverage
+- HTTP fixture read/stat/range reads, unsupported listing value, async stat/exists/unsupported-listing coverage, explicit `headers=` authentication path, and delayed-response pending Aio state
 - classed capability profile checks for local `fs`, HTTP fixture, public S3, and local MinIO
-- local MinIO write/read/stat/list/copy/delete in an isolated prefix
-- unsupported S3-compatible atomic rename returns an error value rather than silent emulation
+- local MinIO write/read/stat/list/copy/delete in an isolated prefix plus async write/read/stat/exists/list/copy/rename/delete coverage
+- unsupported S3-compatible atomic rename returns an error value rather than silent emulation, sync and async
 - range reads
 - concurrency options accepted and bounded
 - service-specific rate-limit defaults are conservative

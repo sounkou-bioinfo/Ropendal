@@ -43,6 +43,16 @@ walk_entries <- walk_iter_collect(fs_walk_iter(fs))
 expect_true(is_error_value(walk_entries))
 expect_equal(error_kind(walk_entries), "Unsupported")
 
+async_stat <- collect_aio(fs_stat_aio(fs, "data.bin"))
+expect_false(is_error_value(async_stat))
+expect_equal(async_stat$type, "file")
+expect_equal(async_stat$size, length(bytes))
+expect_true(collect_aio(fs_exists_aio(fs, "data.bin")))
+expect_false(collect_aio(fs_exists_aio(fs, "missing.bin")))
+async_listing <- collect_aio(fs_ls_aio(fs))
+expect_true(is_error_value(async_listing))
+expect_equal(error_kind(async_listing), "Unsupported")
+
 header_fixture <- Ropendal:::OpendalHttpFixture$start(
   root,
   list(Authorization = "Bearer ropendal-test", `X-Ropendal-Test` = "fixture")

@@ -62,16 +62,16 @@ GitHub Actions jobs:
 | vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
 | strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added; batch write now uses bounded async execution |
 | metadata as Rust/C-defined lists | yes | yes | yes | yes | stat/list tested |
-| `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | pending | Rust checks existence before create; accepts batch/write transfer tuning; async local test added |
-| `fs_replace()` / `fs_replace_aio()` replacement | yes | yes | yes | pending | local sync and async tests |
-| `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | no | returns unsupported if profile lacks append; async API wired |
+| `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning; async local and MinIO tests |
+| `fs_replace()` / `fs_replace_aio()` replacement | yes | yes | yes | yes | local sync/async and MinIO async tests |
+| `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | yes | local `fs` roundtrip in installed C API; R async API wired; broader backend capability coverage remains service-dependent |
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
 | `OpendalBytes` / `fs_read_bytes()` / `fs_read_bytes_aio()` | yes | yes | yes | no | Rust-owned immutable byte handles; `as.raw()`/`length()` materialization; writes accept handles without rerouting through another R raw vector |
 | `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
 | `fs_ls_iter()` / `fs_walk_iter()` streaming namespace traversal | yes | yes | yes | no | Rust-backed `OpendalLsIter` with `page_size`, `*_next()`, and `*_collect()`; empty listing, paged root listing, and recursive local walk tested |
-| `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | pending | metadata/existence sync plus async local tests; `fs_stats*` aliases vectorized `fs_stat*`; remote services should use async-first path |
-| `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | pending | root entry filtered for local `fs`; public S3 and MinIO listing tested for sync; async local test added; HTTP currently unsupported by OpenDAL |
-| `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | pending | direct sync methods tested; async local namespace tests added; MinIO covers S3 copy/delete and unsupported atomic rename error value |
+| `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | partial | metadata/existence sync plus async local, HTTP fixture, public S3, and MinIO tests; `fs_stats*` aliases vectorized `fs_stat*` |
+| `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | partial | root entry filtered for local `fs`; sync and async listing tested for local, public S3, and MinIO; HTTP unsupported value tested sync and async |
+| `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | partial | direct sync methods tested; async local namespace tests; MinIO covers S3 copy/delete and unsupported/supported atomic rename outcomes sync and async |
 | `serial_config(class, sfunc, ufunc)` / `serialize_raw()` / `deserialize_raw()` / `mode = "serial"` | yes | yes | yes | no | base serialization, custom class envelopes, `opt(fs, "serial")`, sync/Aio read/write materialization, vectorized serial writes, reset via `list()`, and partial-range rejection tested locally |
 | `codec_config()` / `codec =` explicit native byte-codec layer | yes | partial | yes | yes | `identity`, `gzip`, and `zlib` native transforms; sync/Aio raw and serial+codec local roundtrips; C API byte-handle encode/decode roundtrip |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
@@ -81,8 +81,8 @@ GitHub Actions jobs:
 | Contract | Documented | Implemented | Tested default | Tested CI | Notes |
 |---|---:|---:|---:|---:|---|
 | generic `OpendalAio` native result future | yes | yes | yes | pending | bytes, unit, bool, metadata, entries, many, error, cancelled outcome family implemented |
-| `_aio()` for metadata/namespace operations | yes | yes | yes | pending | stat/stats, exists, ls, mkdir, delete, copy, rename implemented and locally tested |
-| `_aio()` for writes | yes | yes | yes | pending | write, replace, append API implemented; local tests cover write/replace |
+| `_aio()` for metadata/namespace operations | yes | yes | yes | partial | stat/stats, exists, ls, mkdir, delete, copy, rename implemented; local plus HTTP/S3/MinIO service coverage added where supported |
+| `_aio()` for writes | yes | yes | yes | partial | write, replace, append API implemented; local and MinIO cover write/replace; append remains backend-dependent |
 | active bindings `$value` / `$data` / `$result` / `$state` / `$resolved` / `$error` | yes | yes | partial | pending | generated Aio wrappers are decorated with read-only active bindings; post-resolution behavior tested by default, deterministic pending behavior tested with delayed local HTTP fixture |
 | `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
@@ -125,7 +125,7 @@ GitHub Actions jobs:
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests for additional service profiles and consider higher-level capability interfaces for consumers.
 9. Expand credential helpers beyond Google Drive and add more service coverage.
-10. Add richer service-level async tests for metadata/namespace Aios on opt-in remote backends.
+10. Add richer service-level async tests for additional providers beyond current HTTP/S3/MinIO coverage.
 
 ## Deferred milestones
 
