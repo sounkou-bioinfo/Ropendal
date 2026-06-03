@@ -1,6 +1,22 @@
 #include <stdint.h>
 #include "../inst/include/ropendal.h"
 
+/*
+ * Keep this file in sync with inst/include/ropendal.h.
+ *
+ * The savvy-generated src/init.c registers R's .Call entry points only. The
+ * pure C API below is a separate downstream-native ABI implemented in Rust and
+ * documented by inst/include/ropendal.h; most of these symbols are not called
+ * by R's registration layer.
+ *
+ * When the Rust library is linked into Ropendal.so, link-time dead stripping can
+ * otherwise decide that unreferenced extern "C" functions are unnecessary. This
+ * anchor takes each public C API function's address from a C translation unit,
+ * forcing the linker to retain the symbols in the installed shared library.
+ * It is intentionally not R_RegisterCCallable(); downstream C users include the
+ * header and link/load against the Ropendal native library directly.
+ */
+
 typedef void (*ropendal_any_fn)(void);
 
 ropendal_any_fn ropendal_c_api_anchor[] = {

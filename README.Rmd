@@ -56,6 +56,26 @@ install.packages(
 )
 ```
 
+R-universe also publishes Linux binaries for Ubuntu `noble` on `x86_64` and
+`arm64` for R-release and R-devel. To prefer those binaries on Linux, point
+`repos` at the known binary repositories for this universe and CRAN dependencies:
+
+```{r install-linux-binaries, eval = FALSE}
+options(repos = c(
+  Ropendal = sprintf(
+    "https://sounkou-bioinfo.r-universe.dev/bin/linux/noble-%s/%s/",
+    R.version$arch,
+    substr(getRversion(), 1, 3)
+  ),
+  CRAN = sprintf(
+    "https://cran.r-universe.dev/bin/linux/noble-%s/%s/",
+    R.version$arch,
+    substr(getRversion(), 1, 3)
+  )
+))
+install.packages("Ropendal")
+```
+
 Source builds can still use explicit OpenDAL feature flags when you need custom
 provider wiring.
 

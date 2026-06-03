@@ -50,6 +50,27 @@ install.packages(
 )
 ```
 
+R-universe also publishes Linux binaries for Ubuntu `noble` on `x86_64`
+and `arm64` for R-release and R-devel. To prefer those binaries on
+Linux, point `repos` at the known binary repositories for this universe
+and CRAN dependencies:
+
+``` r
+options(repos = c(
+  Ropendal = sprintf(
+    "https://sounkou-bioinfo.r-universe.dev/bin/linux/noble-%s/%s/",
+    R.version$arch,
+    substr(getRversion(), 1, 3)
+  ),
+  CRAN = sprintf(
+    "https://cran.r-universe.dev/bin/linux/noble-%s/%s/",
+    R.version$arch,
+    substr(getRversion(), 1, 3)
+  )
+))
+install.packages("Ropendal")
+```
+
 Source builds can still use explicit OpenDAL feature flags when you need
 custom provider wiring.
 
@@ -317,9 +338,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace             126.4ms  129.6ms      7.76        0B
-#> 2 ropendal_replace_concurrent   78.3ms   84.2ms     12.1         0B
-#> 3 paws_put                     532.1ms  532.1ms      1.88    67.7MB
+#> 1 ropendal_replace             126.7ms  130.4ms      7.61        0B
+#> 2 ropendal_replace_concurrent   81.8ms   83.5ms     12.0         0B
+#> 3 paws_put                     544.7ms  544.7ms      1.84    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -349,11 +370,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  47.3ms   47.3ms      21.1      64MB
-#> 2 ropendal_read_concurrent       36.3ms   36.7ms      27.3      64MB
-#> 3 ropendal_read_aio              42.8ms   58.4ms      17.1      64MB
-#> 4 ropendal_read_aio_concurrent   31.7ms   31.7ms      31.6      64MB
-#> 5 paws_get                         56ms   58.1ms      16.8    64.3MB
+#> 1 ropendal_read                  70.6ms   70.6ms      14.2      64MB
+#> 2 ropendal_read_concurrent       34.8ms   35.4ms      28.3      64MB
+#> 3 ropendal_read_aio              39.6ms   47.1ms      21.2      64MB
+#> 4 ropendal_read_aio_concurrent   31.6ms   31.6ms      31.7      64MB
+#> 5 paws_get                       55.4ms   56.7ms      17.1    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -671,15 +692,10 @@ while (status > 0L) {
 #> native request 1: running; wait write
 #> native request 2: running; wait write
 #> native request 3: running; wait write
-#> native request 4: running; wait write
-#> native request 5: running; wait write
-#> native request 6: running; wait write
-#> native request 7: running; wait write
-#> native request 8: running; wait write
-#> native request 9: running; wait stat
-#> native request 10: running; wait list
-#> native request 11: running; wait read_into
-#> native request 12: done; complete
+#> native request 4: running; wait stat
+#> native request 5: running; wait list
+#> native request 6: running; wait read_into
+#> native request 7: done; complete
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
   ffi$ropendal_demo_free(task)
@@ -694,7 +710,7 @@ c(
   bytes_read_into_c_buffer = nread
 )
 #>                  r_ticks                   r_work bytes_read_into_c_buffer 
-#>                       12                  6006000                       17
+#>                        7                  3503500                       17
 ```
 
 ## Development

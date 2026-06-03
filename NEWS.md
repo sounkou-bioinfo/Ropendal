@@ -8,6 +8,7 @@
   S3-compatible MinIO benchmarking, and native C API scheduling.
 - Documentation: aligned design notes, roxygen docs, and vignettes with the
   current async, credential, serializer, and native C API behavior.
+- Documentation: documented R-universe Linux binary repository setup.
 
 ## Ropendal 0.0.1
 
