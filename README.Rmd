@@ -309,7 +309,7 @@ write_progress <- data.frame(
 provider_progress <- data.frame(
   provider = c("fs", "http", "s3-compatible", "gdrive", "gcs", "azblob", "other OpenDAL services"),
   status = c("implemented/tested", "implemented/tested read-only", "implemented/tested with public S3 and MinIO", "implemented/opt-in tested", "feature wired", "feature wired", "extension path"),
-  credentials = c("none", "optional explicit headers", "explicit credentials_s3() or unsigned public config", "explicit credentials_gdrive()/credentials_gdrive3()", "planned explicit provider", "planned explicit provider", "needs config, credential, and tests")
+  credentials = c("none", "optional explicit headers", "explicit credentials_s3() or unsigned public config", "explicit credentials_gdrive()/credentials_gdrive3()", "explicit credentials_gcs()", "explicit credentials_azblob()", "needs config, credential, and tests")
 )
 
 serializer_progress <- data.frame(

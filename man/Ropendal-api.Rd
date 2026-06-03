@@ -7,6 +7,8 @@
 \alias{opendal}
 \alias{opendal_uri}
 \alias{credentials_s3}
+\alias{credentials_gcs}
+\alias{credentials_azblob}
 \alias{credentials_gdrive}
 \alias{credentials_gdrive3}
 \alias{credential_schemes}
@@ -91,6 +93,10 @@ opendal(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
 opendal_uri(uri, headers = NULL)
 credentials_s3(access_key_id, secret_access_key,
                session_token = "", region = "", source = "direct")
+credentials_gcs(token = "", service_account_key = "",
+                credential_path = "", scope = "", source = "direct")
+credentials_azblob(account_name = "", account_key = "", sas_token = "",
+                   endpoint = "", source = "direct")
 credentials_gdrive(access_token = "", refresh_token = "",
                    client_id = "", client_secret = "", source = "direct")
 credentials_gdrive3(secret_json,
@@ -230,6 +236,20 @@ printed by Ropendal.}
 \item{session_token}{Optional S3-compatible session token.}
 
 \item{region}{Optional S3-compatible signing region.}
+
+\item{token}{Google Cloud Storage OAuth2 bearer token.}
+
+\item{service_account_key}{Google Cloud Storage service-account JSON string.}
+
+\item{credential_path}{Explicit path to Google Cloud Storage credential JSON.}
+
+\item{account_name}{Azure Blob Storage account name.}
+
+\item{account_key}{Azure Blob Storage account key.}
+
+\item{sas_token}{Azure Blob Storage SAS token.}
+
+\item{endpoint}{Optional Azure Blob Storage endpoint.}
 
 \item{access_token}{Google Drive access token, mutually exclusive with
 \code{refresh_token}.}

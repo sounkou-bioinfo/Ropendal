@@ -85,8 +85,18 @@ SEXP savvy_OpendalAio_state_name__impl(SEXP self__) {
 }
 
 
+SEXP savvy_OpendalCredentialProvider_azblob__impl(SEXP c_arg__account_name, SEXP c_arg__account_key, SEXP c_arg__sas_token, SEXP c_arg__endpoint, SEXP c_arg__source) {
+    SEXP res = savvy_OpendalCredentialProvider_azblob__ffi(c_arg__account_name, c_arg__account_key, c_arg__sas_token, c_arg__endpoint, c_arg__source);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalCredentialProvider_config__impl(SEXP self__, SEXP c_arg__service) {
     SEXP res = savvy_OpendalCredentialProvider_config__ffi(self__, c_arg__service);
+    return handle_result(res);
+}
+
+SEXP savvy_OpendalCredentialProvider_gcs__impl(SEXP c_arg__token, SEXP c_arg__service_account_key, SEXP c_arg__credential_path, SEXP c_arg__scope, SEXP c_arg__source) {
+    SEXP res = savvy_OpendalCredentialProvider_gcs__ffi(c_arg__token, c_arg__service_account_key, c_arg__credential_path, c_arg__scope, c_arg__source);
     return handle_result(res);
 }
 
@@ -357,7 +367,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalAio_poll__impl", (DL_FUNC) &savvy_OpendalAio_poll__impl, 1},
     {"savvy_OpendalAio_state_name__impl", (DL_FUNC) &savvy_OpendalAio_state_name__impl, 1},
 
+    {"savvy_OpendalCredentialProvider_azblob__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_azblob__impl, 5},
     {"savvy_OpendalCredentialProvider_config__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_config__impl, 2},
+    {"savvy_OpendalCredentialProvider_gcs__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gcs__impl, 5},
     {"savvy_OpendalCredentialProvider_gdrive__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive__impl, 5},
     {"savvy_OpendalCredentialProvider_gdrive3__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_gdrive3__impl, 3},
     {"savvy_OpendalCredentialProvider_s3__impl", (DL_FUNC) &savvy_OpendalCredentialProvider_s3__impl, 5},

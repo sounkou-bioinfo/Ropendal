@@ -5,7 +5,7 @@
 \alias{OpendalCredentialProvider}
 \title{Explicit credential provider.}
 \format{
-An object of class \code{Ropendal::OpendalCredentialProvider__bundle} (inherits from \code{savvy_Ropendal__sealed}) of length 3.
+An object of class \code{Ropendal::OpendalCredentialProvider__bundle} (inherits from \code{savvy_Ropendal__sealed}) of length 5.
 }
 \usage{
 OpendalCredentialProvider

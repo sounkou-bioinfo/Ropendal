@@ -11,7 +11,9 @@ SEXP savvy_OpendalAio_poll__ffi(SEXP self__);
 SEXP savvy_OpendalAio_state_name__ffi(SEXP self__);
 
 // methods and associated functions for OpendalCredentialProvider
+SEXP savvy_OpendalCredentialProvider_azblob__ffi(SEXP c_arg__account_name, SEXP c_arg__account_key, SEXP c_arg__sas_token, SEXP c_arg__endpoint, SEXP c_arg__source);
 SEXP savvy_OpendalCredentialProvider_config__ffi(SEXP self__, SEXP c_arg__service);
+SEXP savvy_OpendalCredentialProvider_gcs__ffi(SEXP c_arg__token, SEXP c_arg__service_account_key, SEXP c_arg__credential_path, SEXP c_arg__scope, SEXP c_arg__source);
 SEXP savvy_OpendalCredentialProvider_gdrive__ffi(SEXP c_arg__access_token, SEXP c_arg__refresh_token, SEXP c_arg__client_id, SEXP c_arg__client_secret, SEXP c_arg__source);
 SEXP savvy_OpendalCredentialProvider_gdrive3__ffi(SEXP c_arg__secret_json, SEXP c_arg__tokens_json, SEXP c_arg__scope);
 SEXP savvy_OpendalCredentialProvider_s3__ffi(SEXP c_arg__access_key_id, SEXP c_arg__secret_access_key, SEXP c_arg__session_token, SEXP c_arg__region, SEXP c_arg__source);

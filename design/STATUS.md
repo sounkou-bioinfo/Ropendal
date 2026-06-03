@@ -74,7 +74,7 @@ GitHub Actions jobs:
 | `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | partial | direct sync methods tested; async local namespace tests; MinIO covers S3 copy/delete and unsupported/supported atomic rename outcomes sync and async |
 | `serial_config(class, sfunc, ufunc)` / `serialize_raw()` / `deserialize_raw()` / `mode = "serial"` | yes | yes | yes | no | base serialization, custom class envelopes, `opt(fs, "serial")`, sync/Aio read/write materialization, vectorized serial writes, reset via `list()`, and partial-range rejection tested locally |
 | `codec_config()` / `codec =` explicit native byte-codec layer | yes | partial | yes | yes | `identity`, `gzip`, and `zlib` native transforms; sync/Aio raw and serial+codec local roundtrips; C API byte-handle encode/decode roundtrip |
-| explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
+| explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with S3, GCS, AzBlob, and Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
 
 ## Async R contracts
 
@@ -124,7 +124,7 @@ GitHub Actions jobs:
 6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests for additional service profiles and consider higher-level capability interfaces for consumers.
-9. Expand credential helpers beyond Google Drive and add more service coverage.
+9. Add more service coverage for explicit cloud credential helpers and any provider-specific readers that remain opt-in and non-ambient.
 10. Add richer service-level async tests for additional providers beyond current HTTP/S3/MinIO coverage.
 
 ## Deferred milestones

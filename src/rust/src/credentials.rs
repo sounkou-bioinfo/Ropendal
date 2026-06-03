@@ -57,6 +57,43 @@ impl OpendalCredentialProvider {
         })
     }
 
+    /// Build a Google Cloud Storage credential provider from explicit fields.
+    /// @export
+    fn gcs(
+        token: &str,
+        service_account_key: &str,
+        credential_path: &str,
+        scope: &str,
+        source: &str,
+    ) -> savvy::Result<Self> {
+        let (config, method) =
+            build_gcs_config(token, service_account_key, credential_path, scope)?;
+        Ok(Self {
+            service: "gcs".to_string(),
+            config,
+            source: checked_scalar(source, "source")?.to_string(),
+            method,
+        })
+    }
+
+    /// Build an Azure Blob Storage credential provider from explicit fields.
+    /// @export
+    fn azblob(
+        account_name: &str,
+        account_key: &str,
+        sas_token: &str,
+        endpoint: &str,
+        source: &str,
+    ) -> savvy::Result<Self> {
+        let (config, method) = build_azblob_config(account_name, account_key, sas_token, endpoint)?;
+        Ok(Self {
+            service: "azblob".to_string(),
+            config,
+            source: checked_scalar(source, "source")?.to_string(),
+            method,
+        })
+    }
+
     /// Build a Google Drive credential provider from a gdrive3 account directory.
     /// @export
     fn gdrive3(secret_json: &str, tokens_json: &str, scope: &str) -> savvy::Result<Self> {
@@ -145,6 +182,82 @@ fn build_s3_config(
         out.push(("region".to_string(), region.to_string()));
     }
     Ok(out)
+}
+
+fn build_gcs_config(
+    token: &str,
+    service_account_key: &str,
+    credential_path: &str,
+    scope: &str,
+) -> savvy::Result<(Vec<(String, String)>, String)> {
+    let supplied = [token, service_account_key, credential_path]
+        .iter()
+        .filter(|value| !value.is_empty())
+        .count();
+    if supplied != 1 {
+        return Err(savvy::Error::new(
+            "use exactly one of token, service_account_key, or credential_path",
+        ));
+    }
+
+    let (mut out, method) = if !token.is_empty() {
+        (
+            vec![("token".to_string(), token.to_string())],
+            "token".to_string(),
+        )
+    } else if !service_account_key.is_empty() {
+        (
+            vec![("credential".to_string(), service_account_key.to_string())],
+            "service_account_key".to_string(),
+        )
+    } else {
+        (
+            vec![("credential_path".to_string(), credential_path.to_string())],
+            "credential_path".to_string(),
+        )
+    };
+    if !scope.is_empty() {
+        out.push(("scope".to_string(), scope.to_string()));
+    }
+    out.push(("disable_config_load".to_string(), "true".to_string()));
+    out.push(("disable_vm_metadata".to_string(), "true".to_string()));
+    Ok((out, method))
+}
+
+fn build_azblob_config(
+    account_name: &str,
+    account_key: &str,
+    sas_token: &str,
+    endpoint: &str,
+) -> savvy::Result<(Vec<(String, String)>, String)> {
+    match (!account_key.is_empty(), !sas_token.is_empty()) {
+        (true, true) => Err(savvy::Error::new(
+            "use only one of account_key or sas_token",
+        )),
+        (false, false) => Err(savvy::Error::new("account_key or sas_token is required")),
+        (true, false) => {
+            checked_scalar(account_name, "account_name")?;
+            let mut out = vec![
+                ("account_name".to_string(), account_name.to_string()),
+                ("account_key".to_string(), account_key.to_string()),
+            ];
+            if !endpoint.is_empty() {
+                out.push(("endpoint".to_string(), endpoint.to_string()));
+            }
+            Ok((out, "account_key".to_string()))
+        }
+        (false, true) => {
+            let mut out = Vec::new();
+            if !account_name.is_empty() {
+                out.push(("account_name".to_string(), account_name.to_string()));
+            }
+            out.push(("sas_token".to_string(), sas_token.to_string()));
+            if !endpoint.is_empty() {
+                out.push(("endpoint".to_string(), endpoint.to_string()));
+            }
+            Ok((out, "sas_token".to_string()))
+        }
+    }
 }
 
 fn build_gdrive_config(

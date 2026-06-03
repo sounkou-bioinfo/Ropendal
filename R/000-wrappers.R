@@ -183,6 +183,14 @@ class(`OpendalBytes`) <- c("Ropendal::OpendalBytes__bundle", "savvy_Ropendal__se
 
 ### associated functions for OpendalCredentialProvider
 
+`OpendalCredentialProvider`$`azblob` <- function(`account_name`, `account_key`, `sas_token`, `endpoint`, `source`) {
+  .savvy_wrap_OpendalCredentialProvider(.Call(savvy_OpendalCredentialProvider_azblob__impl, `account_name`, `account_key`, `sas_token`, `endpoint`, `source`))
+}
+
+`OpendalCredentialProvider`$`gcs` <- function(`token`, `service_account_key`, `credential_path`, `scope`, `source`) {
+  .savvy_wrap_OpendalCredentialProvider(.Call(savvy_OpendalCredentialProvider_gcs__impl, `token`, `service_account_key`, `credential_path`, `scope`, `source`))
+}
+
 `OpendalCredentialProvider`$`gdrive` <- function(`access_token`, `refresh_token`, `client_id`, `client_secret`, `source`) {
   .savvy_wrap_OpendalCredentialProvider(.Call(savvy_OpendalCredentialProvider_gdrive__impl, `access_token`, `refresh_token`, `client_id`, `client_secret`, `source`))
 }

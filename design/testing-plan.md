@@ -61,7 +61,7 @@ No OpenDAL backend required. These tests should cover:
 - strict vector/list length matching rules; no R recycling
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
-- redacted printing for credentials
+- redacted printing and config materialization for explicit S3, GCS, AzBlob, and Google Drive credential helpers
 - `serial_config()` validation and native `codec_config()` validation
 
 ### 20 local filesystem backend

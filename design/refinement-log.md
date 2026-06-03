@@ -117,7 +117,7 @@ Reject partial `mode = "serial"` by default. A serialized object must be read as
 
 Status: `provisional`
 
-Core API is explicit and as stateless as possible. No hidden env-variable/provider-chain lookup in core constructors. Users provide credentials through explicit arguments or explicit credential/helper objects. Reader helpers may load env vars, profiles, stores, provider chains, gargle tokens, etc., but calling those helpers is the user's responsibility.
+Core API is explicit and as stateless as possible. No hidden env-variable/provider-chain lookup in core constructors. Users provide credentials through explicit arguments or explicit credential/helper objects. Current built-in providers cover S3-compatible access keys, GCS token/service-account material, AzBlob account keys/SAS tokens, and Google Drive direct/gdrive3 credentials. Reader helpers may load env vars, profiles, stores, provider chains, gargle tokens, etc., but calling those helpers is the user's responsibility.
 
 This explicit model should serve as the base for plugins that implement provider chains or credential stores.
 

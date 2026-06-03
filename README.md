@@ -402,8 +402,8 @@ Supported providers
 | http                   | implemented/tested read-only                | optional explicit headers                           |
 | s3-compatible          | implemented/tested with public S3 and MinIO | explicit credentials_s3() or unsigned public config |
 | gdrive                 | implemented/opt-in tested                   | explicit credentials_gdrive()/credentials_gdrive3() |
-| gcs                    | feature wired                               | planned explicit provider                           |
-| azblob                 | feature wired                               | planned explicit provider                           |
+| gcs                    | feature wired                               | explicit credentials_gcs()                          |
+| azblob                 | feature wired                               | explicit credentials_azblob()                       |
 | other OpenDAL services | extension path                              | needs config, credential, and tests                 |
 
 </details>

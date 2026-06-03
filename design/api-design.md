@@ -691,16 +691,19 @@ credentials_s3(
 )
 
 credentials_gcs(
-  credential = NULL,
-  credential_path = NULL,
-  token = NULL
+  token = "",
+  service_account_key = "",
+  credential_path = "",
+  scope = "",
+  source = "direct"
 )
 
 credentials_azblob(
-  account_name,
-  account_key = NULL,
-  sas_token = NULL,
-  endpoint = NULL
+  account_name = "",
+  account_key = "",
+  sas_token = "",
+  endpoint = "",
+  source = "direct"
 )
 
 credentials_gdrive(

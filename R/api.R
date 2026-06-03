@@ -6,8 +6,9 @@
 #' values; read Aio handles; and a pure C API.
 #'
 #' @name Ropendal-api
-#' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gdrive
-#'   credentials_gdrive3 credential_schemes credential_config credential_summary
+#' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gcs
+#'   credentials_azblob credentials_gdrive credentials_gdrive3 credential_schemes
+#'   credential_config credential_summary
 #'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
 #'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
@@ -35,6 +36,14 @@
 #' @param access_key_id,secret_access_key S3-compatible access key fields.
 #' @param session_token Optional S3-compatible session token.
 #' @param region Optional S3-compatible signing region.
+#' @param token Google Cloud Storage OAuth2 bearer token.
+#' @param service_account_key Google Cloud Storage service-account JSON string.
+#' @param credential_path Explicit path to Google Cloud Storage credential JSON.
+#' @param scope Optional Google Cloud Storage OAuth scope.
+#' @param account_name Azure Blob Storage account name.
+#' @param account_key Azure Blob Storage account key.
+#' @param sas_token Azure Blob Storage SAS token.
+#' @param endpoint Optional Azure Blob Storage endpoint.
 #' @param access_token Google Drive access token, mutually exclusive with
 #'   `refresh_token`.
 #' @param refresh_token Google Drive refresh token.
@@ -101,6 +110,10 @@
 #' opendal_uri(uri, headers = NULL)
 #' credentials_s3(access_key_id, secret_access_key,
 #'                session_token = "", region = "", source = "direct")
+#' credentials_gcs(token = "", service_account_key = "",
+#'                 credential_path = "", scope = "", source = "direct")
+#' credentials_azblob(account_name = "", account_key = "", sas_token = "",
+#'                    endpoint = "", source = "direct")
 #' credentials_gdrive(access_token = "", refresh_token = "",
 #'                    client_id = "", client_secret = "", source = "direct")
 #' credentials_gdrive3(secret_json,
@@ -330,6 +343,39 @@ credentials_s3 <- function(access_key_id, secret_access_key,
       source
     ),
     schemes = "s3"
+  )
+}
+
+#' @export
+#' @noRd
+credentials_gcs <- function(token = "", service_account_key = "",
+                            credential_path = "", scope = "",
+                            source = "direct") {
+  CredentialProvider(
+    native = OpendalCredentialProvider$gcs(
+      token,
+      service_account_key,
+      credential_path,
+      scope,
+      source
+    ),
+    schemes = "gcs"
+  )
+}
+
+#' @export
+#' @noRd
+credentials_azblob <- function(account_name = "", account_key = "", sas_token = "",
+                               endpoint = "", source = "direct") {
+  CredentialProvider(
+    native = OpendalCredentialProvider$azblob(
+      account_name,
+      account_key,
+      sas_token,
+      endpoint,
+      source
+    ),
+    schemes = "azblob"
   )
 }
 
