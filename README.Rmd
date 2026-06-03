@@ -74,7 +74,7 @@ fs <- opendal("fs", root = root)
 
 fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
 raw <- fs_read(fs, "note.txt")
-raw
+rawToChar(raw)
 
 stat <- fs_stat(fs, "note.txt")
 stat[c("path", "type", "size")]
