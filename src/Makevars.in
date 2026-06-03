@@ -2,15 +2,30 @@ TARGET = @TARGET@
 
 PROFILE = @PROFILE@
 FEATURE_FLAGS = @FEATURE_FLAGS@
+TARGET_FLAG = $(if $(TARGET),--target $(TARGET),)
 
 RUSTFLAGS =
 
 TARGET_DIR = $(CURDIR)/rust/target
 LIBDIR = $(TARGET_DIR)/$(TARGET)/$(subst dev,debug,$(PROFILE))
+
+ifeq ($(TARGET),wasm32-unknown-emscripten)
+OBJECTS = init.o capi_anchor.o wasm_stubs.o
+PKG_LIBS =
+
+all: $(SHLIB)
+
+clean_intermediate:
+
+clean:
+	rm -Rf $(SHLIB) $(OBJECTS) ./rust/target
+
+else
+OBJECTS = capi_anchor.o init.o
 STATLIB = $(LIBDIR)/libropendal.a
 PKG_LIBS = -L$(LIBDIR) -lropendal
 
-CARGO_BUILD_ARGS = --lib --profile $(PROFILE) $(FEATURE_FLAGS) --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
+CARGO_BUILD_ARGS = $(TARGET_FLAG) --lib --profile $(PROFILE) $(FEATURE_FLAGS) --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
 
 all: $(SHLIB) clean_intermediate
 
@@ -32,5 +47,6 @@ clean_intermediate: $(SHLIB)
 
 clean:
 	rm -Rf $(SHLIB) $(OBJECTS) $(STATLIB) ./rust/target
+endif
 
 .PHONY: all clean_intermediate clean

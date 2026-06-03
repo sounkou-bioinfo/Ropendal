@@ -59,6 +59,7 @@ Follow the R package workflow. Use the Makefile once present:
 - `make test-network` for opt-in network tests
 - `make test-http` for opt-in local HTTP fixture tests; uses the internal Rust HTTP fixture
 - `make test-gdrive` for opt-in Google Drive tests
+- `make test-webr` for the local rwasm/Docker webR build check
 - `make site` for pkgdown
 
 Use `Rtinycc` for live native C API demos/checks where possible: compile and run the tiny downstream C consumer in memory from R, and avoid shelling out through `system()` / `system2()` or managing temporary compiler invocations when `Rtinycc` can exercise the same contract.
@@ -66,5 +67,7 @@ Use `Rtinycc` for live native C API demos/checks where possible: compile and run
 Tinytest infrastructure lives in `tests/tinytest.R` and `inst/tinytest/`. Keep helper code in `inst/tinytest/helper-ropendal.R`. See `design/testing-plan.md` for the test matrix and required env vars. See `design/STATUS.md` for the implementation/test checklist.
 
 Keep `NAMESPACE`, generated wrappers, Rd files, and `README.md` synchronized with sources. Do not hand-edit generated files when roxygen2, savvy, or R Markdown owns them. Edit `README.Rmd`, then run `make rdm`.
+
+When savvy changes add or rename `.Call` symbols in `src/rust/api.h`, keep the webR shim in `src/wasm_stubs.c` synchronized so `make test-webr` still links the wasm package.
 
 Update `NEWS.md` for user-facing changes. Keep newest release/development sections first, write concise user-facing bullets, and do not include secrets, local paths, CI-only noise, or exhaustive internal implementation details.

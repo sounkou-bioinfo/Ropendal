@@ -9,6 +9,7 @@
 - Documentation: aligned design notes, roxygen docs, and vignettes with the
   current async, credential, serializer, and native C API behavior.
 - Documentation: documented R-universe Linux binary repository setup.
+- Build: added a webR/wasm package-load fallback and local rwasm build helper.
 
 ## Ropendal 0.0.1
 

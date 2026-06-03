@@ -28,6 +28,7 @@ Ropendal currently has a working implementation through the Apache OpenDAL Rust 
 | Local MinIO S3-compatible tests | `make test-s3-minio` | no | CI/local service | implemented; starts MinIO with `minio`/`mc`; wired into GitHub Actions |
 | Google Drive tests | `make test-gdrive` | no | opt-in with secrets | implemented with explicit env paths |
 | pkgdown site | `make site` / pkgdown workflow | no | yes | implemented; GitHub Pages configured for the public repo |
+| webR/wasm package build | `make test-webr` | no | yes | wasm build shim implemented for package load; OpenDAL-backed operations currently return explicit unsupported errors in webR |
 
 GitHub Actions jobs:
 
@@ -36,6 +37,7 @@ GitHub Actions jobs:
 - `Local MinIO S3-compatible tests` on Ubuntu
 - `R CMD check (no CI-only/network tests)` on Ubuntu, Windows, and macOS
 - `pkgdown` site build/deploy
+- `webR wasm build` for rwasm package-build smoke coverage
 
 ## Repository infrastructure
 
@@ -50,7 +52,7 @@ GitHub Actions jobs:
 | GitHub Actions workflow | yes | no local | defined | R API tinytest and R CMD check run on Ubuntu/Windows/macOS; C API and MinIO jobs run on Ubuntu; pkgdown deploy workflow exists |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
 | Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `http_headers`, `io_iter`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |
-| configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars`; source builds support Cargo feature selection via `SAVVY_FEATURES` and `--with-rust-features` |
+| configure / Makevars templates | yes | yes | yes | package tarball installs from generated `src/Makevars`; source builds support Cargo feature selection via `SAVVY_FEATURES` and `--with-rust-features`; wasm builds compile a loadable C shim instead of Rust/OpenDAL |
 | public package metadata | yes | n/a | defined | GitHub repo is public; R-universe manifest includes Ropendal; pkgdown URL and BugReports are in `DESCRIPTION`; `NEWS.md` records the public release and current development section |
 
 ## R API contracts
@@ -137,5 +139,5 @@ GitHub Actions jobs:
 - Additional real-service integration tests beyond current public S3 and Google Drive secret-backed coverage.
 - Provider-chain/credential-store plugins.
 - Advanced codec auto-selection.
-- Browser/webR/wasm constraints.
+- Full OpenDAL-backed browser/webR/wasm runtime support beyond the current package-load shim.
 - Downstream C consumer example package.

@@ -2,29 +2,44 @@ if [ -d "${HOME}/.cargo/bin" ]; then
   export PATH="${PATH}:${HOME}/.cargo/bin"
 fi
 
-CARGO_VERSION="$(cargo --version)"
-
-if [ $? -ne 0 ]; then
-  echo "-------------- ERROR: CONFIGURATION FAILED --------------------"
-  echo ""
-  echo "The cargo command is not available. To install Rust, please refer"
-  echo "to the official instruction:"
-  echo ""
-  echo "https://www.rust-lang.org/tools/install"
-  echo ""
-  echo "---------------------------------------------------------------"
-
-  exit 1
+WASM_TARGET=""
+case " $* " in
+  *"--host=wasm32-unknown-emscripten"*) WASM_TARGET="true" ;;
+esac
+if [ "$(uname)" = "Emscripten" ]; then
+  WASM_TARGET="true"
+fi
+if ${CC:-cc} --version 2>/dev/null | grep -qi emscripten; then
+  WASM_TARGET="true"
+fi
+if [ "${WASM_TARGET}" = "true" ]; then
+  TARGET="wasm32-unknown-emscripten"
 fi
 
-RUSTC_VERSION="$(rustc --version || true)"
+if [ "${WASM_TARGET}" = "true" ]; then
+  CARGO_VERSION="$(cargo --version 2>/dev/null || printf 'not used for wasm shim')"
+  RUSTC_VERSION="$(rustc --version 2>/dev/null || printf 'not used for wasm shim')"
+else
+  CARGO_VERSION="$(cargo --version)"
+
+  if [ $? -ne 0 ]; then
+    echo "-------------- ERROR: CONFIGURATION FAILED --------------------"
+    echo ""
+    echo "The cargo command is not available. To install Rust, please refer"
+    echo "to the official instruction:"
+    echo ""
+    echo "https://www.rust-lang.org/tools/install"
+    echo ""
+    echo "---------------------------------------------------------------"
+
+    exit 1
+  fi
+
+  RUSTC_VERSION="$(rustc --version || true)"
+fi
 
 echo "using Rust package manager: '${CARGO_VERSION}'"
 echo "using Rust compiler: '${RUSTC_VERSION}'"
-
-if [ "$(uname)" = "Emscripten" ]; then
-  TARGET="wasm32-unknown-emscripten"
-fi
 
 append_feature() {
   if [ -z "${CONFIGURE_FEATURES}" ]; then
@@ -90,6 +105,12 @@ elif [ "${DEBUG}" = "true" ]; then
   PROFILE=dev
 else
   PROFILE=release
+fi
+
+if [ "${WASM_TARGET}" = "true" ] && [ -z "${SAVVY_FEATURES}" ] && [ -z "${CONFIGURE_FEATURES}" ] && [ -z "${NO_DEFAULT_FEATURES}" ]; then
+  echo "using wasm/webR feature set: fs only"
+  NO_DEFAULT_FEATURES="--no-default-features"
+  append_feature "fs"
 fi
 
 FEATURES="$(printf '%s %s' "${SAVVY_FEATURES}" "${CONFIGURE_FEATURES}" | xargs)"

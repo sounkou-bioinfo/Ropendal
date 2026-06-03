@@ -19,6 +19,7 @@ make test-c-api-header    # compile the source C API header as pure C
 make test-c-api-roundtrip # compile/run an installed-library C API roundtrip
 make test-ci              # run C API checks plus CI-only non-network API contract tests
 make test-gdrive          # opt into Google Drive tests via env vars
+make test-webr            # build webR/wasm package via rwasm Docker image
 make test                 # build, install, run tinytest
 ```
 
@@ -136,6 +137,18 @@ Coverage:
 - `ropendal_cv_alloc()`, `ropendal_cv_signal()`, `ropendal_cv_reset()`, `ropendal_cv_value()`, timed wait lifecycle, and `ropendal_aio_notify()`
 - `ropendal_monitor_create()`, `ropendal_monitor_add_aio()`, `ropendal_monitor_read()`, and `ropendal_monitor_release()` queue native completion events while retaining Aio/CV lifetimes
 - still planned: broader cancellation race/service coverage
+
+### 80 webR/wasm build compatibility
+
+Files/tools: `tools/webr-build.sh` and the `webR wasm build` workflow.
+
+Coverage:
+
+- source package builds through `rwasm::build()` in the official webR Docker image
+- wasm package can be installed/loaded with the C shim symbols in place
+- OpenDAL-backed R and C API operations currently report explicit unsupported behavior instead of compiling the native Rust/OpenDAL backend in webR
+
+Full OpenDAL-backed browser filesystem behavior requires separate design and should not be claimed from this build check alone.
 
 ### 90 CI-only API contract tests
 

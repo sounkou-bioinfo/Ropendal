@@ -30,6 +30,7 @@ help:
 	  '  make test-ci         run C API checks and CI-only tinytest' \
 	  '  make rdm             render README.md from README.Rmd' \
 	  '  make bench-minio-paws render development MinIO benchmark' \
+	  '  make test-webr       build webR/wasm package via rwasm Docker image' \
 	  '  make check           build and run R CMD check --as-cran --no-manual'
 
 rd:
@@ -130,7 +131,10 @@ rdm:
 bench-minio-paws: dev-install
 	R -e "rmarkdown::render('benchmarks/minio-paws.Rmd')"
 
+test-webr:
+	tools/webr-build.sh
+
 site:
 	R -e "pkgdown::build_site()"
 
-.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws site
+.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws test-webr site
