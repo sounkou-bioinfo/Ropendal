@@ -373,11 +373,11 @@ single materialized R list. Provide both collectable and streaming forms:
 aio <- fs_ls_aio(fs, "prefix/", recursive = TRUE)
 entries <- collect_aio(aio)
 
-it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000)
+it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000, prefetch = 2000)
 page <- ls_iter_next(it)       # list(done = FALSE, entries = list(...), cursor = "last/path")
 entries <- ls_iter_collect(it) # collect remaining pages
 
-walk <- fs_walk_iter(fs, "prefix/", page_size = 1000)
+walk <- fs_walk_iter(fs, "prefix/", page_size = 1000, prefetch = 2000)
 page <- walk_iter_next(walk)
 ```
 
@@ -392,9 +392,9 @@ Semantics:
 - `page_size` bounds the number of R entries yielded per iterator page and is also passed as an OpenDAL backend request-size hint where possible.
 - `limit` bounds materialized results for collectable listing APIs and total entries yielded by listing/walk iterators.
 - `start_after` is a root-relative continuation marker passed through OpenDAL list options and also enforced by client-side filtering.
+- `prefetch` is an explicit bounded entry-buffer depth for iterators. `0` disables background prefetch; positive values may start Rust/Tokio read-ahead at iterator construction without calling R.
 - Future `batch_concurrency` controls many independent roots/prefixes.
 - Future `list_concurrency` controls recursive traversal fanout where implemented.
-- Future `prefetch` controls how many listing pages may be buffered ahead.
 
 A lightweight `opendalEntries` value can wrap returned entries with
 `as.list()`/`as.data.frame()` adapters. Primitive errors remain per-root/per-page

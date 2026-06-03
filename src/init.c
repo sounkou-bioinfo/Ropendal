@@ -190,8 +190,8 @@ SEXP savvy_OpendalFs_ls_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__rec
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_ls_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after) {
-    SEXP res = savvy_OpendalFs_ls_iter__ffi(self__, c_arg__path, c_arg__recursive, c_arg__page_size, c_arg__limit, c_arg__start_after);
+SEXP savvy_OpendalFs_ls_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__recursive, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after, SEXP c_arg__prefetch) {
+    SEXP res = savvy_OpendalFs_ls_iter__ffi(self__, c_arg__path, c_arg__recursive, c_arg__page_size, c_arg__limit, c_arg__start_after, c_arg__prefetch);
     return handle_result(res);
 }
 
@@ -270,8 +270,8 @@ SEXP savvy_OpendalFs_stat_aio__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__b
     return handle_result(res);
 }
 
-SEXP savvy_OpendalFs_walk_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after) {
-    SEXP res = savvy_OpendalFs_walk_iter__ffi(self__, c_arg__path, c_arg__page_size, c_arg__limit, c_arg__start_after);
+SEXP savvy_OpendalFs_walk_iter__impl(SEXP self__, SEXP c_arg__path, SEXP c_arg__page_size, SEXP c_arg__limit, SEXP c_arg__start_after, SEXP c_arg__prefetch) {
+    SEXP res = savvy_OpendalFs_walk_iter__ffi(self__, c_arg__path, c_arg__page_size, c_arg__limit, c_arg__start_after, c_arg__prefetch);
     return handle_result(res);
 }
 
@@ -388,7 +388,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_info__impl", (DL_FUNC) &savvy_OpendalFs_info__impl, 1},
     {"savvy_OpendalFs_ls__impl", (DL_FUNC) &savvy_OpendalFs_ls__impl, 5},
     {"savvy_OpendalFs_ls_aio__impl", (DL_FUNC) &savvy_OpendalFs_ls_aio__impl, 5},
-    {"savvy_OpendalFs_ls_iter__impl", (DL_FUNC) &savvy_OpendalFs_ls_iter__impl, 6},
+    {"savvy_OpendalFs_ls_iter__impl", (DL_FUNC) &savvy_OpendalFs_ls_iter__impl, 7},
     {"savvy_OpendalFs_mkdir__impl", (DL_FUNC) &savvy_OpendalFs_mkdir__impl, 2},
     {"savvy_OpendalFs_mkdir_aio__impl", (DL_FUNC) &savvy_OpendalFs_mkdir_aio__impl, 3},
     {"savvy_OpendalFs_normalize_path__impl", (DL_FUNC) &savvy_OpendalFs_normalize_path__impl, 3},
@@ -404,7 +404,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"savvy_OpendalFs_replace_aio__impl", (DL_FUNC) &savvy_OpendalFs_replace_aio__impl, 6},
     {"savvy_OpendalFs_stat__impl", (DL_FUNC) &savvy_OpendalFs_stat__impl, 3},
     {"savvy_OpendalFs_stat_aio__impl", (DL_FUNC) &savvy_OpendalFs_stat_aio__impl, 3},
-    {"savvy_OpendalFs_walk_iter__impl", (DL_FUNC) &savvy_OpendalFs_walk_iter__impl, 5},
+    {"savvy_OpendalFs_walk_iter__impl", (DL_FUNC) &savvy_OpendalFs_walk_iter__impl, 6},
     {"savvy_OpendalFs_write__impl", (DL_FUNC) &savvy_OpendalFs_write__impl, 6},
     {"savvy_OpendalFs_write_aio__impl", (DL_FUNC) &savvy_OpendalFs_write_aio__impl, 6},
     {"savvy_OpendalFs_write_iter__impl", (DL_FUNC) &savvy_OpendalFs_write_iter__impl, 6},

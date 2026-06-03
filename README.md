@@ -148,7 +148,9 @@ vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "data.bin"
 ```
 
-Paged listing iterators let callers drain namespaces incrementally.
+Paged listing iterators let callers drain namespaces incrementally;
+positive `prefetch` values let Rust/Tokio start bounded entry read-ahead
+while R keeps page-level backpressure.
 
 ``` r
 it <- fs_ls_iter(fs, page_size = 1)

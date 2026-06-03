@@ -1048,11 +1048,13 @@ impl OpendalFs {
         page_size: Option<f64>,
         limit: Option<f64>,
         start_after: Option<&str>,
+        prefetch: Option<f64>,
     ) -> savvy::Result<OpendalLsIter> {
         let path = normalize_user_path(path, true)
             .map_err(|e| savvy::Error::new(&format!("ls_iter: {e}")))?;
         let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
         let limit = checked_limit(limit, "limit")?;
+        let prefetch = checked_nonnegative_usize(prefetch, "prefetch")?;
         let start_after = normalize_optional_start_after(start_after)
             .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
         OpendalLsIter::new(
@@ -1062,6 +1064,7 @@ impl OpendalFs {
             page_size,
             limit,
             start_after,
+            prefetch,
             "ls_iter",
         )
     }
@@ -1074,11 +1077,13 @@ impl OpendalFs {
         page_size: Option<f64>,
         limit: Option<f64>,
         start_after: Option<&str>,
+        prefetch: Option<f64>,
     ) -> savvy::Result<OpendalLsIter> {
         let path = normalize_user_path(path, true)
             .map_err(|e| savvy::Error::new(&format!("walk_iter: {e}")))?;
         let page_size = checked_page_size(page_size.unwrap_or(1000.0), "page_size")?;
         let limit = checked_limit(limit, "limit")?;
+        let prefetch = checked_nonnegative_usize(prefetch, "prefetch")?;
         let start_after = normalize_optional_start_after(start_after)
             .map_err(|e| savvy::Error::new(&format!("start_after: {e}")))?;
         OpendalLsIter::new(
@@ -1088,6 +1093,7 @@ impl OpendalFs {
             page_size,
             limit,
             start_after,
+            prefetch,
             "walk_iter",
         )
     }
@@ -2216,6 +2222,14 @@ fn checked_positive_usize(value: Option<f64>, name: &str) -> savvy::Result<Optio
     usize::try_from(value)
         .map(Some)
         .map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn checked_nonnegative_usize(value: Option<f64>, name: &str) -> savvy::Result<usize> {
+    let Some(value) = value else {
+        return Ok(0);
+    };
+    let value = checked_u64(value, name)?;
+    usize::try_from(value).map_err(|_| savvy::Error::new(&format!("{name} is too large")))
 }
 
 fn apply_concurrent_limit(op: Operator, max_inflight: Option<usize>) -> Operator {

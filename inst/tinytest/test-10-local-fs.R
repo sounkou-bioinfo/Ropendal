@@ -332,8 +332,37 @@ cursor_resume_paths <- vapply(
   "path"
 )
 expect_true(all(cursor_resume_paths > first_cursor))
+prefetch_iter <- fs_ls_iter(fs, page_size = 1, limit = 2, prefetch = 4)
+prefetch_page <- ls_iter_next(prefetch_iter)
+prefetch_page_paths <- character()
+if (!prefetch_page$done) {
+  prefetch_page_paths <- vapply(prefetch_page$entries, `[[`, "", "path")
+  expect_true(length(prefetch_page_paths) <= 1)
+  expect_equal(prefetch_page$cursor, prefetch_page_paths[[length(prefetch_page_paths)]])
+}
+prefetch_rest <- ls_iter_collect(prefetch_iter)
+prefetch_rest_paths <- vapply(prefetch_rest, `[[`, "", "path")
+expect_true(length(c(prefetch_page_paths, prefetch_rest_paths)) <= 2)
+expect_equal(ls_iter_collect(fs_ls_iter(fs, limit = 0, prefetch = 2)), list())
+prefetch_after_paths <- vapply(
+  ls_iter_collect(fs_ls_iter(fs, start_after = "a.bin", prefetch = 2)),
+  `[[`,
+  "",
+  "path"
+)
+expect_true(all(prefetch_after_paths > "a.bin"))
+expect_error(fs_ls_iter(fs, prefetch = -1), "prefetch")
+expect_error(fs_walk_iter(fs, prefetch = -1), "prefetch")
 walk_limited_entries <- walk_iter_collect(fs_walk_iter(fs, page_size = 1, limit = 1))
 expect_true(length(walk_limited_entries) <= 1)
+walk_prefetch_entries <- walk_iter_collect(fs_walk_iter(fs, page_size = 1, limit = 2, prefetch = 3))
+expect_true(length(walk_prefetch_entries) <= 2)
+single_thread_root <- tempfile("ropendal-prefetch-single-")
+dir.create(single_thread_root)
+single_thread_fs <- opendal("fs", root = single_thread_root, runtime = runtime_config(threads = 1))
+expect_true(identical(fs_write(single_thread_fs, c("one.txt", "two.txt"), list(charToRaw("1"), charToRaw("2"))), list(TRUE, TRUE)))
+single_thread_prefetch <- ls_iter_collect(fs_ls_iter(single_thread_fs, page_size = 1, prefetch = 2))
+expect_equal(sort(vapply(single_thread_prefetch, `[[`, "", "path")), c("one.txt", "two.txt"))
 
 expect_true(identical(fs_delete(fs, "dir/c.bin"), TRUE))
 

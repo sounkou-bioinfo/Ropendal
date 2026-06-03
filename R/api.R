@@ -107,6 +107,9 @@
 #'   best-effort `start_after` markers for lexically ordered listings; they are
 #'   not opaque backend continuation tokens.
 #' @param page_size Maximum number of entries returned by one iterator page.
+#' @param prefetch Number of listing entries an iterator may buffer ahead in
+#'   Rust/Tokio. Positive values may start bounded background prefetch at
+#'   iterator construction; use `0` to keep strict demand-driven iteration.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.
 #' @param cv Condition variable object from `cv()`.
@@ -206,9 +209,9 @@
 #' fs_ls_aio(fs, path = "", recursive = FALSE,
 #'           limit = NULL, start_after = NULL)
 #' fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000,
-#'            limit = NULL, start_after = NULL)
+#'            limit = NULL, start_after = NULL, prefetch = 0)
 #' fs_walk_iter(fs, path = "", page_size = 1000,
-#'              limit = NULL, start_after = NULL)
+#'              limit = NULL, start_after = NULL, prefetch = 0)
 #' ls_iter_next(iter)
 #' ls_iter_collect(iter)
 #' walk_iter_next(iter)
@@ -1237,15 +1240,15 @@ fs_ls_aio <- function(fs, path = "", recursive = FALSE, limit = NULL, start_afte
 #' @export
 #' @noRd
 fs_ls_iter <- function(fs, path = "", recursive = FALSE, page_size = 1000,
-                       limit = NULL, start_after = NULL) {
-  fs$ls_iter(path, recursive, page_size, limit, start_after)
+                       limit = NULL, start_after = NULL, prefetch = 0) {
+  fs$ls_iter(path, recursive, page_size, limit, start_after, prefetch)
 }
 
 #' @export
 #' @noRd
 fs_walk_iter <- function(fs, path = "", page_size = 1000,
-                         limit = NULL, start_after = NULL) {
-  fs$walk_iter(path, page_size, limit, start_after)
+                         limit = NULL, start_after = NULL, prefetch = 0) {
+  fs$walk_iter(path, page_size, limit, start_after, prefetch)
 }
 
 #' @export

@@ -180,9 +180,9 @@ fs_ls(fs, path = "", recursive = FALSE, limit = NULL, start_after = NULL)
 fs_ls_aio(fs, path = "", recursive = FALSE,
           limit = NULL, start_after = NULL)
 fs_ls_iter(fs, path = "", recursive = FALSE, page_size = 1000,
-           limit = NULL, start_after = NULL)
+           limit = NULL, start_after = NULL, prefetch = 0)
 fs_walk_iter(fs, path = "", page_size = 1000,
-             limit = NULL, start_after = NULL)
+             limit = NULL, start_after = NULL, prefetch = 0)
 ls_iter_next(iter)
 ls_iter_collect(iter)
 walk_iter_next(iter)
@@ -359,6 +359,10 @@ best-effort \code{start_after} markers for lexically ordered listings; they are
 not opaque backend continuation tokens.}
 
 \item{page_size}{Maximum number of entries returned by one iterator page.}
+
+\item{prefetch}{Number of listing entries an iterator may buffer ahead in
+Rust/Tokio. Positive values may start bounded background prefetch at
+iterator construction; use \code{0} to keep strict demand-driven iteration.}
 
 \item{from, to}{Source and destination paths.}
 

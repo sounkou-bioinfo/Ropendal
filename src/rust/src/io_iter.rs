@@ -5,6 +5,7 @@ use futures::{SinkExt, TryStreamExt};
 use opendal::{Buffer, FuturesBytesSink, Lister, Operator};
 use savvy::savvy;
 use savvy::{OwnedListSexp, Sexp, TypedSexp};
+use tokio::sync::mpsc;
 
 use crate::common::NativeFs;
 use crate::error::{error_list, kind_code, op_error_list};
@@ -234,6 +235,7 @@ pub struct OpendalLsIter {
     path: String,
     operation: String,
     lister: Mutex<Option<Lister>>,
+    prefetch_rx: Mutex<Option<mpsc::Receiver<PrefetchItem>>>,
     initial_error: Mutex<Option<InitialError>>,
     done: Mutex<bool>,
     page_size: usize,
@@ -248,6 +250,11 @@ struct InitialError {
     message: String,
 }
 
+enum PrefetchItem {
+    Entry(String, opendal::Metadata),
+    Error(InitialError),
+}
+
 impl OpendalLsIter {
     pub(crate) fn new(
         inner: Arc<NativeFs>,
@@ -256,6 +263,7 @@ impl OpendalLsIter {
         page_size: usize,
         limit: Option<usize>,
         start_after: Option<String>,
+        prefetch: usize,
         operation: &str,
     ) -> savvy::Result<Self> {
         let mut opts = opendal::options::ListOptions::default();
@@ -271,9 +279,63 @@ impl OpendalLsIter {
         let op = inner.op.clone();
         let lister_path = path.clone();
         let lister = runtime.block_on(async move { op.lister_options(&lister_path, opts).await });
-        let (lister, initial_error) = match lister {
-            Ok(lister) => (Some(lister), None),
+        let (lister, prefetch_rx, initial_error) = match lister {
+            Ok(lister) => {
+                if prefetch > 0 && limit != Some(0) {
+                    let (tx, rx) = mpsc::channel(prefetch);
+                    let root_path = path.clone();
+                    let start_after_for_task = start_after.clone();
+                    let mut remaining = limit;
+                    runtime.spawn(async move {
+                        let mut lister = lister;
+                        loop {
+                            if remaining.is_some_and(|value| value == 0) {
+                                break;
+                            }
+                            match lister.try_next().await {
+                                Ok(Some(entry)) => {
+                                    let entry_path = entry.path();
+                                    if keep_listing_entry(
+                                        &root_path,
+                                        start_after_for_task.as_deref(),
+                                        entry_path,
+                                    ) {
+                                        if tx
+                                            .send(PrefetchItem::Entry(
+                                                entry_path.to_string(),
+                                                entry.metadata().clone(),
+                                            ))
+                                            .await
+                                            .is_err()
+                                        {
+                                            break;
+                                        }
+                                        if let Some(value) = remaining.as_mut() {
+                                            *value = value.saturating_sub(1);
+                                        }
+                                    }
+                                }
+                                Ok(None) => break,
+                                Err(e) => {
+                                    let _ = tx
+                                        .send(PrefetchItem::Error(InitialError {
+                                            kind: e.kind().to_string(),
+                                            code: kind_code(e.kind()),
+                                            message: e.to_string(),
+                                        }))
+                                        .await;
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                    (None, Some(rx), None)
+                } else {
+                    (Some(lister), None, None)
+                }
+            }
             Err(e) => (
+                None,
                 None,
                 Some(InitialError {
                     kind: e.kind().to_string(),
@@ -287,6 +349,7 @@ impl OpendalLsIter {
             path: path_for_error,
             operation: operation.to_string(),
             lister: Mutex::new(lister),
+            prefetch_rx: Mutex::new(prefetch_rx),
             initial_error: Mutex::new(initial_error),
             done: Mutex::new(false),
             page_size,
@@ -297,14 +360,184 @@ impl OpendalLsIter {
     }
 
     fn keep_entry(&self, path: &str) -> bool {
-        path != "/"
-            && !path.is_empty()
-            && path != self.path.as_str()
-            && self
-                .start_after
-                .as_ref()
-                .is_none_or(|start_after| path > start_after.as_str())
+        keep_listing_entry(&self.path, self.start_after.as_deref(), path)
     }
+
+    fn has_prefetch(&self) -> savvy::Result<bool> {
+        self.prefetch_rx
+            .lock()
+            .map(|guard| guard.is_some())
+            .map_err(|_| savvy::Error::new("listing iterator prefetch lock poisoned"))
+    }
+
+    fn recv_prefetch(&self) -> savvy::Result<Option<PrefetchItem>> {
+        let mut guard = self
+            .prefetch_rx
+            .lock()
+            .map_err(|_| savvy::Error::new("listing iterator prefetch lock poisoned"))?;
+        let Some(rx) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let item = self.runtime.block_on(rx.recv());
+        if item.is_none() {
+            *guard = None;
+        }
+        Ok(item)
+    }
+
+    fn next_prefetched_page(&self, target: usize) -> savvy::Result<savvy::Sexp> {
+        let mut entries = Vec::new();
+        let mut exhausted = false;
+        while entries.len() < target {
+            match self.recv_prefetch()? {
+                Some(PrefetchItem::Entry(path, meta)) => entries.push((path, meta)),
+                Some(PrefetchItem::Error(error)) => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    return error_list(
+                        &error.kind,
+                        error.code,
+                        &error.message,
+                        &self.operation,
+                        &self.path,
+                    );
+                }
+                None => {
+                    exhausted = true;
+                    break;
+                }
+            }
+        }
+
+        let limit_reached = {
+            let mut remaining = self
+                .remaining
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?;
+            if let Some(value) = remaining.as_mut() {
+                *value = value.saturating_sub(entries.len());
+                *value == 0
+            } else {
+                false
+            }
+        };
+        let done_now = exhausted || limit_reached;
+        if done_now {
+            *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+        }
+
+        let cursor = if let Some((path, _)) = entries.last() {
+            let cursor = path.clone();
+            *self
+                .cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))? =
+                Some(cursor.clone());
+            Some(cursor)
+        } else {
+            self.cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))?
+                .clone()
+        };
+
+        if done_now && entries.is_empty() {
+            iter_entries_page(true, Vec::new(), cursor.as_deref())
+        } else {
+            iter_entries_page(false, entries, cursor.as_deref())
+        }
+    }
+
+    fn collect_prefetched(&self) -> savvy::Result<savvy::Sexp> {
+        let mut all = Vec::new();
+        loop {
+            if *self
+                .done
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))?
+            {
+                break;
+            }
+            if self
+                .remaining
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?
+                .is_some_and(|value| value == 0)
+            {
+                *self
+                    .done
+                    .lock()
+                    .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? = true;
+                break;
+            }
+
+            match self.recv_prefetch()? {
+                Some(PrefetchItem::Entry(path, meta)) => {
+                    all.push((path, meta));
+                    let limit_reached = {
+                        let mut remaining = self.remaining.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator limit lock poisoned")
+                        })?;
+                        if let Some(value) = remaining.as_mut() {
+                            *value = value.saturating_sub(1);
+                            *value == 0
+                        } else {
+                            false
+                        }
+                    };
+                    if limit_reached {
+                        *self.done.lock().map_err(|_| {
+                            savvy::Error::new("listing iterator done lock poisoned")
+                        })? = true;
+                        break;
+                    }
+                }
+                Some(PrefetchItem::Error(error)) => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    return error_list(
+                        &error.kind,
+                        error.code,
+                        &error.message,
+                        &self.operation,
+                        &self.path,
+                    );
+                }
+                None => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    break;
+                }
+            }
+        }
+        if let Some((path, _)) = all.last() {
+            *self
+                .cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))? =
+                Some(path.clone());
+        }
+        entries_list(all)
+    }
+}
+
+fn keep_listing_entry(root_path: &str, start_after: Option<&str>, path: &str) -> bool {
+    path != "/"
+        && !path.is_empty()
+        && path != root_path
+        && start_after.is_none_or(|start_after| path > start_after)
 }
 
 #[savvy]
@@ -366,6 +599,10 @@ impl OpendalLsIter {
                 None => self.page_size,
             }
         };
+
+        if self.has_prefetch()? {
+            return self.next_prefetched_page(target);
+        }
 
         let mut lister = {
             let mut guard = self
@@ -482,6 +719,10 @@ impl OpendalLsIter {
                 &self.operation,
                 &self.path,
             );
+        }
+
+        if self.has_prefetch()? {
+            return self.collect_prefetched();
         }
 
         let mut all = Vec::new();

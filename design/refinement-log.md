@@ -61,7 +61,7 @@ ROPENDAL_TEST_GDRIVE=true
 
 Status: `provisional`
 
-`fs_ls_iter()` and `fs_walk_iter()` use a Rust-backed `OpendalLsIter` that streams entries from OpenDAL and materializes only the requested R page on the R thread. `ls_iter_next()` / `walk_iter_next()` return `list(done, entries, cursor)`, where `cursor` is the last yielded root-relative path. It is useful as a best-effort `start_after` marker for lexically ordered listings, but it is not an opaque backend continuation token and does not by itself guarantee exact restart semantics on unordered traversals. `*_collect()` collects remaining entries. `page_size` bounds R entries yielded per page and is passed as an OpenDAL request-size hint, `limit` bounds total yielded/materialized entries, and `start_after` provides a root-relative continuation marker with backend and client-side filtering. Prefetch and traversal fanout remain future refinements.
+`fs_ls_iter()` and `fs_walk_iter()` use a Rust-backed `OpendalLsIter` that streams entries from OpenDAL and materializes only the requested R page on the R thread. `ls_iter_next()` / `walk_iter_next()` return `list(done, entries, cursor)`, where `cursor` is the last yielded root-relative path. It is useful as a best-effort `start_after` marker for lexically ordered listings, but it is not an opaque backend continuation token and does not by itself guarantee exact restart semantics on unordered traversals. `*_collect()` collects remaining entries. `page_size` bounds R entries yielded per page and is passed as an OpenDAL request-size hint, `limit` bounds total yielded/materialized entries, and `start_after` provides a root-relative continuation marker with backend and client-side filtering. `prefetch` is an explicit entry-buffer depth: `0` keeps strict demand-driven iteration, while positive values may start a Rust/Tokio task at iterator construction that reads ahead into a bounded channel without calling R. Traversal fanout and opaque backend continuation tokens remain future refinements.
 
 ### HTTP(S) explicit headers
 
@@ -415,7 +415,7 @@ normalization can stay sync-only.
 Listing needs both collectable and streaming forms. `fs_ls_aio()` can collect a
 finite listing, but `fs_ls_iter()` and `fs_walk_iter()` are needed for paginated
 or very large listings with backpressure. Listing controls should distinguish
-many-prefix batch concurrency, recursive traversal fanout, page size, prefetch,
+many-prefix batch concurrency, recursive traversal fanout, page size, bounded prefetch,
 limits, and continuation/resume points.
 
 The generic Aio outcome should therefore include bytes, unit, bool, metadata,
