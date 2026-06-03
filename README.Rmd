@@ -374,7 +374,7 @@ drive_head <- rawToChar(fs_read(drive_fs, gdrive_file, size = 64))
 drive_head
 ```
 
-## Native C API smoke test
+## Native C API roundtrip
 
 The native API is for other R packages that want OpenDAL-backed byte I/O without
 calling R while async work is running. A downstream package can declare
@@ -409,7 +409,7 @@ static int cleanup(ropendal_fs_t *fs, ropendal_aio_t *aio, ropendal_error_t *err
   return -1;
 }
 
-int ropendal_c_api_smoke(const char *root) {
+int ropendal_c_api_roundtrip(const char *root) {
   ropendal_error_t *err = 0;
   ropendal_fs_t *fs = 0;
   ropendal_aio_t *aio = 0;
@@ -482,11 +482,11 @@ ffi <- Rtinycc::tcc_ffi() |>
   Rtinycc::tcc_library(ropendal_lib[[1]]) |>
   Rtinycc::tcc_source(c_api_code) |>
   Rtinycc::tcc_bind(
-    ropendal_c_api_smoke = list(args = list("cstring"), returns = "i32")
+    ropendal_c_api_roundtrip = list(args = list("cstring"), returns = "i32")
   ) |>
   Rtinycc::tcc_compile()
 
-ffi$ropendal_c_api_smoke(root)
+ffi$ropendal_c_api_roundtrip(root)
 ```
 
 ## Development

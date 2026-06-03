@@ -230,9 +230,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace              25.3ms     28ms      35.6    10.5KB
-#> 2 ropendal_replace_concurrent   17.2ms   18.9ms      47.1        0B
-#> 3 paws_put                      78.5ms   78.6ms      12.7    11.7MB
+#> 1 ropendal_replace              19.8ms   21.1ms      47.5    10.5KB
+#> 2 ropendal_replace_concurrent   20.7ms   20.8ms      45.3        0B
+#> 3 paws_put                      79.1ms   82.8ms      12.2    11.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -262,11 +262,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                   5.6ms    5.6ms     179.        8MB
-#> 2 ropendal_read_concurrent       5.12ms   6.12ms     167.        8MB
-#> 3 ropendal_read_aio              7.71ms   9.12ms     110.        8MB
-#> 4 ropendal_read_aio_concurrent   7.98ms   9.62ms     104.        8MB
-#> 5 paws_get                      12.15ms  12.97ms      77.1    8.29MB
+#> 1 ropendal_read                  6.02ms   6.02ms     166.        8MB
+#> 2 ropendal_read_concurrent       5.04ms    6.3ms     164.        8MB
+#> 3 ropendal_read_aio              6.94ms   7.25ms     138.        8MB
+#> 4 ropendal_read_aio_concurrent   7.08ms   7.54ms     133.        8MB
+#> 5 paws_get                      12.42ms  14.53ms      68.8    8.29MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -293,7 +293,7 @@ drive_head <- rawToChar(fs_read(drive_fs, gdrive_file, size = 64))
 drive_head
 ```
 
-## Native C API smoke test
+## Native C API roundtrip
 
 The native API is for other R packages that want OpenDAL-backed byte I/O
 without calling R while async work is running. A downstream package can
@@ -329,7 +329,7 @@ static int cleanup(ropendal_fs_t *fs, ropendal_aio_t *aio, ropendal_error_t *err
   return -1;
 }
 
-int ropendal_c_api_smoke(const char *root) {
+int ropendal_c_api_roundtrip(const char *root) {
   ropendal_error_t *err = 0;
   ropendal_fs_t *fs = 0;
   ropendal_aio_t *aio = 0;
@@ -402,11 +402,11 @@ ffi <- Rtinycc::tcc_ffi() |>
   Rtinycc::tcc_library(ropendal_lib[[1]]) |>
   Rtinycc::tcc_source(c_api_code) |>
   Rtinycc::tcc_bind(
-    ropendal_c_api_smoke = list(args = list("cstring"), returns = "i32")
+    ropendal_c_api_roundtrip = list(args = list("cstring"), returns = "i32")
   ) |>
   Rtinycc::tcc_compile()
 
-ffi$ropendal_c_api_smoke(root)
+ffi$ropendal_c_api_roundtrip(root)
 #> [1] 17
 ```
 
