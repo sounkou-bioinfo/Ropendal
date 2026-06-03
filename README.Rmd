@@ -25,51 +25,6 @@ and serializers.
 # Keep this block intentionally minimal in README to avoid rendering noise.
 ```
 
-## Quick start
-
-```{r quick-start}
-library(Ropendal)
-
-root <- file.path(tempdir(), "ropendal-readme")
-unlink(root, recursive = TRUE)
-dir.create(root, recursive = TRUE)
-
-fs <- opendal("fs", root = root)
-
-fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
-raw <- fs_read(fs, "note.txt")
-raw
-
-stat <- fs_stat(fs, "note.txt")
-stat[c("path", "type", "size")]
-
-entries <- fs_ls(fs)
-vapply(entries, `[[`, character(1), "path")
-```
-
-## Async reads and explicit wait
-
-```{r quick-async}
-aio <- fs_read_aio(fs, "note.txt")
-call_aio(aio)
-collect_aio(aio)
-```
-
-## Documentation and concepts
-
-The README now points to full vignette guidance.
-
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/getting-started.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/abstract-filesystem.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/async-aio.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/serializers.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/credentials.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/native-c-api.html>
-- <https://sounkou-bioinfo.github.io/Ropendal/articles/internals.html>
-
-More implementation notes and completion status are tracked in
-`design/STATUS.md`.
-
 ## Installation
 
 Ropendal is available from R-universe:
@@ -100,6 +55,36 @@ install.packages(
   type = "source",
   configure.args = "--enable-cloud"
 )
+```
+
+## Quick start
+
+```{r quick-start}
+library(Ropendal)
+
+root <- file.path(tempdir(), "ropendal-readme")
+unlink(root, recursive = TRUE)
+dir.create(root, recursive = TRUE)
+
+fs <- opendal("fs", root = root)
+
+fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
+raw <- fs_read(fs, "note.txt")
+raw
+
+stat <- fs_stat(fs, "note.txt")
+stat[c("path", "type", "size")]
+
+entries <- fs_ls(fs)
+vapply(entries, `[[`, character(1), "path")
+```
+
+## Async reads and explicit wait
+
+```{r quick-async}
+aio <- fs_read_aio(fs, "note.txt")
+call_aio(aio)
+collect_aio(aio)
 ```
 
 ## Development
