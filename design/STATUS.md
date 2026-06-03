@@ -48,7 +48,7 @@ GitHub Actions jobs:
 | CI-only gating via `ROPENDAL_TEST_CI` | yes | yes | yes | default tests skip CI-only files |
 | Network/service gating | yes | no | partial | public S3, local MinIO, HTTP fixture, and Google Drive tests exist; other cloud service tests planned |
 | Makefile test targets | yes | yes | yes | includes R tests, C API tests, and development benchmark rendering |
-| Development MinIO benchmark | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; ignored from package build |
+| Development MinIO/GDrive benchmarks | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; `benchmarks/gdrive-minio-read-stress.R` / `make bench-gdrive-minio-stress` read-stresses a large Google Drive object against local MinIO; ignored from package build |
 | GitHub Actions workflow | yes | no local | defined | R API tinytest and R CMD check run on Ubuntu/Windows/macOS; C API and MinIO jobs run on Ubuntu; pkgdown deploy workflow exists |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
 | Rust modules | yes | yes | yes | `aio`, `common`, `error`, `fs`, `http_fixture`, `http_headers`, `io_iter`, `metadata`, `ops`, `path`, `r_values`, `c_api/*` |

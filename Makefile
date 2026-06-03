@@ -15,6 +15,11 @@ ROPENDAL_S3_PUBLIC_RANGE_FILE ?= 0/0/0/0/0
 ROPENDAL_S3_PUBLIC_LIST_PATH ?= 0/
 ROPENDAL_S3_MINIO_BUCKET ?= ropendal-test
 ROPENDAL_S3_MINIO_REGION ?= us-east-1
+ROPENDAL_BENCH_BYTES ?= 256MiB
+ROPENDAL_BENCH_CHUNK_SIZE ?= 16MiB
+ROPENDAL_BENCH_CONCURRENCY ?= 1,2,4,8
+ROPENDAL_BENCH_GDRIVE_ROOT ?= KidneyGWAS
+ROPENDAL_BENCH_GDRIVE_FILE ?= KidneyPROJECTFILES.zip
 
 all: check
 
@@ -30,6 +35,7 @@ help:
 	  '  make test-ci         run C API checks and CI-only tinytest' \
 	  '  make rdm             render README.md from README.Rmd' \
 	  '  make bench-minio-paws render development MinIO benchmark' \
+	  '  make bench-gdrive-minio-stress run Google Drive vs MinIO read stress benchmark' \
 	  '  make test-webr       build webR/wasm package via rwasm Docker image' \
 	  '  make check           build and run R CMD check --as-cran --no-manual'
 
@@ -131,10 +137,20 @@ rdm:
 bench-minio-paws: dev-install
 	R -e "rmarkdown::render('benchmarks/minio-paws.Rmd')"
 
+bench-gdrive-minio-stress: dev-install
+	ROPENDAL_GDRIVE_SECRET_JSON="$(ROPENDAL_GDRIVE_SECRET_JSON)" \
+	ROPENDAL_GDRIVE_TOKENS_JSON="$(ROPENDAL_GDRIVE_TOKENS_JSON)" \
+	ROPENDAL_BENCH_BYTES="$(ROPENDAL_BENCH_BYTES)" \
+	ROPENDAL_BENCH_CHUNK_SIZE="$(ROPENDAL_BENCH_CHUNK_SIZE)" \
+	ROPENDAL_BENCH_CONCURRENCY="$(ROPENDAL_BENCH_CONCURRENCY)" \
+	ROPENDAL_BENCH_GDRIVE_ROOT="$(ROPENDAL_BENCH_GDRIVE_ROOT)" \
+	ROPENDAL_BENCH_GDRIVE_FILE="$(ROPENDAL_BENCH_GDRIVE_FILE)" \
+	Rscript benchmarks/gdrive-minio-read-stress.R
+
 test-webr:
 	tools/webr-build.sh
 
 site:
 	R -e "pkgdown::build_site()"
 
-.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws test-webr site
+.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws bench-gdrive-minio-stress test-webr site
