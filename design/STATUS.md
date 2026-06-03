@@ -68,7 +68,7 @@ GitHub Actions jobs:
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
 | `OpendalBytes` / `fs_read_bytes()` / `fs_read_bytes_aio()` | yes | yes | yes | no | Rust-owned immutable byte handles; `as.raw()`/`length()` materialization; writes accept handles without rerouting through another R raw vector |
 | `fs_write_iter()` chunked writes | yes | yes | yes | no | one path returns a tellable sink; many paths return a list; seek intentionally unsupported; local test |
-| `fs_ls_iter()` / `fs_walk_iter()` streaming namespace traversal | yes | yes | yes | no | Rust-backed `OpendalLsIter` with `page_size`, `limit`, `start_after`, `*_next()`, and `*_collect()`; empty listing, paged/limited root listing, continuation filtering, and recursive local walk tested |
+| `fs_ls_iter()` / `fs_walk_iter()` streaming namespace traversal | yes | yes | yes | no | Rust-backed `OpendalLsIter` with `page_size`, `limit`, `start_after`, best-effort page `cursor`, `*_next()`, and `*_collect()`; empty listing, paged/limited root listing, continuation filtering, cursor markers, and recursive local walk tested |
 | `fs_stat()` / `fs_stats()` / `fs_exists()` and `_aio()` | yes | yes | yes | partial | metadata/existence sync plus async local, HTTP fixture, public S3, and MinIO tests; `fs_stats*` aliases vectorized `fs_stat*` |
 | `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | partial | root entry filtered for local `fs`; `limit`/`start_after` wired through OpenDAL list options and client filtering; sync and async listing tested for local, public S3, and MinIO; HTTP unsupported value tested sync and async |
 | `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | partial | direct sync methods tested; async local namespace tests; MinIO covers S3 copy/delete and unsupported/supported atomic rename outcomes sync and async |
@@ -117,7 +117,7 @@ GitHub Actions jobs:
 
 ## Next implementation milestones
 
-1. Add prefetch, traversal fanout, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them; `limit` and `start_after` controls are implemented for listing collection and iterators.
+1. Add prefetch, traversal fanout, and stronger backend-token continuation for namespace iterators where OpenDAL/service support warrants them; `limit`, `start_after`, and best-effort page `cursor` markers are implemented for listing collection and iterators.
 2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
 3. Add remaining memory/backpressure limits and any additional service-level layers. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.

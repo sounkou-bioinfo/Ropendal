@@ -110,6 +110,7 @@ Paged listing iterators let callers drain namespaces incrementally.
 it <- fs_ls_iter(fs, page_size = 1)
 page <- ls_iter_next(it)
 page$done
+page$cursor
 vapply(page$entries, `[[`, character(1), "path")
 ```
 

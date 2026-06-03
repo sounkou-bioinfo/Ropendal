@@ -12,7 +12,8 @@ use crate::metadata::metadata_list;
 use crate::ops::{ReadTuning, WriteTuning, read_bytes_with};
 use crate::path::normalize_user_path;
 use crate::r_values::{
-    bool_scalar, buffer_to_raw_sexp, buffers_to_raw_sexp, real_scalar, success_value,
+    bool_scalar, buffer_to_raw_sexp, buffers_to_raw_sexp, real_scalar, set_str_or_null,
+    success_value,
 };
 
 struct ReadIterState {
@@ -238,6 +239,7 @@ pub struct OpendalLsIter {
     page_size: usize,
     remaining: Mutex<Option<usize>>,
     start_after: Option<String>,
+    cursor: Mutex<Option<String>>,
 }
 
 struct InitialError {
@@ -290,6 +292,7 @@ impl OpendalLsIter {
             page_size,
             remaining: Mutex::new(limit),
             start_after,
+            cursor: Mutex::new(None),
         })
     }
 
@@ -306,7 +309,7 @@ impl OpendalLsIter {
 
 #[savvy]
 impl OpendalLsIter {
-    /// Return the next listing page as list(done, entries).
+    /// Return the next listing page as list(done, entries, cursor).
     /// @export
     fn next(&self) -> savvy::Result<savvy::Sexp> {
         if *self
@@ -314,7 +317,12 @@ impl OpendalLsIter {
             .lock()
             .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))?
         {
-            return iter_entries_page(true, Vec::new());
+            let cursor = self
+                .cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))?
+                .clone();
+            return iter_entries_page(true, Vec::new(), cursor.as_deref());
         }
         if let Some(error) = self
             .initial_error
@@ -335,40 +343,52 @@ impl OpendalLsIter {
             );
         }
 
-        let target =
-            {
-                let remaining = self
-                    .remaining
-                    .lock()
-                    .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?;
-                match *remaining {
-                    Some(0) => {
-                        *self.done.lock().map_err(|_| {
-                            savvy::Error::new("listing iterator done lock poisoned")
-                        })? = true;
-                        return iter_entries_page(true, Vec::new());
-                    }
-                    Some(value) => self.page_size.min(value),
-                    None => self.page_size,
+        let target = {
+            let remaining = self
+                .remaining
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator limit lock poisoned"))?;
+            match *remaining {
+                Some(0) => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    let cursor = self
+                        .cursor
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))?
+                        .clone();
+                    return iter_entries_page(true, Vec::new(), cursor.as_deref());
                 }
-            };
+                Some(value) => self.page_size.min(value),
+                None => self.page_size,
+            }
+        };
 
-        let mut lister =
-            {
-                let mut guard = self
-                    .lister
-                    .lock()
-                    .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
-                match guard.take() {
-                    Some(lister) => lister,
-                    None => {
-                        *self.done.lock().map_err(|_| {
-                            savvy::Error::new("listing iterator done lock poisoned")
-                        })? = true;
-                        return iter_entries_page(true, Vec::new());
-                    }
+        let mut lister = {
+            let mut guard = self
+                .lister
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator lock poisoned"))?;
+            match guard.take() {
+                Some(lister) => lister,
+                None => {
+                    *self
+                        .done
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator done lock poisoned"))? =
+                        true;
+                    let cursor = self
+                        .cursor
+                        .lock()
+                        .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))?
+                        .clone();
+                    return iter_entries_page(true, Vec::new(), cursor.as_deref());
                 }
-            };
+            }
+        };
 
         let mut entries = Vec::new();
         let mut exhausted = false;
@@ -420,10 +440,25 @@ impl OpendalLsIter {
             *guard = Some(lister);
         }
 
-        if done_now && entries.is_empty() {
-            iter_entries_page(true, Vec::new())
+        let cursor = if let Some((path, _)) = entries.last() {
+            let cursor = path.clone();
+            *self
+                .cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))? =
+                Some(cursor.clone());
+            Some(cursor)
         } else {
-            iter_entries_page(false, entries)
+            self.cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))?
+                .clone()
+        };
+
+        if done_now && entries.is_empty() {
+            iter_entries_page(true, Vec::new(), cursor.as_deref())
+        } else {
+            iter_entries_page(false, entries, cursor.as_deref())
         }
     }
 
@@ -526,6 +561,13 @@ impl OpendalLsIter {
                 }
             }
         }
+        if let Some((path, _)) = all.last() {
+            *self
+                .cursor
+                .lock()
+                .map_err(|_| savvy::Error::new("listing iterator cursor lock poisoned"))? =
+                Some(path.clone());
+        }
         entries_list(all)
     }
 }
@@ -533,10 +575,12 @@ impl OpendalLsIter {
 fn iter_entries_page(
     done: bool,
     entries: Vec<(String, opendal::Metadata)>,
+    cursor: Option<&str>,
 ) -> savvy::Result<savvy::Sexp> {
-    let mut out = OwnedListSexp::new(2, true)?;
+    let mut out = OwnedListSexp::new(3, true)?;
     out.set_name_and_value(0, "done", bool_scalar(done)?)?;
     out.set_name_and_value(1, "entries", entries_list(entries)?)?;
+    set_str_or_null(&mut out, 2, "cursor", cursor)?;
     out.into()
 }
 

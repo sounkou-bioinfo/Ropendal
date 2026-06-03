@@ -374,7 +374,7 @@ aio <- fs_ls_aio(fs, "prefix/", recursive = TRUE)
 entries <- collect_aio(aio)
 
 it <- fs_ls_iter(fs, "prefix/", recursive = TRUE, page_size = 1000)
-page <- ls_iter_next(it)       # list(done = FALSE, entries = list(...))
+page <- ls_iter_next(it)       # list(done = FALSE, entries = list(...), cursor = "last/path")
 entries <- ls_iter_collect(it) # collect remaining pages
 
 walk <- fs_walk_iter(fs, "prefix/", page_size = 1000)
@@ -387,7 +387,8 @@ Semantics:
   list of entries values.
 - `fs_ls_iter()` pages a listing and provides caller-driven backpressure.
 - `fs_walk_iter()` recursively traverses and streams pages.
-- Current iterator pages return `list(done, entries)` and expose `*_next()` plus `*_collect()`.
+- Current iterator pages return `list(done, entries, cursor)` and expose `*_next()` plus `*_collect()`.
+- `cursor` is the last yielded root-relative path. It can be used as a best-effort `start_after` marker for lexically ordered listings, but it is not an opaque backend continuation token and exact restart semantics are backend/order dependent.
 - `page_size` bounds the number of R entries yielded per iterator page and is also passed as an OpenDAL backend request-size hint where possible.
 - `limit` bounds materialized results for collectable listing APIs and total entries yielded by listing/walk iterators.
 - `start_after` is a root-relative continuation marker passed through OpenDAL list options and also enforced by client-side filtering.

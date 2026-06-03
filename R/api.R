@@ -103,6 +103,9 @@
 #'   return across an iterator.
 #' @param start_after Optional root-relative listing continuation marker;
 #'   entries less than or equal to this path are skipped where supported.
+#'   Iterator `$cursor` values are last yielded paths and can be used as
+#'   best-effort `start_after` markers for lexically ordered listings; they are
+#'   not opaque backend continuation tokens.
 #' @param page_size Maximum number of entries returned by one iterator page.
 #' @param from,to Source and destination paths.
 #' @param aio Aio handle.

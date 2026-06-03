@@ -78,7 +78,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - read many paths with list-of-ranges
 - stat metadata
 - `fs_ls()` output columns and ordering rules
-- `fs_ls_iter()` empty-listing, paged listing, `limit`, `start_after`, and collect behavior
+- `fs_ls_iter()` empty-listing, paged listing, page `cursor`, `limit`, `start_after`, best-effort cursor filtering, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection and iterator `limit`
 - mkdir/delete/copy/rename
 - declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)

@@ -277,13 +277,21 @@ repeat {
   if (page$done) break
   expect_true(length(page$entries) > 0)
   expect_true(length(page$entries) <= 1)
+  page_paths <- vapply(page$entries, `[[`, "", "path")
+  expect_equal(page$cursor, page_paths[[length(page_paths)]])
   pages[[length(pages) + 1L]] <- page
 }
 ls_iter_paths <- unlist(lapply(pages, function(page) vapply(page$entries, `[[`, "", "path")))
 expect_true("a.bin" %in% ls_iter_paths)
 expect_true("dir/" %in% ls_iter_paths)
+expect_equal(ls_iter_next(ls_iter)$cursor, ls_iter_paths[[length(ls_iter_paths)]])
 expect_true(ls_iter_next(ls_iter)$done)
 
+walk_page <- walk_iter_next(fs_walk_iter(fs, "", page_size = 1))
+if (!walk_page$done) {
+  walk_page_paths <- vapply(walk_page$entries, `[[`, "", "path")
+  expect_equal(walk_page$cursor, walk_page_paths[[length(walk_page_paths)]])
+}
 walk_iter <- fs_walk_iter(fs, "", page_size = 2)
 walk_entries <- walk_iter_collect(walk_iter)
 walk_paths <- vapply(walk_entries, `[[`, "", "path")
@@ -316,6 +324,14 @@ iter_after_paths <- vapply(
 )
 expect_false("a.bin" %in% iter_after_paths)
 expect_true(all(iter_after_paths > "a.bin"))
+first_cursor <- pages[[1L]]$cursor
+cursor_resume_paths <- vapply(
+  ls_iter_collect(fs_ls_iter(fs, start_after = first_cursor)),
+  `[[`,
+  "",
+  "path"
+)
+expect_true(all(cursor_resume_paths > first_cursor))
 walk_limited_entries <- walk_iter_collect(fs_walk_iter(fs, page_size = 1, limit = 1))
 expect_true(length(walk_limited_entries) <= 1)
 

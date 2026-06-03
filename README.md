@@ -155,6 +155,8 @@ it <- fs_ls_iter(fs, page_size = 1)
 page <- ls_iter_next(it)
 page$done
 #> [1] FALSE
+page$cursor
+#> [1] "data.bin"
 vapply(page$entries, `[[`, character(1), "path")
 #> [1] "data.bin"
 ```

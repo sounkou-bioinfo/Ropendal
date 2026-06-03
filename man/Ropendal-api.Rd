@@ -353,7 +353,10 @@ object or list of objects in serial mode.}
 return across an iterator.}
 
 \item{start_after}{Optional root-relative listing continuation marker;
-entries less than or equal to this path are skipped where supported.}
+entries less than or equal to this path are skipped where supported.
+Iterator \verb{$cursor} values are last yielded paths and can be used as
+best-effort \code{start_after} markers for lexically ordered listings; they are
+not opaque backend continuation tokens.}
 
 \item{page_size}{Maximum number of entries returned by one iterator page.}
 
