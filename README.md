@@ -71,10 +71,12 @@ install.packages(
 )
 ```
 
-## Quick start: one handle, many byte surfaces
+## A Quick Start
 
 A single filesystem handle gives us byte primitives, vectorized batches,
 Aio handles, explicit serializers/codecs, and lower-level iterators.
+
+### Create a handle and move bytes
 
 ``` r
 library(Ropendal)
@@ -85,7 +87,6 @@ dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
 
-# Byte primitives: write, read, stat, list.
 fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
 #> [1] TRUE
 rawToChar(fs_read(fs, "note.txt"))
@@ -101,8 +102,11 @@ fs_stat(fs, "note.txt")[c("path", "type", "size")]
 #> [1] 15
 vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "note.txt"
+```
 
-# Batch submission: one call can launch multiple object operations.
+### Submit a batch in one call
+
+``` r
 paths <- c("batch/one.txt", "batch/two.txt")
 fs_write(
   fs,
@@ -115,17 +119,24 @@ fs_write(
 #> 
 #> [[2]]
 #> [1] TRUE
+
 many <- fs_read(fs, paths, offset = c(0, 0), batch_concurrency = 2)
 vapply(many, rawToChar, character(1))
 #> [1] "one\n" "two\n"
+```
 
-# Async: get an Aio handle, wait, then collect the payload.
+### Start async work and collect later
+
+``` r
 aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
 rawToChar(collect_aio(aio))
 #> [1] "hello ropendal\n"
+```
 
-# Serializers and codecs are explicit byte materialization layers.
+### Materialize objects with serializers and codecs
+
+``` r
 point_config <- serial_config(
   "ropendal_point",
   sfunc = function(x) charToRaw(sprintf("%s,%s", x$x, x$y)),
@@ -151,8 +162,11 @@ fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "co
 #> [1] TRUE
 rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
 #> [1] "compressed bytes\n"
+```
 
-# Lower-level iterators expose chunked write/read control.
+### Drop down to lower-level byte iterators
+
+``` r
 writer <- fs_write_iter(fs, "stream.txt")
 write_iter_write(writer, charToRaw("hello "))
 #> [1] TRUE
@@ -295,9 +309,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace             121.8ms  126.7ms      7.90        0B
-#> 2 ropendal_replace_concurrent   76.4ms   83.7ms     11.8         0B
-#> 3 paws_put                     566.1ms  566.1ms      1.77    67.7MB
+#> 1 ropendal_replace             125.4ms  131.9ms      7.68        0B
+#> 2 ropendal_replace_concurrent   77.6ms   80.2ms     12.2         0B
+#> 3 paws_put                     544.3ms  544.3ms      1.84    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -324,16 +338,14 @@ bench::mark(
   iterations = 3,
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
-#> Warning: Some expressions had a GC in every iteration; so filtering is
-#> disabled.
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  50.9ms   53.4ms      15.2      64MB
-#> 2 ropendal_read_concurrent       32.3ms   33.3ms      30.1      64MB
-#> 3 ropendal_read_aio              45.3ms   48.4ms      19.2      64MB
-#> 4 ropendal_read_aio_concurrent   35.1ms   37.7ms      25.9      64MB
-#> 5 paws_get                       51.4ms   51.8ms      18.9    64.3MB
+#> 1 ropendal_read                  67.3ms   67.3ms      14.9      64MB
+#> 2 ropendal_read_concurrent       35.1ms   35.7ms      28.0      64MB
+#> 3 ropendal_read_aio              46.2ms   46.5ms      21.5      64MB
+#> 4 ropendal_read_aio_concurrent   31.4ms   31.4ms      31.8      64MB
+#> 5 paws_get                       51.5ms   53.4ms      18.7    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -375,7 +387,9 @@ We exercise that installed C API in-process with
 C source in pieces, use Rtinycc’s bundled
 [Protothreads](http://dunkels.com/adam/pt/) header, and let R resume a
 native state machine while doing ordinary R-side work between
-resumptions.
+resumptions. The `Rprintf()` calls below are demo instrumentation
+executed only when R resumes the C task on the main thread; OpenDAL
+background work does not call R.
 
 ``` r
 root <- tempfile("ropendal-c-api-readme-")
@@ -400,6 +414,7 @@ c_api_state <- r"(
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <R_ext/Print.h>
 #include "ropendal.h"
 
 enum { ROPENDAL_DEMO_DONE = 0, ROPENDAL_DEMO_RUNNING = 1, ROPENDAL_DEMO_ERROR = -1 };
@@ -421,6 +436,7 @@ typedef struct ropendal_demo_task {
   int status;
   int failed;
   int done;
+  int tick;
   const char *step;
   char message[256];
 } ropendal_demo_task_t;
@@ -564,17 +580,36 @@ Finally we expose small C entry points for Rtinycc to call.
 
 ``` r
 c_api_exports <- r"(
+static const char *ropendal_demo_status_name(int status) {
+  if (status == ROPENDAL_DEMO_RUNNING) return "running";
+  if (status == ROPENDAL_DEMO_DONE) return "done";
+  return "error";
+}
+
+static int ropendal_demo_report(ropendal_demo_task_t *task, int status) {
+  task->tick += 1;
+  Rprintf(
+    "native request %d: %s; %s\n",
+    task->tick,
+    ropendal_demo_status_name(status),
+    task->step ? task->step : "unknown"
+  );
+  return status;
+}
+
 int ropendal_demo_resume(void *ptr) {
   ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
   if (!task) return ROPENDAL_DEMO_ERROR;
-  if (task->failed) return ROPENDAL_DEMO_ERROR;
-  if (task->done) return ROPENDAL_DEMO_DONE;
+  if (task->failed) return ropendal_demo_report(task, ROPENDAL_DEMO_ERROR);
+  if (task->done) return ropendal_demo_report(task, ROPENDAL_DEMO_DONE);
 
   task->status = ropendal_demo_resume_internal(task);
-  if (task->failed) return ROPENDAL_DEMO_ERROR;
-  if (task->status == PT_YIELDED || task->status == PT_WAITING) return ROPENDAL_DEMO_RUNNING;
+  if (task->failed) return ropendal_demo_report(task, ROPENDAL_DEMO_ERROR);
+  if (task->status == PT_YIELDED || task->status == PT_WAITING) {
+    return ropendal_demo_report(task, ROPENDAL_DEMO_RUNNING);
+  }
   task->done = 1;
-  return ROPENDAL_DEMO_DONE;
+  return ropendal_demo_report(task, ROPENDAL_DEMO_DONE);
 }
 
 int ropendal_demo_nread(void *ptr) {
@@ -587,10 +622,6 @@ const char *ropendal_demo_error(void *ptr) {
   return task ? task->message : "null task";
 }
 
-const char *ropendal_demo_step(void *ptr) {
-  ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
-  return (task && task->step) ? task->step : "unknown";
-}
 )"
 ```
 
@@ -609,7 +640,6 @@ ffi <- Rtinycc::tcc_ffi() |>
     ropendal_demo_resume = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_nread = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_error = list(args = list("ptr"), returns = "cstring"),
-    ropendal_demo_step = list(args = list("ptr"), returns = "cstring"),
     ropendal_demo_free = list(args = list("ptr"), returns = "void")
   ) |>
   Rtinycc::tcc_compile()
@@ -621,20 +651,27 @@ I/O is running.
 
 ``` r
 task <- ffi$ropendal_demo_open(root)
-events <- list()
 status <- 1L
-status_name <- c(`-1` = "error", `0` = "done", `1` = "running")
+r_ticks <- 0L
+r_work <- 0L
 while (status > 0L) {
   status <- ffi$ropendal_demo_resume(task)
-  tick <- length(events) + 1L
-  events[[tick]] <- data.frame(
-    tick = tick,
-    native_status = unname(status_name[as.character(status)]),
-    native_step = ffi$ropendal_demo_step(task),
-    r_work = sum(seq_len(1000L))
-  )
+  r_ticks <- r_ticks + 1L
+  r_work <- r_work + sum(seq_len(1000L))
   Sys.sleep(0.001)
 }
+#> native request 1: running; wait write
+#> native request 2: running; wait write
+#> native request 3: running; wait write
+#> native request 4: running; wait write
+#> native request 5: running; wait write
+#> native request 6: running; wait write
+#> native request 7: running; wait write
+#> native request 8: running; wait write
+#> native request 9: running; wait stat
+#> native request 10: running; wait list
+#> native request 11: running; wait read_into
+#> native request 12: done; complete
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
   invisible(ffi$ropendal_demo_free(task))
@@ -642,21 +679,13 @@ if (status < 0L) {
 }
 nread <- ffi$ropendal_demo_nread(task)
 invisible(ffi$ropendal_demo_free(task))
-do.call(rbind, events)
-#>    tick native_status    native_step r_work
-#> 1     1       running     wait write 500500
-#> 2     2       running     wait write 500500
-#> 3     3       running     wait write 500500
-#> 4     4       running     wait write 500500
-#> 5     5       running     wait write 500500
-#> 6     6       running     wait write 500500
-#> 7     7       running      wait stat 500500
-#> 8     8       running      wait list 500500
-#> 9     9       running wait read_into 500500
-#> 10   10          done       complete 500500
-c(bytes_read_into_c_buffer = nread)
-#> bytes_read_into_c_buffer 
-#>                       17
+c(
+  r_ticks = r_ticks,
+  r_work = r_work,
+  bytes_read_into_c_buffer = nread
+)
+#>                  r_ticks                   r_work bytes_read_into_c_buffer 
+#>                       12                  6006000                       17
 ```
 
 ## Development

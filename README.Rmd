@@ -77,12 +77,14 @@ install.packages(
 )
 ```
 
-## Quick start: one handle, many byte surfaces
+## A Quick Start
 
 A single filesystem handle gives us byte primitives, vectorized batches, Aio
 handles, explicit serializers/codecs, and lower-level iterators.
 
-```{r quick-start}
+### Create a handle and move bytes
+
+```{r quick-start-handle}
 library(Ropendal)
 
 root <- file.path(tempdir(), "ropendal-readme")
@@ -91,13 +93,15 @@ dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
 
-# Byte primitives: write, read, stat, list.
 fs_write(fs, "note.txt", charToRaw("hello ropendal\n"))
 rawToChar(fs_read(fs, "note.txt"))
 fs_stat(fs, "note.txt")[c("path", "type", "size")]
 vapply(fs_ls(fs), `[[`, character(1), "path")
+```
 
-# Batch submission: one call can launch multiple object operations.
+### Submit a batch in one call
+
+```{r quick-start-batch}
 paths <- c("batch/one.txt", "batch/two.txt")
 fs_write(
   fs,
@@ -105,15 +109,22 @@ fs_write(
   list(charToRaw("one\n"), charToRaw("two\n")),
   batch_concurrency = 2
 )
+
 many <- fs_read(fs, paths, offset = c(0, 0), batch_concurrency = 2)
 vapply(many, rawToChar, character(1))
+```
 
-# Async: get an Aio handle, wait, then collect the payload.
+### Start async work and collect later
+
+```{r quick-start-async}
 aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
 rawToChar(collect_aio(aio))
+```
 
-# Serializers and codecs are explicit byte materialization layers.
+### Materialize objects with serializers and codecs
+
+```{r quick-start-materializers}
 point_config <- serial_config(
   "ropendal_point",
   sfunc = function(x) charToRaw(sprintf("%s,%s", x$x, x$y)),
@@ -128,8 +139,11 @@ fs_read(fs, "objects/point.txt", mode = "serial", serial_config = point_config)
 
 fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
 rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
+```
 
-# Lower-level iterators expose chunked write/read control.
+### Drop down to lower-level byte iterators
+
+```{r quick-start-iterators}
 writer <- fs_write_iter(fs, "stream.txt")
 write_iter_write(writer, charToRaw("hello "))
 write_iter_write(writer, charToRaw("iterator\n"))
@@ -438,7 +452,9 @@ We exercise that installed C API in-process with
 [`Rtinycc`](https://github.com/sounkou-bioinfo/Rtinycc). We assemble the C source
 in pieces, use Rtinycc's bundled
 [Protothreads](http://dunkels.com/adam/pt/) header, and let R resume a native
-state machine while doing ordinary R-side work between resumptions.
+state machine while doing ordinary R-side work between resumptions. The `Rprintf()`
+calls below are demo instrumentation executed only when R resumes the C task on
+the main thread; OpenDAL background work does not call R.
 
 ```{r native-c-api-setup, eval = requireNamespace("Rtinycc", quietly = TRUE)}
 root <- tempfile("ropendal-c-api-readme-")
@@ -462,6 +478,7 @@ c_api_state <- r"(
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <R_ext/Print.h>
 #include "ropendal.h"
 
 enum { ROPENDAL_DEMO_DONE = 0, ROPENDAL_DEMO_RUNNING = 1, ROPENDAL_DEMO_ERROR = -1 };
@@ -483,6 +500,7 @@ typedef struct ropendal_demo_task {
   int status;
   int failed;
   int done;
+  int tick;
   const char *step;
   char message[256];
 } ropendal_demo_task_t;
@@ -626,17 +644,36 @@ Finally we expose small C entry points for Rtinycc to call.
 
 ```{r native-c-api-c-exports, eval = requireNamespace("Rtinycc", quietly = TRUE)}
 c_api_exports <- r"(
+static const char *ropendal_demo_status_name(int status) {
+  if (status == ROPENDAL_DEMO_RUNNING) return "running";
+  if (status == ROPENDAL_DEMO_DONE) return "done";
+  return "error";
+}
+
+static int ropendal_demo_report(ropendal_demo_task_t *task, int status) {
+  task->tick += 1;
+  Rprintf(
+    "native request %d: %s; %s\n",
+    task->tick,
+    ropendal_demo_status_name(status),
+    task->step ? task->step : "unknown"
+  );
+  return status;
+}
+
 int ropendal_demo_resume(void *ptr) {
   ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
   if (!task) return ROPENDAL_DEMO_ERROR;
-  if (task->failed) return ROPENDAL_DEMO_ERROR;
-  if (task->done) return ROPENDAL_DEMO_DONE;
+  if (task->failed) return ropendal_demo_report(task, ROPENDAL_DEMO_ERROR);
+  if (task->done) return ropendal_demo_report(task, ROPENDAL_DEMO_DONE);
 
   task->status = ropendal_demo_resume_internal(task);
-  if (task->failed) return ROPENDAL_DEMO_ERROR;
-  if (task->status == PT_YIELDED || task->status == PT_WAITING) return ROPENDAL_DEMO_RUNNING;
+  if (task->failed) return ropendal_demo_report(task, ROPENDAL_DEMO_ERROR);
+  if (task->status == PT_YIELDED || task->status == PT_WAITING) {
+    return ropendal_demo_report(task, ROPENDAL_DEMO_RUNNING);
+  }
   task->done = 1;
-  return ROPENDAL_DEMO_DONE;
+  return ropendal_demo_report(task, ROPENDAL_DEMO_DONE);
 }
 
 int ropendal_demo_nread(void *ptr) {
@@ -649,10 +686,6 @@ const char *ropendal_demo_error(void *ptr) {
   return task ? task->message : "null task";
 }
 
-const char *ropendal_demo_step(void *ptr) {
-  ropendal_demo_task_t *task = (ropendal_demo_task_t *)ptr;
-  return (task && task->step) ? task->step : "unknown";
-}
 )"
 ```
 
@@ -671,7 +704,6 @@ ffi <- Rtinycc::tcc_ffi() |>
     ropendal_demo_resume = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_nread = list(args = list("ptr"), returns = "i32"),
     ropendal_demo_error = list(args = list("ptr"), returns = "cstring"),
-    ropendal_demo_step = list(args = list("ptr"), returns = "cstring"),
     ropendal_demo_free = list(args = list("ptr"), returns = "void")
   ) |>
   Rtinycc::tcc_compile()
@@ -682,18 +714,13 @@ the native code never creates R objects while OpenDAL I/O is running.
 
 ```{r native-c-api-run, eval = requireNamespace("Rtinycc", quietly = TRUE)}
 task <- ffi$ropendal_demo_open(root)
-events <- list()
 status <- 1L
-status_name <- c(`-1` = "error", `0` = "done", `1` = "running")
+r_ticks <- 0L
+r_work <- 0L
 while (status > 0L) {
   status <- ffi$ropendal_demo_resume(task)
-  tick <- length(events) + 1L
-  events[[tick]] <- data.frame(
-    tick = tick,
-    native_status = unname(status_name[as.character(status)]),
-    native_step = ffi$ropendal_demo_step(task),
-    r_work = sum(seq_len(1000L))
-  )
+  r_ticks <- r_ticks + 1L
+  r_work <- r_work + sum(seq_len(1000L))
   Sys.sleep(0.001)
 }
 if (status < 0L) {
@@ -703,8 +730,11 @@ if (status < 0L) {
 }
 nread <- ffi$ropendal_demo_nread(task)
 invisible(ffi$ropendal_demo_free(task))
-do.call(rbind, events)
-c(bytes_read_into_c_buffer = nread)
+c(
+  r_ticks = r_ticks,
+  r_work = r_work,
+  bytes_read_into_c_buffer = nread
+)
 ```
 
 ## Development
