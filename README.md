@@ -17,8 +17,9 @@ byte-first: operations move raw bytes, then explicitly materialize into
 R objects through modes and serializers.
 
 The async API is inspired by `nanonext`-style Aio handles: issue async
-work, then `call_aio()` to trigger execution and `collect_aio()` to
-retrieve results (or an `opendalErrorValue`).
+work with `fs_*_aio()`, then `call_aio()` to wait for completion and
+update the Aio object, and `collect_aio()` to retrieve the result (or an
+`opendalErrorValue`).
 
 ## Installation
 
