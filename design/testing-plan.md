@@ -81,7 +81,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls_iter()` empty-listing, paged listing, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection
 - mkdir/delete/copy/rename
-- declarative capability profiles: supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
+- declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 
 ### 30 async Aio behavior
 
@@ -177,6 +177,7 @@ Coverage:
 - auth construction redacts secrets
 - public S3-compatible read/stat/list/range reads
 - HTTP fixture read/stat/range reads, unsupported listing value, explicit `headers=` authentication path, and delayed-response pending Aio state
+- classed capability profile checks for local `fs`, HTTP fixture, public S3, and local MinIO
 - local MinIO write/read/stat/list/copy/delete in an isolated prefix
 - unsupported S3-compatible atomic rename returns an error value rather than silent emulation
 - range reads

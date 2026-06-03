@@ -35,6 +35,13 @@ fs <- opendal(
 
 expect_equal(fs_info(fs)$scheme, "s3")
 expect_equal(fs_info(fs)$name, Sys.getenv("ROPENDAL_S3_MINIO_BUCKET"))
+minio_caps <- fs_capabilities(fs)
+expect_true(inherits(minio_caps, "opendalCapabilityValue"))
+expect_true(minio_caps$operations$read$supported)
+expect_true(minio_caps$operations$write$supported)
+expect_true(minio_caps$operations$delete$supported)
+expect_true(minio_caps$operations$copy$supported)
+expect_true(minio_caps$operations$ls$supported)
 
 bytes <- as.raw(c(1, 2, 3, 4, 5, 6))
 expect_true(identical(fs_write(fs, "a.bin", bytes), TRUE))

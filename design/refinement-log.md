@@ -305,13 +305,13 @@ keeping Rust as the implementation owner for filesystem operations.
 
 ### Capability values and interfaces
 
-Status: `open`
+Status: `provisional`
 
-`fs_capabilities()` should return a classed capability value built in Rust, not a
-plain nested list assembled in R. R-level interfaces such as `ReadableFs`,
-`WritableFs`, or `ListableFs` can be useful for consumers, but support is a
-runtime property of the handle/profile and must ultimately be enforced by Rust
-operation methods returning `opendalUnsupportedValue` where appropriate.
+`fs_capabilities()` returns a classed capability value built in Rust rather than
+an R-assembled plain list. R-level interfaces such as `ReadableFs`, `WritableFs`,
+or `ListableFs` can be useful for consumers, but support is a runtime property
+of the handle/profile and must ultimately be enforced by Rust operation methods
+returning `opendalUnsupportedValue` where appropriate.
 
 ### Serializer, codec, and R API thread boundary
 

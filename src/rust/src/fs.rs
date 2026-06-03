@@ -111,12 +111,15 @@ impl OpendalFs {
                 str_scalar(if *supported { "opendal" } else { "unsupported" })?,
             )?;
             one.set_name_and_value(2, "notes", str_scalar("")?)?;
+            one.set_class(&["opendalCapabilityOperation", "list"])?;
             operations.set_name_and_value(i, name, one)?;
         }
+        operations.set_class(&["opendalCapabilityOperations", "list"])?;
         let mut out = OwnedListSexp::new(3, true)?;
         out.set_name_and_value(0, "scheme", str_scalar(&self.inner.scheme)?)?;
         out.set_name_and_value(1, "root", str_scalar(&self.inner.root)?)?;
         out.set_name_and_value(2, "operations", operations)?;
+        out.set_class(&["opendalCapabilityValue", "list"])?;
         out.into()
     }
 

@@ -14,6 +14,12 @@ writeBin(as.raw(c(9, 8)), file.path(root, "dir", "nested.bin"))
 fixture <- Ropendal:::OpendalHttpFixture$start(root)
 
 fs <- opendal("http", endpoint = fixture$endpoint(), root = "/")
+http_caps <- fs_capabilities(fs)
+expect_true(inherits(http_caps, "opendalCapabilityValue"))
+expect_true(http_caps$operations$read$supported)
+expect_true(http_caps$operations$stat$supported)
+expect_false(http_caps$operations$ls$supported)
+expect_equal(http_caps$operations$ls$implementation, "unsupported")
 expect_equal(fs_read(fs, "data.bin"), bytes)
 expect_equal(fs_read(fs, "data.bin", offset = 2, size = 3), as.raw(c(3, 4, 5)))
 

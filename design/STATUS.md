@@ -56,7 +56,7 @@ GitHub Actions jobs:
 |---|---:|---:|---:|---:|---|
 | Rust-backed filesystem handle `OpendalFs` | yes | yes | yes | yes | local `fs`; no ad hoc `opendalFs` / `abstractFs` mutation |
 | `opendal()` / `opendal_uri()` constructors | yes | yes | yes | partial | `opendal("fs", root=)`, local `opendal_uri("fs://...")`, and public S3 config tested; HTTP(S) `headers=` supported for explicit request headers |
-| declarative `fs_capabilities()` | yes | yes | partial | no | local `fs` shape/read/list support tested; broader service capability profiles need stronger tests |
+| declarative `fs_capabilities()` | yes | yes | partial | partial | classed Rust-built capability values; local `fs` shape/read/list support tested by default; HTTP fixture and S3 public/MinIO service profile checks added |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
 | vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
@@ -123,7 +123,7 @@ GitHub Actions jobs:
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.
 6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
-8. Expand capability tests by service profile and return classed capability values.
+8. Expand capability tests for additional service profiles and consider higher-level capability interfaces for consumers.
 9. Expand credential helpers beyond Google Drive and add more service coverage.
 10. Add richer service-level async tests for metadata/namespace Aios on opt-in remote backends.
 

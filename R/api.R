@@ -409,6 +409,20 @@ fs_capabilities <- function(fs) fs$capabilities()
 
 #' @export
 #' @noRd
+print.opendalCapabilityValue <- function(x, ...) {
+  ops <- names(x$operations)
+  supported <- vapply(x$operations, `[[`, logical(1), "supported")
+  cat("<opendal capabilities>", x$scheme, x$root, "\n")
+  if (length(ops)) {
+    cat("  supported: ", paste(ops[supported], collapse = ", "), "\n", sep = "")
+    unsupported <- ops[!supported]
+    if (length(unsupported)) cat("  unsupported: ", paste(unsupported, collapse = ", "), "\n", sep = "")
+  }
+  invisible(x)
+}
+
+#' @export
+#' @noRd
 fs_normalize_path <- function(fs, path, directory = FALSE) {
   fs$normalize_path(path, directory)
 }

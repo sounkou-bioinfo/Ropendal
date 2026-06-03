@@ -26,6 +26,11 @@ fs <- opendal(
 info <- fs_info(fs)
 expect_equal(info$scheme, "s3")
 expect_equal(info$name, bucket)
+public_s3_caps <- fs_capabilities(fs)
+expect_true(inherits(public_s3_caps, "opendalCapabilityValue"))
+expect_true(public_s3_caps$operations$read$supported)
+expect_true(public_s3_caps$operations$stat$supported)
+expect_true(public_s3_caps$operations$ls$supported)
 
 zarray <- rawToChar(fs_read(fs, object))
 expect_true(grepl('"dtype": "<u2"', zarray, fixed = TRUE))
