@@ -121,12 +121,12 @@ deserialize_raw(x, config = list())
 fs_read(fs, path, offset = 0, size = NULL, end = NULL,
         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-        mode = c("raw", "serial", "codec"),
+        mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
         serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-            mode = c("raw", "serial", "codec"),
+            mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
             serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
               result = c("auto", "flat", "nested"), batch_concurrency = NULL,
@@ -144,27 +144,27 @@ fs_tell(iter)
 fs_seek(iter, offset, whence = c("start", "current", "end"))
 fs_write(fs, path, data, batch_concurrency = NULL,
          write_concurrency = NULL, chunk_size = NULL,
-         mode = c("raw", "serial", "codec"),
+         mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
          serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_write_aio(fs, path, data, batch_concurrency = NULL,
              write_concurrency = NULL, chunk_size = NULL,
-             mode = c("raw", "serial", "codec"),
+             mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
              serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_replace(fs, path, data, batch_concurrency = NULL,
            write_concurrency = NULL, chunk_size = NULL,
-           mode = c("raw", "serial", "codec"),
+           mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
            serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_replace_aio(fs, path, data, batch_concurrency = NULL,
                write_concurrency = NULL, chunk_size = NULL,
-               mode = c("raw", "serial", "codec"),
+               mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
                serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_append(fs, path, data, batch_concurrency = NULL,
           write_concurrency = NULL, chunk_size = NULL,
-          mode = c("raw", "serial", "codec"),
+          mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
           serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_append_aio(fs, path, data, batch_concurrency = NULL,
               write_concurrency = NULL, chunk_size = NULL,
-              mode = c("raw", "serial", "codec"),
+              mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
               serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_write_iter(fs, path, create = TRUE, append = FALSE,
               write_concurrency = NULL, chunk_size = NULL)
@@ -309,8 +309,12 @@ and \code{client_secret}.}
 \code{serial_config()}. R-closure codecs are not supported; codec transforms
 are native byte transforms.}
 
-\item{mode}{Materialization mode: raw bytes, serialized R objects, or raw
-bytes passed through an explicit codec.}
+\item{mode}{Materialization mode: raw bytes, text strings, serialized R
+objects, or raw bytes passed through an explicit codec.}
+
+\item{encoding}{Text encoding for \code{mode = "text"} reads and writes.
+Encodings whose encoded bytes contain NUL bytes are rejected; use raw mode
+for those storage formats.}
 
 \item{serial_config}{Serialization config, normally \code{opt(fs, "serial")}.}
 

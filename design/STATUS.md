@@ -10,7 +10,7 @@ Status labels:
 
 ## Current state summary
 
-Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, native gzip/zlib byte codecs are wired as explicit raw-byte transforms for R and C consumers, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, read-vector, codec, metadata/existence, listing, and namespace operations against the installed native library.
+Ropendal currently has a working implementation through the Apache OpenDAL Rust crate and savvy. Rust code is split into modules, the public R layer is thin and delegates operation logic to generated Rust-backed methods, error values are classed in Rust, local byte operations plus read/write/listing/walking iterators and `OpendalBytes` byte handles are tested, text-mode materialization uses explicit complete-object encoding boundaries, native gzip/zlib byte codecs are wired as explicit raw-byte transforms for R and C consumers, public S3-compatible, HTTP, and Google Drive opt-in service tests pass, HTTP(S) filesystems support explicit request headers, and the pure C API has compiled roundtrip coverage for byte, read-vector, codec, metadata/existence, listing, and namespace operations against the installed native library.
 
 ## CI matrix
 
@@ -73,7 +73,8 @@ GitHub Actions jobs:
 | `fs_ls()` / `fs_ls_aio()` | yes | yes | yes | partial | root entry filtered for local `fs`; `limit`/`start_after` wired through OpenDAL list options and client filtering; sync and async listing tested for local, public S3, and MinIO; HTTP unsupported value tested sync and async |
 | `fs_mkdir()` / `fs_delete()` / `fs_copy()` / `fs_rename()` and `_aio()` | yes | yes | yes | partial | direct sync methods tested; async local namespace tests; MinIO covers S3 copy/delete and unsupported/supported atomic rename outcomes sync and async |
 | `serial_config(class, sfunc, ufunc)` / `serialize_raw()` / `deserialize_raw()` / `mode = "serial"` | yes | yes | yes | no | base serialization, custom class envelopes, `opt(fs, "serial")`, sync/Aio read/write materialization, vectorized serial writes, reset via `list()`, and partial-range rejection tested locally |
-| `codec_config()` / `codec =` explicit native byte-codec layer | yes | partial | yes | yes | `identity`, `gzip`, and `zlib` native transforms; sync/Aio raw and serial+codec local roundtrips; C API byte-handle encode/decode roundtrip |
+| `mode = "text"` / `encoding =` explicit text layer | yes | yes | yes | no | sync/Aio read/write materialization, vectorized text writes, UTF-8 and Latin-1 boundaries, NUL-producing encoding rejection, text+codec composition, and partial-range rejection tested locally |
+| `codec_config()` / `codec =` explicit native byte-codec layer | yes | partial | yes | yes | `identity`, `gzip`, and `zlib` native transforms; sync/Aio raw and serial/text+codec local roundtrips; C API byte-handle encode/decode roundtrip |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with S3, GCS, AzBlob, and Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
 
 ## Async R contracts
@@ -119,7 +120,7 @@ GitHub Actions jobs:
 1. Add prefetch, traversal fanout, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them; `limit` and `start_after` controls are implemented for listing collection and iterators.
 2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
 3. Add remaining memory/backpressure limits and any additional service-level layers. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
-4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
+4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.
 6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.

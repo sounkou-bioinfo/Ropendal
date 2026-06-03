@@ -109,9 +109,11 @@ Default tests should use only base R objects and toy custom classes. Coverage:
 - custom `serial_config(class, sfunc, ufunc)` roundtrip (implemented locally)
 - multiple class hooks
 - `opt(fs, "serial") <- list()` removes hooks (implemented locally)
+- `mode = "text"` / `encoding =` explicit text roundtrip, vectorized writes, async materialization, invalid/NUL-producing encoding rejection, and text+codec composition (implemented locally)
 - `mode = "codec"` / `codec =` explicit native codec roundtrip (implemented locally for gzip/zlib)
-- deserializer runs at collect/materialization time for async reads (implemented locally)
+- deserializer/text decoder runs at collect/materialization time for async reads (implemented locally)
 - partial range + `mode = "serial"` errors clearly (implemented locally)
+- partial range + `mode = "text"` errors clearly (implemented locally)
 - partial range + non-identity `codec =` errors clearly (implemented locally)
 
 ### 50 C ABI / downstream consumer

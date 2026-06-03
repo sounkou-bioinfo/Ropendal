@@ -97,15 +97,16 @@ Byte ranges apply to file reads only. Directory traversal belongs to `fs_ls()` /
 
 ### Text mode and ranges
 
-Status: `open`
+Status: `resolved`
 
-Partial text ranges can split multibyte characters. Options:
-
-1. allow and decode with replacement/warning
-2. require `mode = "raw"` for partial ranges
-3. allow only if caller sets explicit `encoding_errors`
-
-Default should probably reject partial `mode = "text"` unless specified.
+Partial text ranges can split multibyte characters. Ropendal rejects partial
+`mode = "text"` reads by default and directs callers to `mode = "raw"` for byte
+ranges. Text mode is a complete-object materialization layer with an explicit
+`encoding` boundary. Because R character strings cannot carry embedded NUL bytes
+before decoding, encodings whose probe bytes contain NULs are rejected; use raw
+mode for UTF-16/UTF-32-like storage formats unless a future byte-safe decoder is
+added. Writes accept scalar strings per path; vectorized text writes use a
+character vector or list of scalar strings matching path length.
 
 ### Serialization mode and ranges
 

@@ -36,8 +36,8 @@ for the implementation/test checklist.
 
 - `OpendalFs` is a filesystem handle rooted at one local or remote
   location; all paths are normalized relative to that root.
-- The core layer moves bytes. R object serialization and native byte
-  codecs are explicit layers above bytes.
+- The core layer moves bytes. Text materialization, R object
+  serialization, and native byte codecs are explicit layers above bytes.
 - Backend failures are returned as classed values such as
   `opendalErrorValue`, so ordinary filesystem failures can be inspected
   without surprise throws.
@@ -436,8 +436,8 @@ Serializers and codecs
 | layer                   | status      | notes                                                                                                   |
 |:------------------------|:------------|:--------------------------------------------------------------------------------------------------------|
 | raw bytes               | implemented | core storage contract uses R raw vectors and OpendalBytes handles                                       |
+| text                    | implemented | mode = text plus encoding=; complete-object reads; NUL-producing encodings rejected                     |
 | R serialize/unserialize | implemented | mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread |
-| text                    | planned     | explicit encoding boundary                                                                              |
 | codecs/compression      | implemented | explicit codec_config()/codec= native byte transforms; gzip and zlib wired for R and C                  |
 
 </details>

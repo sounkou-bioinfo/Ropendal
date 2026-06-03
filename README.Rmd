@@ -21,7 +21,7 @@ See `design/api-design.md` for API design notes and `design/STATUS.md` for the i
 ## Core concepts
 
 - `OpendalFs` is a filesystem handle rooted at one local or remote location; all paths are normalized relative to that root.
-- The core layer moves bytes. R object serialization and native byte codecs are explicit layers above bytes.
+- The core layer moves bytes. Text materialization, R object serialization, and native byte codecs are explicit layers above bytes.
 - Backend failures are returned as classed values such as `opendalErrorValue`, so ordinary filesystem failures can be inspected without surprise throws.
 - Every remote I/O family has Aio forms where practical; callers explicitly wait, collect, race, or cancel `OpendalAio` handles.
 - Credentials and request headers are explicit inputs to constructors, not hidden provider-chain lookup.
@@ -331,12 +331,12 @@ provider_progress <- data.frame(
 )
 
 serializer_progress <- data.frame(
-  layer = c("raw bytes", "R serialize/unserialize", "text", "codecs/compression"),
-  status = c("implemented", "implemented", "planned", "implemented"),
+  layer = c("raw bytes", "text", "R serialize/unserialize", "codecs/compression"),
+  status = c("implemented", "implemented", "implemented", "implemented"),
   notes = c(
     "core storage contract uses R raw vectors and OpendalBytes handles",
+    "mode = text plus encoding=; complete-object reads; NUL-producing encodings rejected",
     "mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread",
-    "explicit encoding boundary",
     "explicit codec_config()/codec= native byte transforms; gzip and zlib wired for R and C"
   )
 )

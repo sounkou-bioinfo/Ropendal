@@ -74,8 +74,11 @@
 #' @param sfunc,ufunc Serializer and deserializer functions for
 #'   `serial_config()`. R-closure codecs are not supported; codec transforms
 #'   are native byte transforms.
-#' @param mode Materialization mode: raw bytes, serialized R objects, or raw
-#'   bytes passed through an explicit codec.
+#' @param mode Materialization mode: raw bytes, text strings, serialized R
+#'   objects, or raw bytes passed through an explicit codec.
+#' @param encoding Text encoding for `mode = "text"` reads and writes.
+#'   Encodings whose encoded bytes contain NUL bytes are rejected; use raw mode
+#'   for those storage formats.
 #' @param serial_config Serialization config, normally `opt(fs, "serial")`.
 #' @param codec Optional native byte codec name or `codec_config()` object,
 #'   normally `opt(fs, "codec")`.
@@ -141,12 +144,12 @@
 #' fs_read(fs, path, offset = 0, size = NULL, end = NULL,
 #'         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-#'         mode = c("raw", "serial", "codec"),
+#'         mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'         serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
 #'             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-#'             mode = c("raw", "serial", "codec"),
+#'             mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'             serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
 #'               result = c("auto", "flat", "nested"), batch_concurrency = NULL,
@@ -164,27 +167,27 @@
 #' fs_seek(iter, offset, whence = c("start", "current", "end"))
 #' fs_write(fs, path, data, batch_concurrency = NULL,
 #'          write_concurrency = NULL, chunk_size = NULL,
-#'          mode = c("raw", "serial", "codec"),
+#'          mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'          serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_write_aio(fs, path, data, batch_concurrency = NULL,
 #'              write_concurrency = NULL, chunk_size = NULL,
-#'              mode = c("raw", "serial", "codec"),
+#'              mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'              serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_replace(fs, path, data, batch_concurrency = NULL,
 #'            write_concurrency = NULL, chunk_size = NULL,
-#'            mode = c("raw", "serial", "codec"),
+#'            mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'            serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_replace_aio(fs, path, data, batch_concurrency = NULL,
 #'                write_concurrency = NULL, chunk_size = NULL,
-#'                mode = c("raw", "serial", "codec"),
+#'                mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'                serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_append(fs, path, data, batch_concurrency = NULL,
 #'           write_concurrency = NULL, chunk_size = NULL,
-#'           mode = c("raw", "serial", "codec"),
+#'           mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'           serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_append_aio(fs, path, data, batch_concurrency = NULL,
 #'               write_concurrency = NULL, chunk_size = NULL,
-#'               mode = c("raw", "serial", "codec"),
+#'               mode = c("raw", "serial", "text", "codec"), encoding = "UTF-8",
 #'               serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_write_iter(fs, path, create = TRUE, append = FALSE,
 #'               write_concurrency = NULL, chunk_size = NULL)
@@ -760,6 +763,71 @@ deserialize_raw <- function(x, config = list()) {
   }
 }
 
+.ropendal_check_complete_text_read <- function(offset, size, end) {
+  if (.ropendal_is_partial_read(offset, size, end)) {
+    stop("mode = \"text\" requires complete-object reads; use mode = \"raw\" for byte ranges", call. = FALSE)
+  }
+}
+
+.ropendal_check_text_encoding <- function(encoding) {
+  if (!is.character(encoding) || length(encoding) != 1L || is.na(encoding) || !nzchar(encoding)) {
+    stop("encoding must be a non-empty scalar string", call. = FALSE)
+  }
+  probe <- tryCatch(
+    iconv("A", from = "UTF-8", to = encoding, toRaw = TRUE)[[1]],
+    error = function(e) NULL
+  )
+  if (is.null(probe)) stop("unsupported text encoding ", sQuote(encoding), call. = FALSE)
+  if (any(probe == as.raw(0))) {
+    stop("text encoding ", sQuote(encoding), " produces embedded NUL bytes; use raw mode", call. = FALSE)
+  }
+  encoding
+}
+
+.ropendal_text_to_raw_one <- function(value, encoding) {
+  if (!is.character(value) || length(value) != 1L || is.na(value)) {
+    stop("text data must be a non-missing scalar string", call. = FALSE)
+  }
+  bytes <- iconv(value, from = "", to = encoding, toRaw = TRUE)[[1]]
+  if (is.null(bytes)) stop("text data could not be encoded as ", encoding, call. = FALSE)
+  bytes
+}
+
+.ropendal_text_from_raw_one <- function(value, encoding) {
+  bytes <- .ropendal_payload_to_raw(value, "text bytes")
+  if (any(bytes == as.raw(0))) stop("text bytes cannot contain NUL bytes", call. = FALSE)
+  text <- tryCatch(
+    rawToChar(bytes, multiple = FALSE),
+    error = function(e) stop("text bytes cannot be materialized as an R string", call. = FALSE)
+  )
+  text <- iconv(text, from = encoding, to = "UTF-8")
+  if (is.na(text)) stop("text bytes could not be decoded as ", encoding, call. = FALSE)
+  Encoding(text) <- "UTF-8"
+  text
+}
+
+.ropendal_text_from_raw_tree <- function(value, encoding) {
+  if (is_error_value(value)) return(value)
+  if (is.raw(value) || inherits(value, "OpendalBytes")) return(.ropendal_text_from_raw_one(value, encoding))
+  if (is.list(value)) return(lapply(value, .ropendal_text_from_raw_tree, encoding = encoding))
+  stop("text reads must resolve to raw bytes or error values", call. = FALSE)
+}
+
+.ropendal_text_data <- function(path, data, encoding) {
+  encoding <- .ropendal_check_text_encoding(encoding)
+  n <- length(path)
+  if (n <= 1L) return(.ropendal_text_to_raw_one(data, encoding))
+  if (is.character(data)) {
+    if (length(data) != n) stop("data length must match path length for vectorized text writes", call. = FALSE)
+    return(lapply(data, .ropendal_text_to_raw_one, encoding = encoding))
+  }
+  if (is.list(data) && !is_error_value(data)) {
+    if (length(data) != n) stop("data length must match path length for vectorized text writes", call. = FALSE)
+    return(lapply(data, .ropendal_text_to_raw_one, encoding = encoding))
+  }
+  stop("data must be a character vector or list of scalar strings for text writes", call. = FALSE)
+}
+
 .ropendal_check_complete_codec_read <- function(codec, offset, size, end) {
   if (!is.null(codec) && !identical(codec, "identity") && .ropendal_is_partial_read(offset, size, end)) {
     stop("codec reads require complete-object reads; use mode = \"raw\" without codec for byte ranges", call. = FALSE)
@@ -798,14 +866,16 @@ deserialize_raw <- function(x, config = list()) {
   stop("codec reads must resolve to raw bytes or error values", call. = FALSE)
 }
 
-.ropendal_materialize_read <- function(value, mode, serial_config, codec) {
+.ropendal_materialize_read <- function(value, mode, serial_config, codec, encoding) {
   value <- .ropendal_codec_decode_tree(value, codec)
   if (identical(mode, "serial")) value <- .ropendal_deserialize_tree(value, serial_config)
+  if (identical(mode, "text")) value <- .ropendal_text_from_raw_tree(value, encoding)
   value
 }
 
-.ropendal_prepare_write_data <- function(path, data, mode, serial_config, codec) {
+.ropendal_prepare_write_data <- function(path, data, mode, serial_config, codec, encoding) {
   if (identical(mode, "serial")) data <- .ropendal_serial_data(path, data, serial_config)
+  if (identical(mode, "text")) data <- .ropendal_text_data(path, data, encoding)
   .ropendal_codec_encode_tree(data, codec)
 }
 
@@ -817,13 +887,18 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     read_concurrency = NULL,
                     chunk_size = NULL,
                     coalesce_gap = NULL,
-                    mode = c("raw", "serial", "codec"),
+                    mode = c("raw", "serial", "text", "codec"),
+                    encoding = "UTF-8",
                     serial_config = opt(fs, "serial"),
                     codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
   if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  if (identical(mode, "text")) {
+    encoding <- .ropendal_check_text_encoding(encoding)
+    .ropendal_check_complete_text_read(offset, size, end)
+  }
   .ropendal_check_complete_codec_read(codec, offset, size, end)
   value <- fs$read(
     path,
@@ -836,7 +911,7 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
     chunk_size,
     coalesce_gap
   )
-  .ropendal_materialize_read(value, mode, serial_config, codec)
+  .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
 }
 
 #' @export
@@ -847,15 +922,20 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         read_concurrency = NULL,
                         chunk_size = NULL,
                         coalesce_gap = NULL,
-                        mode = c("raw", "serial", "codec"),
+                        mode = c("raw", "serial", "text", "codec"),
+                        encoding = "UTF-8",
                         serial_config = opt(fs, "serial"),
                         codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
   if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  if (identical(mode, "text")) {
+    encoding <- .ropendal_check_text_encoding(encoding)
+    .ropendal_check_complete_text_read(offset, size, end)
+  }
   .ropendal_check_complete_codec_read(codec, offset, size, end)
-  materializer <- function(value) .ropendal_materialize_read(value, mode, serial_config, codec)
+  materializer <- function(value) .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
   opendal_aio_with_bindings(fs$read_aio(
     path,
     offset,
@@ -939,12 +1019,13 @@ opendal_bytes_unwrap <- function(x) {
 #' @noRd
 fs_write <- function(fs, path, data, batch_concurrency = NULL,
                      write_concurrency = NULL, chunk_size = NULL,
-                     mode = c("raw", "serial", "codec"),
+                     mode = c("raw", "serial", "text", "codec"),
+                     encoding = "UTF-8",
                      serial_config = opt(fs, "serial"),
                      codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   fs$write(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -952,12 +1033,13 @@ fs_write <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
                          write_concurrency = NULL, chunk_size = NULL,
-                         mode = c("raw", "serial", "codec"),
+                         mode = c("raw", "serial", "text", "codec"),
+                         encoding = "UTF-8",
                          serial_config = opt(fs, "serial"),
                          codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   opendal_aio_with_bindings(
     fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -967,12 +1049,13 @@ fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_replace <- function(fs, path, data, batch_concurrency = NULL,
                        write_concurrency = NULL, chunk_size = NULL,
-                       mode = c("raw", "serial", "codec"),
+                       mode = c("raw", "serial", "text", "codec"),
+                       encoding = "UTF-8",
                        serial_config = opt(fs, "serial"),
                        codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   fs$replace(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -980,12 +1063,13 @@ fs_replace <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
                            write_concurrency = NULL, chunk_size = NULL,
-                           mode = c("raw", "serial", "codec"),
+                           mode = c("raw", "serial", "text", "codec"),
+                           encoding = "UTF-8",
                            serial_config = opt(fs, "serial"),
                            codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   opendal_aio_with_bindings(
     fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -995,12 +1079,13 @@ fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_append <- function(fs, path, data, batch_concurrency = NULL,
                       write_concurrency = NULL, chunk_size = NULL,
-                      mode = c("raw", "serial", "codec"),
+                      mode = c("raw", "serial", "text", "codec"),
+                      encoding = "UTF-8",
                       serial_config = opt(fs, "serial"),
                       codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   fs$append(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -1008,12 +1093,13 @@ fs_append <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_append_aio <- function(fs, path, data, batch_concurrency = NULL,
                           write_concurrency = NULL, chunk_size = NULL,
-                          mode = c("raw", "serial", "codec"),
+                          mode = c("raw", "serial", "text", "codec"),
+                          encoding = "UTF-8",
                           serial_config = opt(fs, "serial"),
                           codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec, encoding)
   opendal_aio_with_bindings(
     fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
