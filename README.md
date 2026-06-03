@@ -81,8 +81,7 @@ Aio handles, explicit serializers/codecs, and lower-level iterators.
 ``` r
 library(Ropendal)
 
-root <- file.path(tempdir(), "ropendal-readme")
-unlink(root, recursive = TRUE)
+root <- tempfile("ropendal-readme-")
 dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
@@ -162,6 +161,37 @@ fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "co
 #> [1] TRUE
 rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
 #> [1] "compressed bytes\n"
+```
+
+### Store Arrow IPC streams with nanoarrow
+
+Arrow IPC is just bytes to Ropendal. We can let
+[`nanoarrow`](https://arrow.apache.org/nanoarrow/latest/r/) write an IPC
+stream, store the raw payload, then read it back and materialize the
+table again.
+
+``` r
+arrow_tbl <- data.frame(
+  id = 1:3,
+  sample = c("HG001", "HG002", "HG003"),
+  depth = c(32.5, 28.0, 41.25)
+)
+
+ipc_con <- rawConnection(raw(), "wb")
+write_result <- nanoarrow::write_nanoarrow(arrow_tbl, ipc_con)
+ipc_raw <- rawConnectionValue(ipc_con)
+close(ipc_con)
+
+fs_replace(fs, "tables/depth.arrows", ipc_raw)
+#> [1] TRUE
+roundtrip <- fs_read(fs, "tables/depth.arrows")
+length(roundtrip)
+#> [1] 576
+as.data.frame(nanoarrow::read_nanoarrow(roundtrip))
+#>   id sample depth
+#> 1  1  HG001 32.50
+#> 2  2  HG002 28.00
+#> 3  3  HG003 41.25
 ```
 
 ### Drop down to lower-level byte iterators
@@ -309,9 +339,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace               315ms    324ms      3.09        0B
-#> 2 ropendal_replace_concurrent   90.3ms    179ms      4.66        0B
-#> 3 paws_put                     588.3ms    588ms      1.70    67.7MB
+#> 1 ropendal_replace               123ms  123.7ms      7.95        0B
+#> 2 ropendal_replace_concurrent     78ms   81.5ms     12.3         0B
+#> 3 paws_put                       539ms  538.7ms      1.86    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -341,11 +371,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  45.1ms   45.1ms      22.2      64MB
-#> 2 ropendal_read_concurrent       34.3ms   35.2ms      28.4      64MB
-#> 3 ropendal_read_aio              41.7ms   41.7ms      24.0      64MB
-#> 4 ropendal_read_aio_concurrent   32.3ms   32.3ms      31.0      64MB
-#> 5 paws_get                       52.2ms   54.5ms      18.6    64.3MB
+#> 1 ropendal_read                  56.4ms   56.4ms      17.7      64MB
+#> 2 ropendal_read_concurrent       36.6ms   37.6ms      26.6      64MB
+#> 3 ropendal_read_aio              46.9ms   49.7ms      20.1      64MB
+#> 4 ropendal_read_aio_concurrent   33.1ms   33.1ms      30.3      64MB
+#> 5 paws_get                       55.1ms   55.4ms      18.1    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -668,23 +698,10 @@ while (status > 0L) {
 #> native request 6: running; wait write
 #> native request 7: running; wait write
 #> native request 8: running; wait write
-#> native request 9: running; wait write
-#> native request 10: running; wait write
-#> native request 11: running; wait write
-#> native request 12: running; wait write
-#> native request 13: running; wait write
-#> native request 14: running; wait write
-#> native request 15: running; wait write
-#> native request 16: running; wait write
-#> native request 17: running; wait write
-#> native request 18: running; wait write
-#> native request 19: running; wait write
-#> native request 20: running; wait write
-#> native request 21: running; wait write
-#> native request 22: running; wait stat
-#> native request 23: running; wait list
-#> native request 24: running; wait read_into
-#> native request 25: done; complete
+#> native request 9: running; wait stat
+#> native request 10: running; wait list
+#> native request 11: running; wait read_into
+#> native request 12: done; complete
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
   ffi$ropendal_demo_free(task)
@@ -699,7 +716,7 @@ c(
   bytes_read_into_c_buffer = nread
 )
 #>                  r_ticks                   r_work bytes_read_into_c_buffer 
-#>                       25                 12512500                       17
+#>                       12                  6006000                       17
 ```
 
 ## Development

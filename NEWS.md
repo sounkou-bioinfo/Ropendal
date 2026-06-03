@@ -3,6 +3,9 @@
 ## Ropendal 0.0.1.9000
 
 - Development version after 0.0.1.
+- Documentation: expanded README examples for batched I/O, async Aio handles,
+  serializers/codecs, Arrow IPC streams via nanoarrow, lower-level iterators,
+  S3-compatible MinIO benchmarking, and native C API scheduling.
 
 ## Ropendal 0.0.1
 

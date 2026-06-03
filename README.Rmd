@@ -87,8 +87,7 @@ handles, explicit serializers/codecs, and lower-level iterators.
 ```{r quick-start-handle}
 library(Ropendal)
 
-root <- file.path(tempdir(), "ropendal-readme")
-unlink(root, recursive = TRUE)
+root <- tempfile("ropendal-readme-")
 dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
@@ -139,6 +138,30 @@ fs_read(fs, "objects/point.txt", mode = "serial", serial_config = point_config)
 
 fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
 rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
+```
+
+### Store Arrow IPC streams with nanoarrow
+
+Arrow IPC is just bytes to Ropendal. We can let
+[`nanoarrow`](https://arrow.apache.org/nanoarrow/latest/r/) write an IPC stream,
+store the raw payload, then read it back and materialize the table again.
+
+```{r quick-start-arrow-ipc, eval = requireNamespace("nanoarrow", quietly = TRUE)}
+arrow_tbl <- data.frame(
+  id = 1:3,
+  sample = c("HG001", "HG002", "HG003"),
+  depth = c(32.5, 28.0, 41.25)
+)
+
+ipc_con <- rawConnection(raw(), "wb")
+write_result <- nanoarrow::write_nanoarrow(arrow_tbl, ipc_con)
+ipc_raw <- rawConnectionValue(ipc_con)
+close(ipc_con)
+
+fs_replace(fs, "tables/depth.arrows", ipc_raw)
+roundtrip <- fs_read(fs, "tables/depth.arrows")
+length(roundtrip)
+as.data.frame(nanoarrow::read_nanoarrow(roundtrip))
 ```
 
 ### Drop down to lower-level byte iterators
