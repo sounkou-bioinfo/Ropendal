@@ -5,6 +5,11 @@ FEATURE_FLAGS = @FEATURE_FLAGS@
 
 RUSTFLAGS =
 
+# Keep wasm_stubs.c out of native Windows builds. R's Windows make rules
+# otherwise compile every C source in src/, which would override the real
+# Rust/OpenDAL implementation with the webR unsupported shim.
+OBJECTS = capi_anchor.o init.o
+
 TARGET_DIR = $(CURDIR)/rust/target
 LIBDIR = $(TARGET_DIR)/$(TARGET)/$(subst dev,debug,$(PROFILE))
 STATLIB = $(LIBDIR)/libropendal.a
