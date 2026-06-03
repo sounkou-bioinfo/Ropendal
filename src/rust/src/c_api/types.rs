@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle as StdJoinHandle;
 
 use opendal::Metadata;
 use tokio::task::JoinHandle;
@@ -75,6 +76,20 @@ pub struct ropendal_readv_options {
     pub(crate) callback: AioCallback,
     pub(crate) userdata: *mut c_void,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ropendal_monitor_event {
+    pub(crate) struct_size: usize,
+    pub(crate) kind: i32,
+    pub(crate) aio: *mut ropendal_aio,
+    pub(crate) id: u64,
+}
+
+// `ropendal_monitor_event` values are copied into monitor-owned queues and
+// snapshots. The pointed-to Aio is retained by the monitor until release.
+unsafe impl Send for ropendal_monitor_event {}
+unsafe impl Sync for ropendal_monitor_event {}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -424,14 +439,22 @@ pub(crate) enum COutcome {
 }
 
 pub struct ropendal_aio {
+    pub(crate) refs: AtomicUsize,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
     pub(crate) handle: Mutex<Option<JoinHandle<COutcome>>>,
     pub(crate) cached: Mutex<Option<COutcome>>,
 }
 
 pub struct ropendal_cv {
+    pub(crate) refs: AtomicUsize,
     pub(crate) state: Mutex<u64>,
     pub(crate) cv: Condvar,
 }
 
-pub struct ropendal_monitor;
+pub struct ropendal_monitor {
+    pub(crate) cv: *mut ropendal_cv,
+    pub(crate) queue: Arc<Mutex<Vec<ropendal_monitor_event>>>,
+    pub(crate) snapshot: Mutex<Vec<ropendal_monitor_event>>,
+    pub(crate) retained_aios: Mutex<Vec<*mut ropendal_aio>>,
+    pub(crate) threads: Mutex<Vec<StdJoinHandle<()>>>,
+}

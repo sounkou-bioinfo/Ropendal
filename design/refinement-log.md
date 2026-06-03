@@ -494,3 +494,18 @@ The Rust implementation is R-free, and the public C API now exposes borrowed
 byte-handle helpers through `ropendal_codec_encode()`, `ropendal_codec_decode()`,
 `ropendal_bytes_data()`, `ropendal_bytes_len()`, and `ropendal_bytes_release()`.
 C callers can roundtrip gzip/zlib bytes without using R's C API or R raw vectors.
+
+### Native C monitor lifetime contract
+
+Status: `provisional`
+
+The C notification layer now distinguishes one-shot `ropendal_aio_notify()` from
+monitor-based event queues. `ropendal_aio_notify(aio, cv, id, ...)` retains the
+Aio and condition variable until the Aio reaches a terminal state, caches the
+result on the Aio, then signals the CV. `ropendal_monitor_add_aio()` retains the
+Aio until `ropendal_monitor_release()` so `ropendal_monitor_read()` can return
+completion events that borrow the original Aio pointer while the monitor is
+alive. Monitor release waits for registered notification workers to exit before
+releasing retained Aio/CV references. This keeps the C API R-free and avoids
+callbacks touching R while still allowing downstream native packages to block on
+condition variables and drain completion events.

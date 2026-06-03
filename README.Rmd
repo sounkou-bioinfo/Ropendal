@@ -134,6 +134,18 @@ collect_aio(fs_replace_aio(fs, "data.bin", as.raw(c(4, 5, 6))))
 fs_read(fs, "data.bin")
 ```
 
+Monitors let callers wait for one or more Aio completions and drain completion
+events without immediately materializing every success payload.
+
+```{r local-fs-monitor}
+read_aio <- fs_read_aio(fs, "data.bin")
+monitor_cv <- cv()
+monitor <- aio_monitor(list(read = read_aio), cv = monitor_cv)
+cv_until(monitor_cv, 1000)
+read_monitor(monitor)
+collect_aio(read_aio)
+```
+
 ## Service examples
 
 ### Public S3-compatible endpoint
@@ -146,7 +158,7 @@ credential lookup. This example uses the public 1000 Genomes AWS S3 bucket to
 range-read the beginning of a large reference FASTA and inspect a small VCF
 object without downloading an entire genome-scale file.
 
-```{r public-s3-example, eval = FALSE}
+```{r public-s3-example}
 # Public AWS S3 bucket — no credentials needed.
 s3fs <- opendal(
   "s3",
@@ -160,18 +172,20 @@ s3fs <- opendal(
 
 fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
 fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
-fasta_head
+cat(fasta_head, "\n", sep = "")
 
-fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
+fasta_stat <- fs_stat(s3fs, fasta_path)
+data.frame(path = fasta_stat$path, type = fasta_stat$type, size = fasta_stat$size)
 
 vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
-fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
+vcf_stat <- fs_stat(s3fs, vcf_path)
+data.frame(path = vcf_stat$path, type = vcf_stat$type, size = vcf_stat$size)
 
 vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
 con <- gzcon(rawConnection(vcf_head_gz))
 vcf_header <- readLines(con, n = 3)
 close(con)
-vcf_header
+cat(vcf_header, sep = "\n")
 ```
 
 ### HTTP endpoint
@@ -250,7 +264,7 @@ operation_progress <- data.frame(
 
 aio_progress <- data.frame(
   abstraction = c("OpendalAio", "active bindings", "poll_aio()", "collect_aio()/call_aio()", "cv()/aio_monitor()/race_aio()", "stop_aio()", "native C Aio"),
-  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented as R polling helpers", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, and unit operations"),
+  status = c("implemented for bytes, metadata, entries, bools, and unit completions", "implemented", "implemented", "implemented", "implemented as R polling helpers", "implemented with delayed HTTP cancellation coverage", "implemented for byte, read-vector, metadata, entry/list, bool, unit, CV, and monitor operations"),
   role = c(
     "nanonext-like handle for background Rust work",
     "$value/$data/$result plus $state/$resolved/$error",
@@ -258,7 +272,7 @@ aio_progress <- data.frame(
     "collect returns value; call waits/updates and returns the Aio invisibly",
     "condition-variable style wait helpers and completion event draining",
     "explicit cancellation request",
-    "downstream native packages can submit async filesystem operations"
+    "downstream native packages can submit async filesystem operations and drain completion notifications"
   )
 )
 

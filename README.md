@@ -189,6 +189,23 @@ fs_read(fs, "data.bin")
 #> [1] 04 05 06
 ```
 
+Monitors let callers wait for one or more Aio completions and drain
+completion events without immediately materializing every success
+payload.
+
+``` r
+read_aio <- fs_read_aio(fs, "data.bin")
+monitor_cv <- cv()
+monitor <- aio_monitor(list(read = read_aio), cv = monitor_cv)
+cv_until(monitor_cv, 1000)
+#> [1] TRUE
+read_monitor(monitor)
+#>   index name event    state
+#> 1     1 read ready resolved
+collect_aio(read_aio)
+#> [1] 04 05 06
+```
+
 ## Service examples
 
 ### Public S3-compatible endpoint
@@ -217,18 +234,32 @@ s3fs <- opendal(
 
 fasta_path <- "technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
 fasta_head <- rawToChar(fs_read(s3fs, fasta_path, offset = 0, size = 80))
-fasta_head
+cat(fasta_head, "\n", sep = "")
+#> >chr1  AC:CM000663.2  gi:568336023  LN:248956422  rl:Chromosome  M5:6aef897c3d6f
 
-fs_stat(s3fs, fasta_path)[c("path", "type", "size")]
+fasta_stat <- fs_stat(s3fs, fasta_path)
+data.frame(path = fasta_stat$path, type = fasta_stat$type, size = fasta_stat$size)
+#>                                                                                     path
+#> 1 technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa
+#>   type       size
+#> 1 file 3263683042
 
 vcf_path <- "phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz"
-fs_stat(s3fs, vcf_path)[c("path", "type", "size")]
+vcf_stat <- fs_stat(s3fs, vcf_path)
+data.frame(path = vcf_stat$path, type = vcf_stat$type, size = vcf_stat$size)
+#>                                                                                                path
+#> 1 phase3/integrated_sv_map/ALL.autosomes.pindel.20130502.complexindex.low_coverage.genotypes.vcf.gz
+#>   type   size
+#> 1 file 405302
 
 vcf_head_gz <- fs_read(s3fs, vcf_path, offset = 0, size = 16384)
 con <- gzcon(rawConnection(vcf_head_gz))
 vcf_header <- readLines(con, n = 3)
 close(con)
-vcf_header
+cat(vcf_header, sep = "\n")
+#> ##fileformat=VCFv4.0
+#> ##FILTER=<ID=PASS,Description="All filters passed">
+#> ##fileDate=20140627
 ```
 
 ### HTTP endpoint
@@ -315,15 +346,15 @@ Supported operations
 Aio interface
 </summary>
 
-| abstraction                   | status                                                                             | role                                                                    |
-|:------------------------------|:-----------------------------------------------------------------------------------|:------------------------------------------------------------------------|
-| OpendalAio                    | implemented for bytes, metadata, entries, bools, and unit completions              | nanonext-like handle for background Rust work                           |
-| active bindings               | implemented                                                                        | $value/$data/\$result plus $state/$resolved/\$error                     |
-| poll_aio()                    | implemented                                                                        | non-blocking readiness check                                            |
-| collect_aio()/call_aio()      | implemented                                                                        | collect returns value; call waits/updates and returns the Aio invisibly |
-| cv()/aio_monitor()/race_aio() | implemented as R polling helpers                                                   | condition-variable style wait helpers and completion event draining     |
-| stop_aio()                    | implemented with delayed HTTP cancellation coverage                                | explicit cancellation request                                           |
-| native C Aio                  | implemented for byte, read-vector, metadata, entry/list, bool, and unit operations | downstream native packages can submit async filesystem operations       |
+| abstraction                   | status                                                                                          | role                                                                                                 |
+|:------------------------------|:------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------|
+| OpendalAio                    | implemented for bytes, metadata, entries, bools, and unit completions                           | nanonext-like handle for background Rust work                                                        |
+| active bindings               | implemented                                                                                     | $value/$data/\$result plus $state/$resolved/\$error                                                  |
+| poll_aio()                    | implemented                                                                                     | non-blocking readiness check                                                                         |
+| collect_aio()/call_aio()      | implemented                                                                                     | collect returns value; call waits/updates and returns the Aio invisibly                              |
+| cv()/aio_monitor()/race_aio() | implemented as R polling helpers                                                                | condition-variable style wait helpers and completion event draining                                  |
+| stop_aio()                    | implemented with delayed HTTP cancellation coverage                                             | explicit cancellation request                                                                        |
+| native C Aio                  | implemented for byte, read-vector, metadata, entry/list, bool, unit, CV, and monitor operations | downstream native packages can submit async filesystem operations and drain completion notifications |
 
 </details>
 <details>

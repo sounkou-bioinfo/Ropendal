@@ -408,7 +408,17 @@ ropendal_status_t ropendal_mkdir_aio(ropendal_fs_t *fs,
                                      ropendal_aio_t **out,
                                      ropendal_error_t **err);
 
-/* Condition variables / notifications for multi-aio coordination. */
+/*
+ * Condition variables / notifications for multi-aio coordination.
+ *
+ * ropendal_aio_notify() retains the Aio and CV until the Aio reaches a
+ * terminal state, caches the result on the Aio, and signals the CV. A monitor
+ * retains its CV and every Aio added to it until ropendal_monitor_release().
+ * ropendal_monitor_read() drains queued completion events into a
+ * monitor-owned snapshot valid until the next monitor read or monitor release.
+ * monitor_release() waits for registered notification workers to exit before
+ * releasing retained Aio references.
+ */
 ropendal_status_t ropendal_cv_alloc(ropendal_cv_t **out, ropendal_error_t **err);
 void ropendal_cv_release(ropendal_cv_t *cv);
 ropendal_status_t ropendal_cv_wait(ropendal_cv_t *cv, ropendal_error_t **err);

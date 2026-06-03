@@ -130,7 +130,8 @@ Coverage:
 - `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`
 - namespace mutations `ropendal_mkdir_aio()`, `ropendal_copy_aio()`, `ropendal_rename_aio()`, and `ropendal_delete_aio()`
 - `ropendal_aio_result_readv()` reports per-request `readv_aio`/`readv_into` success/failure status and byte counts
-- `ropendal_cv_alloc()`, `ropendal_cv_signal()`, `ropendal_cv_reset()`, `ropendal_cv_value()`, and timed wait lifecycle
+- `ropendal_cv_alloc()`, `ropendal_cv_signal()`, `ropendal_cv_reset()`, `ropendal_cv_value()`, timed wait lifecycle, and `ropendal_aio_notify()`
+- `ropendal_monitor_create()`, `ropendal_monitor_add_aio()`, `ropendal_monitor_read()`, and `ropendal_monitor_release()` queue native completion events while retaining Aio/CV lifetimes
 - still planned: broader cancellation race/service coverage
 
 ### 90 CI-only API contract tests

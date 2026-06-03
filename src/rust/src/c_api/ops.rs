@@ -270,6 +270,7 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
         result
     });
     *out = Box::into_raw(Box::new(ropendal_aio {
+        refs: std::sync::atomic::AtomicUsize::new(1),
         runtime,
         handle: std::sync::Mutex::new(Some(handle)),
         cached: std::sync::Mutex::new(None),
@@ -335,6 +336,7 @@ pub unsafe extern "C" fn ropendal_read_aio(
         }
     });
     *out = Box::into_raw(Box::new(ropendal_aio {
+        refs: std::sync::atomic::AtomicUsize::new(1),
         runtime,
         handle: std::sync::Mutex::new(Some(handle)),
         cached: std::sync::Mutex::new(None),
@@ -408,6 +410,7 @@ fn c_submit_write(
             }
         });
         *out = Box::into_raw(Box::new(ropendal_aio {
+            refs: std::sync::atomic::AtomicUsize::new(1),
             runtime,
             handle: std::sync::Mutex::new(Some(handle)),
             cached: std::sync::Mutex::new(None),
@@ -459,6 +462,7 @@ fn submit_handle(
 ) {
     unsafe {
         *out = Box::into_raw(Box::new(ropendal_aio {
+            refs: std::sync::atomic::AtomicUsize::new(1),
             runtime,
             handle: std::sync::Mutex::new(Some(handle)),
             cached: std::sync::Mutex::new(None),

@@ -1,39 +1,52 @@
 use std::ptr;
+use std::sync::atomic::Ordering;
 
 use super::{CErrorInfo, set_c_error};
 use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error, ropendal_readv_result};
 
-fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
-    unsafe {
-        if aio.is_null() {
-            return Err(CErrorInfo {
-                status: 2,
-                kind: "InvalidArgument".to_string(),
-                message: "aio pointer is null".to_string(),
+pub(crate) unsafe fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
+    if aio.is_null() {
+        return Err(CErrorInfo {
+            status: 2,
+            kind: "InvalidArgument".to_string(),
+            message: "aio pointer is null".to_string(),
+            operation: "aio".to_string(),
+            path: String::new(),
+        });
+    }
+    let mut cached = (*aio).cached.lock().unwrap();
+    if let Some(cached) = cached.clone() {
+        return Ok(cached);
+    }
+    let handle = (*aio).handle.lock().unwrap().take();
+    let outcome = match handle {
+        Some(handle) => match (*aio).runtime.block_on(handle) {
+            Ok(outcome) => outcome,
+            Err(e) if e.is_cancelled() => COutcome::Cancelled,
+            Err(e) => COutcome::Error(CErrorInfo {
+                status: 1,
+                kind: "Unexpected".to_string(),
+                message: e.to_string(),
                 operation: "aio".to_string(),
                 path: String::new(),
-            });
-        }
-        if let Some(cached) = (*aio).cached.lock().unwrap().clone() {
-            return Ok(cached);
-        }
-        let handle = (*aio).handle.lock().unwrap().take();
-        let outcome = match handle {
-            Some(handle) => match (*aio).runtime.block_on(handle) {
-                Ok(outcome) => outcome,
-                Err(e) if e.is_cancelled() => COutcome::Cancelled,
-                Err(e) => COutcome::Error(CErrorInfo {
-                    status: 1,
-                    kind: "Unexpected".to_string(),
-                    message: e.to_string(),
-                    operation: "aio".to_string(),
-                    path: String::new(),
-                }),
-            },
-            None => COutcome::Cancelled,
-        };
-        *(*aio).cached.lock().unwrap() = Some(outcome.clone());
-        Ok(outcome)
+            }),
+        },
+        None => COutcome::Cancelled,
+    };
+    *cached = Some(outcome.clone());
+    Ok(outcome)
+}
+
+pub(crate) unsafe fn c_aio_retain(aio: *mut ropendal_aio) {
+    if !aio.is_null() {
+        (*aio).refs.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub(crate) unsafe fn c_aio_release_ref(aio: *mut ropendal_aio) {
+    if !aio.is_null() && (*aio).refs.fetch_sub(1, Ordering::Release) == 1 {
+        std::sync::atomic::fence(Ordering::Acquire);
+        drop(Box::from_raw(aio));
     }
 }
 
@@ -42,7 +55,8 @@ pub unsafe extern "C" fn ropendal_aio_poll(aio: *mut ropendal_aio) -> i32 {
     if aio.is_null() {
         return 2;
     }
-    if (*aio).cached.lock().unwrap().is_some() {
+    let cached = (*aio).cached.lock().unwrap();
+    if cached.is_some() {
         return 1;
     }
     match &*(*aio).handle.lock().unwrap() {
@@ -78,18 +92,19 @@ pub unsafe extern "C" fn ropendal_aio_wait(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_cancel(aio: *mut ropendal_aio) {
     if !aio.is_null() {
-        if let Some(handle) = &*(*aio).handle.lock().unwrap() {
-            handle.abort();
+        let mut cached = (*aio).cached.lock().unwrap();
+        if cached.is_none() {
+            if let Some(handle) = &*(*aio).handle.lock().unwrap() {
+                handle.abort();
+            }
+            *cached = Some(COutcome::Cancelled);
         }
-        *(*aio).cached.lock().unwrap() = Some(COutcome::Cancelled);
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_release(aio: *mut ropendal_aio) {
-    if !aio.is_null() {
-        drop(Box::from_raw(aio));
-    }
+    c_aio_release_ref(aio);
 }
 
 #[unsafe(no_mangle)]

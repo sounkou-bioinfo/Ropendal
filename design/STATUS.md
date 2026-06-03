@@ -87,8 +87,8 @@ GitHub Actions jobs:
 | `unresolved()` | yes | yes | partial | pending | no-arg sentinel plus `unresolved(aio)` / `unresolved(value)` predicate; deterministic pending predicates tested with delayed local HTTP fixture |
 | `call_aio()` / `collect_aio()` | yes | yes | yes | pending | `call_aio()` waits/updates and returns aio invisibly, including delayed pending HTTP fixture Aio; `collect_aio()` returns value |
 | `stop_aio()` / C Aio cancellation | yes | partial | no | yes | delayed HTTP fixture covers R pending-read cancellation; installed C roundtrip covers `ropendal_aio_cancel()`; broader race/service coverage still useful |
-| condition variables `cv_*` | yes | R polling + C partial | yes | header only | R `cv()`, `cv_value()`, `cv_reset()`, `cv_signal()`, `cv_wait()`, and `cv_until()` implemented; C cv lifecycle covered |
-| `aio_monitor()` / `read_monitor()` | yes | yes | yes | no | R monitor drains Aio completion events without materializing success payloads |
+| condition variables `cv_*` | yes | R polling + native C | yes | yes | R `cv()`, `cv_value()`, `cv_reset()`, `cv_signal()`, `cv_wait()`, and `cv_until()` implemented; C cv lifecycle and `ropendal_aio_notify()` covered |
+| `aio_monitor()` / `read_monitor()` | yes | yes | yes | partial | R monitor drains Aio completion events without materializing success payloads; C monitor queues native completion events |
 | `race_aio()` | yes | yes | yes | no | returns first completion event plus Aio handle; timeout returns `unresolvedValue` |
 
 ## C API contracts
@@ -109,19 +109,19 @@ GitHub Actions jobs:
 | `replace_aio()` | yes | yes | no | yes | local `fs` roundtrip |
 | `append_aio()` | yes | partial | no | yes | local `fs` roundtrip; broader backend capability coverage remains service-dependent |
 | `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
-| `cv` primitives | yes | partial | no | yes | installed C roundtrip covers alloc/value/signal/reset/timed wait |
-| monitor primitives | yes | unsupported stub | no | symbol | planned |
+| `cv` primitives | yes | yes | no | yes | installed C roundtrip covers alloc/value/signal/reset/timed wait plus Aio notify |
+| monitor primitives | yes | yes | no | yes | installed C roundtrip covers monitor create/add/read/release with retained Aio/CV lifetimes |
 | per-request read-vector result details | yes | yes | no | yes | `ropendal_readv_result_t` plus `ropendal_aio_result_readv()` for both `readv_aio()` and `readv_into_aio()` |
 | native byte codecs / byte handles | yes | yes | no | yes | `ropendal_codec_encode()`, `ropendal_codec_decode()`, `ropendal_bytes_data()`, `ropendal_bytes_len()`, and `ropendal_bytes_release()` roundtrip gzip bytes without R API |
 
 ## Next implementation milestones
 
 1. Add prefetch, traversal fanout, limits, and stronger continuation/backpressure semantics for namespace iterators where OpenDAL/service support warrants them.
-2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations or C API byte-handle accessors.
+2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
 3. Add service-level concurrency layers and memory/backpressure limits. Per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, and `mode = "serial"` are implemented with R-thread-only hooks.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.
-6. Bring native C API parity up to the async operation contract with broader remote-service and cancellation-race coverage.
+6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.
 7. Finalize the S7 credential-provider contract, and decide whether to add an `s7contract` interface/trait layer for third-party providers.
 8. Expand capability tests by service profile and return classed capability values.
 9. Expand credential helpers beyond Google Drive and add more service coverage.
