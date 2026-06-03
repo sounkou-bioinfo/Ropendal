@@ -99,9 +99,10 @@ collect_aio(aio)
 
 The same `fs_*` calls apply to HTTP(S), S3, and Google Drive handles.
 
-### HTTP/HTTPS read example
+### HTTP/HTTPS read example (uses the package-provided HTTP fixture server)
 
 ``` r
+# Uses the fixture HTTP server provided by this package for a reproducible example.
 root <- tempfile("ropendal-http-readme-")
 dir.create(root, recursive = TRUE)
 writeLines("hello http example", file.path(root, "hello.txt"))
@@ -110,9 +111,7 @@ fixture <- OpendalHttpFixture$start(root)
 http_fs <- opendal("http", endpoint = fixture$endpoint(), root = "/")
 http_head <- rawToChar(fs_read(http_fs, "hello.txt"))
 http_head
-#> [1] "hello http example\n"
 fixture$stop()
-#> [1] TRUE
 ```
 
 ### Public S3-compatible read example (VCF header)

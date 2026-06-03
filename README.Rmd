@@ -93,9 +93,10 @@ collect_aio(aio)
 
 The same `fs_*` calls apply to HTTP(S), S3, and Google Drive handles.
 
-### HTTP/HTTPS read example
+### HTTP/HTTPS read example (uses the package-provided HTTP fixture server)
 
-```{r api-tour-http}
+```{r api-tour-http, eval = FALSE}
+# Uses the fixture HTTP server provided by this package for a reproducible example.
 root <- tempfile("ropendal-http-readme-")
 dir.create(root, recursive = TRUE)
 writeLines("hello http example", file.path(root, "hello.txt"))
