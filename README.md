@@ -11,10 +11,10 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-Ropendal is an abstract filesystem interface for R backed by the Rust
-crate of [Apache OpenDAL](https://opendal.apache.org/). The package is
-byte-first: operations move raw bytes, then explicitly materialize into
-R objects through modes and serializers.
+Ropendal: **Abstract Filesystem Access for R** via [Apache
+OpenDAL](https://opendal.apache.org/). The package is byte-first:
+operations move raw bytes, then explicitly materialize into R objects
+through modes and serializers.
 
 The async API is inspired by `nanonext`-style Aio handles: issue async
 work with `fs_*_aio()`, then `call_aio()` to wait for completion and
