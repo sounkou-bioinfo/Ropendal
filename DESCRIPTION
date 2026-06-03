@@ -1,7 +1,7 @@
 Package: Ropendal
 Type: Package
 Title: Abstract Filesystem Access for R via 'Apache OpenDAL'
-Version: 0.0.1
+Version: 0.0.1.9000
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
            email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
