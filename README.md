@@ -206,6 +206,10 @@ read_chunk <- 1024 * 1024
 write_chunk <- 5 * 1024 * 1024
 ```
 
+We first compare upload/replace paths: the default Ropendal call,
+Ropendal with explicit write chunking/concurrency, and
+`paws.storage::put_object()`.
+
 ``` r
 bench::mark(
   ropendal_replace = fs_replace(s3_fs, bench_key, payload),
@@ -226,10 +230,14 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace              19.7ms   22.3ms      45.0    10.5KB
-#> 2 ropendal_replace_concurrent   19.1ms     24ms      41.3        0B
-#> 3 paws_put                      78.6ms   79.8ms      12.3    11.7MB
+#> 1 ropendal_replace              25.3ms     28ms      35.6    10.5KB
+#> 2 ropendal_replace_concurrent   17.2ms   18.9ms      47.1        0B
+#> 3 paws_put                      78.5ms   78.6ms      12.7    11.7MB
 ```
+
+Then we compare download paths. The Ropendal rows separate default
+reads, chunked/concurrent reads, Aio reads, and Aio plus
+chunked/concurrent reads; `paws_get` remains the single-GET baseline.
 
 ``` r
 bench::mark(
@@ -254,11 +262,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  5.73ms   5.73ms     175.        8MB
-#> 2 ropendal_read_concurrent       4.77ms   5.98ms     175.        8MB
-#> 3 ropendal_read_aio             11.98ms  12.54ms      79.8       8MB
-#> 4 ropendal_read_aio_concurrent   7.13ms   8.47ms     118.        8MB
-#> 5 paws_get                      12.91ms  15.15ms      66.0    8.29MB
+#> 1 ropendal_read                   5.6ms    5.6ms     179.        8MB
+#> 2 ropendal_read_concurrent       5.12ms   6.12ms     167.        8MB
+#> 3 ropendal_read_aio              7.71ms   9.12ms     110.        8MB
+#> 4 ropendal_read_aio_concurrent   7.98ms   9.62ms     104.        8MB
+#> 5 paws_get                      12.15ms  12.97ms      77.1    8.29MB
 ```
 
 ### Google Drive read example (credentials explicit)

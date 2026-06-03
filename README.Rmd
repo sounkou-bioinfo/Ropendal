@@ -297,6 +297,9 @@ read_chunk <- 1024 * 1024
 write_chunk <- 5 * 1024 * 1024
 ```
 
+We first compare upload/replace paths: the default Ropendal call, Ropendal with
+explicit write chunking/concurrency, and `paws.storage::put_object()`.
+
 ```{r api-tour-s3-bench-write, eval = readme_run_s3}
 bench::mark(
   ropendal_replace = fs_replace(s3_fs, bench_key, payload),
@@ -315,6 +318,10 @@ bench::mark(
   check = FALSE
 )[, c("expression", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
 ```
+
+Then we compare download paths. The Ropendal rows separate default reads,
+chunked/concurrent reads, Aio reads, and Aio plus chunked/concurrent reads;
+`paws_get` remains the single-GET baseline.
 
 ```{r api-tour-s3-bench-read, eval = readme_run_s3}
 bench::mark(
