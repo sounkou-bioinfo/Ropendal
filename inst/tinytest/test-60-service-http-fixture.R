@@ -117,5 +117,30 @@ tryCatch(
   finally = expect_true(identical(cancel_fixture$stop(), TRUE))
 )
 
+timeout_fixture <- Ropendal:::OpendalHttpFixture$start(root, delay_ms = 1000)
+tryCatch(
+  {
+    read_timeout_fs <- opendal(
+      "http",
+      endpoint = timeout_fixture$endpoint(),
+      root = "/",
+      layers = list(layer_timeout(io_timeout = 0.01))
+    )
+    read_timeout <- fs_read(read_timeout_fs, "data.bin")
+    expect_true(is_error_value(read_timeout))
+    expect_true(grepl("timeout", error_message(read_timeout), ignore.case = TRUE))
+    stat_timeout_fs <- opendal(
+      "http",
+      endpoint = timeout_fixture$endpoint(),
+      root = "/",
+      layers = list(layer_timeout(request_timeout = 0.01))
+    )
+    stat_timeout <- fs_stat(stat_timeout_fs, "data.bin")
+    expect_true(is_error_value(stat_timeout))
+    expect_true(grepl("timeout", error_message(stat_timeout), ignore.case = TRUE))
+  },
+  finally = expect_true(identical(timeout_fixture$stop(), TRUE))
+)
+
 expect_true(identical(header_fixture$stop(), TRUE))
 expect_true(identical(fixture$stop(), TRUE))

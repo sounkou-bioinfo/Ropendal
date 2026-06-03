@@ -75,6 +75,7 @@ GitHub Actions jobs:
 | `serial_config(class, sfunc, ufunc)` / `serialize_raw()` / `deserialize_raw()` / `mode = "serial"` | yes | yes | yes | no | base serialization, custom class envelopes, `opt(fs, "serial")`, sync/Aio read/write materialization, vectorized serial writes, reset via `list()`, and partial-range rejection tested locally |
 | `mode = "text"` / `encoding =` explicit text layer | yes | yes | yes | no | sync/Aio read/write materialization, vectorized text writes, UTF-8 and Latin-1 boundaries, NUL-producing encoding rejection, text+codec composition, and partial-range rejection tested locally |
 | `codec_config()` / `codec =` explicit native byte-codec layer | yes | partial | yes | yes | `identity`, `gzip`, and `zlib` native transforms; sync/Aio raw and serial/text+codec local roundtrips; C API byte-handle encode/decode roundtrip |
+| runtime and service layer controls | yes | yes | yes | partial | `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, and `layer_timeout(request_timeout=, io_timeout=)` apply at filesystem construction; local constructor validation and roundtrip coverage |
 | explicit credential helpers | yes | partial | yes | yes | S7 `CredentialProvider` with S3, GCS, AzBlob, and Google Drive direct/gdrive3 providers, redacted print, Rust JSON parsing, and opt-in service test implemented; no hidden env/provider-chain lookup |
 
 ## Async R contracts
@@ -119,7 +120,7 @@ GitHub Actions jobs:
 
 1. Add traversal fanout and stronger backend-token continuation for namespace iterators where OpenDAL/service support warrants them; `limit`, `start_after`, best-effort page `cursor` markers, and explicit entry `prefetch` buffering are implemented for listing collection and iterators.
 2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-style optimizations; C API byte-handle accessors are implemented.
-3. Add remaining memory/backpressure limits and any additional service-level layers. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
+3. Add any remaining memory/backpressure controls and service-level layers where they justify public API. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, `layer_timeout(request_timeout=, io_timeout=)`, explicit listing iterator `prefetch`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.
 6. Broaden native C API remote-service and cancellation-race coverage now that byte, metadata, namespace, codec, CV, and monitor primitives are implemented.

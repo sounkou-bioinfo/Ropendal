@@ -445,12 +445,12 @@ class(`OpendalCredentialProvider`) <- c("Ropendal::OpendalCredentialProvider__bu
 
 ### associated functions for OpendalFs
 
-`OpendalFs`$`from_uri` <- function(`uri`, `headers` = NULL, `runtime_threads` = NULL, `max_inflight` = NULL) {
-  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_from_uri__impl, `uri`, `headers`, `runtime_threads`, `max_inflight`))
+`OpendalFs`$`from_uri` <- function(`uri`, `headers` = NULL, `runtime_threads` = NULL, `max_inflight` = NULL, `timeout_seconds` = NULL, `io_timeout_seconds` = NULL) {
+  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_from_uri__impl, `uri`, `headers`, `runtime_threads`, `max_inflight`, `timeout_seconds`, `io_timeout_seconds`))
 }
 
-`OpendalFs`$`open` <- function(`scheme`, `dots`, `config`, `root` = NULL, `auth_config` = NULL, `headers` = NULL, `runtime_threads` = NULL, `max_inflight` = NULL) {
-  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_open__impl, `scheme`, `dots`, `config`, `root`, `auth_config`, `headers`, `runtime_threads`, `max_inflight`))
+`OpendalFs`$`open` <- function(`scheme`, `dots`, `config`, `root` = NULL, `auth_config` = NULL, `headers` = NULL, `runtime_threads` = NULL, `max_inflight` = NULL, `timeout_seconds` = NULL, `io_timeout_seconds` = NULL) {
+  .savvy_wrap_OpendalFs(.Call(savvy_OpendalFs_open__impl, `scheme`, `dots`, `config`, `root`, `auth_config`, `headers`, `runtime_threads`, `max_inflight`, `timeout_seconds`, `io_timeout_seconds`))
 }
 
 

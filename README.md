@@ -374,12 +374,13 @@ Aio interface
 Concurrency controls
 </summary>
 
-| control                            | status      | scope                                                           |
-|:-----------------------------------|:------------|:----------------------------------------------------------------|
-| runtime_config(threads=)           | implemented | Tokio worker threads for one filesystem handle                  |
-| layer_concurrent_limit(max=)       | implemented | service-wide in-flight backend operation throttle               |
-| batch_concurrency                  | implemented | many independent paths/ranges in one call                       |
-| read_concurrency/write_concurrency | implemented | per-object chunk/part transfer fanout where OpenDAL supports it |
+| control                                      | status      | scope                                                           |
+|:---------------------------------------------|:------------|:----------------------------------------------------------------|
+| runtime_config(threads=)                     | implemented | Tokio worker threads for one filesystem handle                  |
+| layer_concurrent_limit(max=)                 | implemented | service-wide in-flight backend operation throttle               |
+| layer_timeout(request_timeout=, io_timeout=) | implemented | service-wide operation and I/O deadlines                        |
+| batch_concurrency                            | implemented | many independent paths/ranges in one call                       |
+| read_concurrency/write_concurrency           | implemented | per-object chunk/part transfer fanout where OpenDAL supports it |
 
 </details>
 <details>

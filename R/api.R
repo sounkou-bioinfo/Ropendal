@@ -8,7 +8,7 @@
 #' @name Ropendal-api
 #' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gcs
 #'   credentials_azblob credentials_gdrive credentials_gdrive3 credential_schemes
-#'   credential_config credential_summary runtime_config layer_concurrent_limit
+#'   credential_config credential_summary runtime_config layer_concurrent_limit layer_timeout
 #'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
 #'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
@@ -34,9 +34,16 @@
 #'   printed by Ropendal.
 #' @param runtime Runtime configuration from `runtime_config()`.
 #' @param layers List of explicit filesystem layers, currently including
-#'   `layer_concurrent_limit()`.
+#'   `layer_concurrent_limit()` and `layer_timeout()`.
 #' @param threads Number of Tokio worker threads for a filesystem handle.
 #' @param max Maximum total in-flight backend operations for a filesystem handle.
+#' @param request_timeout Operation timeout in seconds for non-streaming backend
+#'   operations such as stat, exists, delete, copy, rename, and mkdir. If only
+#'   one timeout field is supplied, the omitted field uses OpenDAL's timeout-layer
+#'   default.
+#' @param io_timeout I/O timeout in seconds for backend read/write streams and
+#'   listing iteration. If only one timeout field is supplied, the omitted field
+#'   uses OpenDAL's timeout-layer default.
 #' @param uri OpenDAL URI.
 #' @param access_key_id,secret_access_key S3-compatible access key fields.
 #' @param session_token Optional S3-compatible session token.
@@ -138,6 +145,7 @@
 #' credential_summary(provider)
 #' runtime_config(threads = NULL)
 #' layer_concurrent_limit(max)
+#' layer_timeout(request_timeout = NULL, io_timeout = NULL)
 #' fs_info(fs)
 #' fs_capabilities(fs)
 #' fs_normalize_path(fs, path, directory = FALSE)
@@ -328,6 +336,7 @@ credential_summary <- S7::new_generic(
 opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NULL,
                     headers = NULL, runtime = runtime_config(), layers = list()) {
   if (!is.null(headers)) headers <- as.list(headers)
+  layer_options <- .ropendal_layer_options(layers)
   OpendalFs$open(
     scheme,
     list(...),
@@ -336,7 +345,9 @@ opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NUL
     if (is.null(auth)) NULL else credential_config(auth, scheme),
     headers,
     .ropendal_runtime_threads(runtime),
-    .ropendal_layer_max_inflight(layers)
+    layer_options$max_inflight,
+    layer_options$request_timeout,
+    layer_options$io_timeout
   )
 }
 
@@ -344,11 +355,14 @@ opendal <- function(scheme = "fs", ..., root = NULL, config = list(), auth = NUL
 #' @noRd
 opendal_uri <- function(uri, headers = NULL, runtime = runtime_config(), layers = list()) {
   if (!is.null(headers)) headers <- as.list(headers)
+  layer_options <- .ropendal_layer_options(layers)
   OpendalFs$from_uri(
     uri,
     headers,
     .ropendal_runtime_threads(runtime),
-    .ropendal_layer_max_inflight(layers)
+    layer_options$max_inflight,
+    layer_options$request_timeout,
+    layer_options$io_timeout
   )
 }
 
@@ -368,6 +382,18 @@ layer_concurrent_limit <- function(max) {
   )
 }
 
+#' @export
+#' @noRd
+layer_timeout <- function(request_timeout = NULL, io_timeout = NULL) {
+  if (is.null(request_timeout) && is.null(io_timeout)) {
+    stop("at least one timeout value is required", call. = FALSE)
+  }
+  structure(
+    list(type = "timeout", request_timeout = request_timeout, io_timeout = io_timeout),
+    class = c("ropendalTimeoutLayer", "ropendalLayerConfig")
+  )
+}
+
 .ropendal_runtime_threads <- function(runtime) {
   if (is.null(runtime)) return(NULL)
   if (!inherits(runtime, "ropendalRuntimeConfig")) {
@@ -376,23 +402,29 @@ layer_concurrent_limit <- function(max) {
   runtime$threads
 }
 
-.ropendal_layer_max_inflight <- function(layers) {
-  if (is.null(layers)) return(NULL)
+.ropendal_layer_options <- function(layers) {
+  out <- list(max_inflight = NULL, request_timeout = NULL, io_timeout = NULL)
+  if (is.null(layers)) return(out)
   if (inherits(layers, "ropendalLayerConfig")) layers <- list(layers)
   if (!is.list(layers)) stop("layers must be a list of layer config objects", call. = FALSE)
-  max_inflight <- NULL
+  seen_timeout <- FALSE
   for (layer in layers) {
     if (!inherits(layer, "ropendalLayerConfig")) {
       stop("layers must contain only layer config objects", call. = FALSE)
     }
     if (identical(layer$type, "concurrent_limit")) {
-      if (!is.null(max_inflight)) stop("only one layer_concurrent_limit() is allowed", call. = FALSE)
-      max_inflight <- layer$max
+      if (!is.null(out$max_inflight)) stop("only one layer_concurrent_limit() is allowed", call. = FALSE)
+      out$max_inflight <- layer$max
+    } else if (identical(layer$type, "timeout")) {
+      if (seen_timeout) stop("only one layer_timeout() is allowed", call. = FALSE)
+      out$request_timeout <- layer$request_timeout
+      out$io_timeout <- layer$io_timeout
+      seen_timeout <- TRUE
     } else {
       stop("unsupported layer config", call. = FALSE)
     }
   }
-  max_inflight
+  out
 }
 
 #' @export

@@ -8,25 +8,40 @@ fs <- opendal("fs", root = root)
 
 expect_true(inherits(runtime_config(threads = 1), "ropendalRuntimeConfig"))
 expect_true(inherits(layer_concurrent_limit(1), "ropendalConcurrentLimitLayer"))
+expect_true(inherits(layer_timeout(request_timeout = 1, io_timeout = 1), "ropendalTimeoutLayer"))
 limited_root <- ropendal_temp_root()
 limited_fs <- opendal(
   "fs",
   root = limited_root,
   runtime = runtime_config(threads = 1),
-  layers = list(layer_concurrent_limit(1))
+  layers = list(layer_concurrent_limit(1), layer_timeout(request_timeout = 1, io_timeout = 1))
 )
 expect_true(inherits(limited_fs, "OpendalFs"))
 expect_true(identical(fs_write(limited_fs, "limited.bin", as.raw(1)), TRUE))
 expect_equal(fs_read(limited_fs, "limited.bin"), as.raw(1))
+request_timeout_fs <- opendal("fs", root = ropendal_temp_root(), layers = list(layer_timeout(request_timeout = 1)))
+expect_true(identical(fs_write(request_timeout_fs, "request-timeout.bin", as.raw(1)), TRUE))
+io_timeout_fs <- opendal("fs", root = ropendal_temp_root(), layers = list(layer_timeout(io_timeout = 1)))
+expect_true(identical(fs_write(io_timeout_fs, "io-timeout.bin", as.raw(1)), TRUE))
 expect_error(opendal("fs", root = ropendal_temp_root(), runtime = list()), "runtime_config")
 expect_error(opendal("fs", root = ropendal_temp_root(), layers = list(list())), "layer config")
 expect_error(opendal("fs", root = ropendal_temp_root(), runtime = runtime_config(0)), "greater than zero")
 expect_error(opendal("fs", root = ropendal_temp_root(), layers = list(layer_concurrent_limit(0))), "greater than zero")
+expect_error(layer_timeout(), "timeout")
+expect_error(opendal("fs", root = ropendal_temp_root(), layers = list(layer_timeout(request_timeout = 0))), "greater than zero")
 expect_error(
   opendal(
     "fs",
     root = ropendal_temp_root(),
     layers = list(layer_concurrent_limit(1), layer_concurrent_limit(2))
+  ),
+  "only one"
+)
+expect_error(
+  opendal(
+    "fs",
+    root = ropendal_temp_root(),
+    layers = list(layer_timeout(request_timeout = 1), layer_timeout(io_timeout = 1))
   ),
   "only one"
 )

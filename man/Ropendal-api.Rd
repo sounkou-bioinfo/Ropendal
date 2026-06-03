@@ -16,6 +16,7 @@
 \alias{credential_summary}
 \alias{runtime_config}
 \alias{layer_concurrent_limit}
+\alias{layer_timeout}
 \alias{opt}
 \alias{opt<-}
 \alias{serial_config}
@@ -109,6 +110,7 @@ credential_config(provider, service)
 credential_summary(provider)
 runtime_config(threads = NULL)
 layer_concurrent_limit(max)
+layer_timeout(request_timeout = NULL, io_timeout = NULL)
 fs_info(fs)
 fs_capabilities(fs)
 fs_normalize_path(fs, path, directory = FALSE)
@@ -236,11 +238,20 @@ printed by Ropendal.}
 \item{runtime}{Runtime configuration from \code{runtime_config()}.}
 
 \item{layers}{List of explicit filesystem layers, currently including
-\code{layer_concurrent_limit()}.}
+\code{layer_concurrent_limit()} and \code{layer_timeout()}.}
 
 \item{threads}{Number of Tokio worker threads for a filesystem handle.}
 
 \item{max}{Maximum total in-flight backend operations for a filesystem handle.}
+
+\item{request_timeout}{Operation timeout in seconds for non-streaming backend
+operations such as stat, exists, delete, copy, rename, and mkdir. If only
+one timeout field is supplied, the omitted field uses OpenDAL's timeout-layer
+default.}
+
+\item{io_timeout}{I/O timeout in seconds for backend read/write streams and
+listing iteration. If only one timeout field is supplied, the omitted field
+uses OpenDAL's timeout-layer default.}
 
 \item{uri}{OpenDAL URI.}
 

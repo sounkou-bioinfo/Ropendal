@@ -219,9 +219,9 @@ There are no guarantees about backend side effects unless the backend/profile pr
 
 ### Timeout and waiting semantics
 
-Status: `provisional`
+Status: `implemented`
 
-Operation timeouts are operation/backend behavior and resolve as error values if the package/profile/layer defines them. Wait timeouts are user convenience: `cv_until()` / `aio_wait(timeout)` control waiting and do not by themselves guarantee cancellation. Cancellation remains subject to the backend/profile semantics described above.
+Operation timeouts are operation/backend behavior and resolve as error values if the package/profile/layer defines them. `layer_timeout(request_timeout=, io_timeout=)` exposes OpenDAL's timeout layer explicitly at filesystem construction; `request_timeout` covers non-streaming operations, `io_timeout` covers read/write streams and listing iteration, and if only one timeout is supplied the omitted side uses OpenDAL's timeout-layer default. Wait timeouts are user convenience: `cv_until()` / `aio_wait(timeout)` control waiting and do not by themselves guarantee cancellation. Cancellation remains subject to the backend/profile semantics described above.
 
 ### Warning policy
 

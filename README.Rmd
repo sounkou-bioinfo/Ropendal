@@ -287,11 +287,12 @@ aio_progress <- data.frame(
 )
 
 control_progress <- data.frame(
-  control = c("runtime_config(threads=)", "layer_concurrent_limit(max=)", "batch_concurrency", "read_concurrency/write_concurrency"),
-  status = c("implemented", "implemented", "implemented", "implemented"),
+  control = c("runtime_config(threads=)", "layer_concurrent_limit(max=)", "layer_timeout(request_timeout=, io_timeout=)", "batch_concurrency", "read_concurrency/write_concurrency"),
+  status = c("implemented", "implemented", "implemented", "implemented", "implemented"),
   scope = c(
     "Tokio worker threads for one filesystem handle",
     "service-wide in-flight backend operation throttle",
+    "service-wide operation and I/O deadlines",
     "many independent paths/ranges in one call",
     "per-object chunk/part transfer fanout where OpenDAL supports it"
   )

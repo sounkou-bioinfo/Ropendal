@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::{StreamExt, stream};
-use opendal::layers::ConcurrentLimitLayer;
+use opendal::layers::{ConcurrentLimitLayer, TimeoutLayer};
 use opendal::options::{DeleteOptions, ListOptions};
 use opendal::{Buffer, Metadata, Operator};
 use savvy::savvy;
@@ -40,6 +41,8 @@ impl OpendalFs {
         headers: Option<ListSexp>,
         runtime_threads: Option<f64>,
         max_inflight: Option<f64>,
+        timeout_seconds: Option<f64>,
+        io_timeout_seconds: Option<f64>,
     ) -> savvy::Result<Self> {
         let mut pairs = Vec::new();
         let headers = header_pairs_from_list(headers)?;
@@ -53,7 +56,15 @@ impl OpendalFs {
                 pairs.push(("root".to_string(), root.to_string()));
             }
         }
-        Self::open_from_pairs(scheme, pairs, headers, runtime_threads, max_inflight)
+        Self::open_from_pairs(
+            scheme,
+            pairs,
+            headers,
+            runtime_threads,
+            max_inflight,
+            timeout_seconds,
+            io_timeout_seconds,
+        )
     }
 
     /// Open an OpenDAL filesystem from a URI.
@@ -63,14 +74,19 @@ impl OpendalFs {
         headers: Option<ListSexp>,
         runtime_threads: Option<f64>,
         max_inflight: Option<f64>,
+        timeout_seconds: Option<f64>,
+        io_timeout_seconds: Option<f64>,
     ) -> savvy::Result<Self> {
         init_registry();
         let headers = header_pairs_from_list(headers)?;
         let runtime_threads = checked_positive_usize(runtime_threads, "runtime_threads")?;
         let max_inflight = checked_positive_usize(max_inflight, "max_inflight")?;
+        let request_timeout = checked_positive_duration(timeout_seconds, "request_timeout")?;
+        let io_timeout = checked_positive_duration(io_timeout_seconds, "io_timeout")?;
         let op = Operator::from_uri(uri)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL URI: {e}")))?;
         let op = apply_http_headers(op, headers)?;
+        let op = apply_timeout_layer(op, request_timeout, io_timeout);
         let op = apply_concurrent_limit(op, max_inflight);
         let info = op.info();
         let native = NativeFs {
@@ -1106,13 +1122,18 @@ impl OpendalFs {
         headers: Vec<(String, String)>,
         runtime_threads: Option<f64>,
         max_inflight: Option<f64>,
+        timeout_seconds: Option<f64>,
+        io_timeout_seconds: Option<f64>,
     ) -> savvy::Result<Self> {
         init_registry();
         let runtime_threads = checked_positive_usize(runtime_threads, "runtime_threads")?;
         let max_inflight = checked_positive_usize(max_inflight, "max_inflight")?;
+        let request_timeout = checked_positive_duration(timeout_seconds, "request_timeout")?;
+        let io_timeout = checked_positive_duration(io_timeout_seconds, "io_timeout")?;
         let op = Operator::via_iter(scheme, config)
             .map_err(|e| savvy::Error::new(&format!("cannot open OpenDAL operator: {e}")))?;
         let op = apply_http_headers(op, headers)?;
+        let op = apply_timeout_layer(op, request_timeout, io_timeout);
         let op = apply_concurrent_limit(op, max_inflight);
         let info = op.info();
         let native = NativeFs {
@@ -2230,6 +2251,38 @@ fn checked_nonnegative_usize(value: Option<f64>, name: &str) -> savvy::Result<us
     };
     let value = checked_u64(value, name)?;
     usize::try_from(value).map_err(|_| savvy::Error::new(&format!("{name} is too large")))
+}
+
+fn checked_positive_duration(value: Option<f64>, name: &str) -> savvy::Result<Option<Duration>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value <= 0.0 {
+        return Err(savvy::Error::new(&format!(
+            "{name} must be greater than zero"
+        )));
+    }
+    Duration::try_from_secs_f64(value)
+        .map(Some)
+        .map_err(|_| savvy::Error::new(&format!("{name} must be a finite number of seconds")))
+}
+
+fn apply_timeout_layer(
+    op: Operator,
+    request_timeout: Option<Duration>,
+    io_timeout: Option<Duration>,
+) -> Operator {
+    if request_timeout.is_none() && io_timeout.is_none() {
+        return op;
+    }
+    let mut layer = TimeoutLayer::new();
+    if let Some(timeout) = request_timeout {
+        layer = layer.with_timeout(timeout);
+    }
+    if let Some(timeout) = io_timeout {
+        layer = layer.with_io_timeout(timeout);
+    }
+    op.layer(layer)
 }
 
 fn apply_concurrent_limit(op: Operator, max_inflight: Option<usize>) -> Operator {

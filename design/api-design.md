@@ -477,12 +477,13 @@ This keeps the public API ergonomic and primitive-oriented while still allowing 
 
 ## Concurrency and performance controls
 
-Concurrency belongs in the API, but it must be explicit about *which* concurrency is being controlled. There are four different levels:
+Concurrency and deadlines belong in the API, but controls must be explicit about *which* resource is being controlled. There are several different levels:
 
 | Level | R option | Applies to | Meaning |
 |---|---|---|---|
 | Runtime workers | `runtime_config(threads = )` | an `OpendalFs` handle | Tokio worker threads used to drive async work. This is not a per-read fanout knob. |
 | Global in-flight limit | `layer_concurrent_limit(max = )` | an `OpendalFs` handle | Throttle total backend requests for rate limits, politeness, or memory control. |
+| Operation/I/O deadlines | `layer_timeout(request_timeout = , io_timeout = )` | an `OpendalFs` handle | Service-wide backend non-streaming operation and streaming I/O timeouts in seconds; listing iteration is governed by `io_timeout`; if one side is omitted, OpenDAL's timeout-layer default applies. |
 | Batch concurrency | `batch_concurrency = ` | many paths/ranges | Number of independent operations in flight, e.g. many small reads/stat calls. |
 | Per-object read/write concurrency | `read_concurrency = ` / `write_concurrency = ` | one large object | Number of chunks/parts fetched or uploaded concurrently for a single object where OpenDAL/backend supports it. |
 
@@ -507,9 +508,12 @@ fs_read(fs,
   coalesce_gap = 64 * 1024
 )
 
-# Service-wide throttle to avoid hammering an API such as Google Drive.
+# Service-wide throttle/deadlines to avoid hammering or hanging on an API.
 fs <- opendal("gdrive", auth = credentials_gdrive(),
-              layers = list(layer_concurrent_limit(8)))
+              layers = list(
+                layer_concurrent_limit(8),
+                layer_timeout(request_timeout = 30, io_timeout = 10)
+              ))
 ```
 
 Guidance:
@@ -763,8 +767,8 @@ fs <- opendal(
   bucket = "bucket",
   auth = credentials_s3(...),
   layers = list(
-    layer_retry(max_times = 5),
-    layer_timeout(seconds = 60),
+    # layer_retry(max_times = 5), # future if exposed explicitly
+    layer_timeout(request_timeout = 60, io_timeout = 10),
     layer_concurrent_limit(128)
   ),
   runtime = runtime_config(threads = 4)
