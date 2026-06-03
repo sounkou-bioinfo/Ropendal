@@ -133,65 +133,43 @@ rawToChar(collect_aio(aio))
 #> [1] "hello ropendal\n"
 ```
 
-### Materialize objects with serializers and codecs
+### Materialize tables and bytes explicitly
+
+A serializer/deserializer can use
+[`nanoarrow`](https://arrow.apache.org/nanoarrow/latest/r/) to turn a
+data frame into Arrow IPC bytes and back. Native codecs such as `gzip`
+remain explicit byte transforms.
 
 ``` r
-point_config <- serial_config(
-  "ropendal_point",
-  sfunc = function(x) charToRaw(sprintf("%s,%s", x$x, x$y)),
-  ufunc = function(raw) {
-    xy <- as.numeric(strsplit(rawToChar(raw), ",", fixed = TRUE)[[1]])
-    structure(list(x = xy[[1]], y = xy[[2]]), class = "ropendal_point")
-  }
+arrow_config <- serial_config(
+  "data.frame",
+  sfunc = function(x) {
+    con <- rawConnection(raw(), "wb")
+    on.exit(close(con), add = TRUE)
+    nanoarrow::write_nanoarrow(x, con)
+    rawConnectionValue(con)
+  },
+  ufunc = function(raw) as.data.frame(nanoarrow::read_nanoarrow(raw))
 )
-point <- structure(list(x = 1, y = 2), class = "ropendal_point")
-fs_replace(fs, "objects/point.txt", point, mode = "serial", serial_config = point_config)
-#> [1] TRUE
-fs_read(fs, "objects/point.txt", mode = "serial", serial_config = point_config)
-#> $x
-#> [1] 1
-#> 
-#> $y
-#> [1] 2
-#> 
-#> attr(,"class")
-#> [1] "ropendal_point"
 
-fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
-#> [1] TRUE
-rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
-#> [1] "compressed bytes\n"
-```
-
-### Store Arrow IPC streams with nanoarrow
-
-Arrow IPC is just bytes to Ropendal. We can let
-[`nanoarrow`](https://arrow.apache.org/nanoarrow/latest/r/) write an IPC
-stream, store the raw payload, then read it back and materialize the
-table again.
-
-``` r
 arrow_tbl <- data.frame(
   id = 1:3,
   sample = c("HG001", "HG002", "HG003"),
   depth = c(32.5, 28.0, 41.25)
 )
 
-ipc_con <- rawConnection(raw(), "wb")
-write_result <- nanoarrow::write_nanoarrow(arrow_tbl, ipc_con)
-ipc_raw <- rawConnectionValue(ipc_con)
-close(ipc_con)
-
-fs_replace(fs, "tables/depth.arrows", ipc_raw)
+fs_replace(fs, "tables/depth.arrows", arrow_tbl, mode = "serial", serial_config = arrow_config)
 #> [1] TRUE
-roundtrip <- fs_read(fs, "tables/depth.arrows")
-length(roundtrip)
-#> [1] 576
-as.data.frame(nanoarrow::read_nanoarrow(roundtrip))
+fs_read(fs, "tables/depth.arrows", mode = "serial", serial_config = arrow_config)
 #>   id sample depth
 #> 1  1  HG001 32.50
 #> 2  2  HG002 28.00
 #> 3  3  HG003 41.25
+
+fs_replace(fs, "objects/message.gz", charToRaw("compressed bytes\n"), mode = "codec", codec = "gzip")
+#> [1] TRUE
+rawToChar(fs_read(fs, "objects/message.gz", mode = "codec", codec = "gzip"))
+#> [1] "compressed bytes\n"
 ```
 
 ### Drop down to lower-level byte iterators
@@ -339,9 +317,9 @@ bench::mark(
 #> # A tibble: 3 × 5
 #>   expression                       min   median `itr/sec` mem_alloc
 #>   <bch:expr>                  <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_replace               123ms  123.7ms      7.95        0B
-#> 2 ropendal_replace_concurrent     78ms   81.5ms     12.3         0B
-#> 3 paws_put                       539ms  538.7ms      1.86    67.7MB
+#> 1 ropendal_replace             121.6ms  128.6ms      7.92        0B
+#> 2 ropendal_replace_concurrent   77.6ms   80.1ms     12.2         0B
+#> 3 paws_put                     541.7ms  541.7ms      1.85    67.7MB
 ```
 
 Then we compare download paths. The Ropendal rows separate default
@@ -371,11 +349,11 @@ bench::mark(
 #> # A tibble: 5 × 5
 #>   expression                        min   median `itr/sec` mem_alloc
 #>   <bch:expr>                   <bch:tm> <bch:tm>     <dbl> <bch:byt>
-#> 1 ropendal_read                  56.4ms   56.4ms      17.7      64MB
-#> 2 ropendal_read_concurrent       36.6ms   37.6ms      26.6      64MB
-#> 3 ropendal_read_aio              46.9ms   49.7ms      20.1      64MB
-#> 4 ropendal_read_aio_concurrent   33.1ms   33.1ms      30.3      64MB
-#> 5 paws_get                       55.1ms   55.4ms      18.1    64.3MB
+#> 1 ropendal_read                  59.1ms   59.1ms      16.9      64MB
+#> 2 ropendal_read_concurrent       33.7ms   35.1ms      28.5      64MB
+#> 3 ropendal_read_aio              44.6ms   48.4ms      20.7      64MB
+#> 4 ropendal_read_aio_concurrent   32.5ms   32.5ms      30.8      64MB
+#> 5 paws_get                         55ms   58.1ms      17.4    64.3MB
 ```
 
 ### Google Drive read example (credentials explicit)
@@ -696,12 +674,10 @@ while (status > 0L) {
 #> native request 4: running; wait write
 #> native request 5: running; wait write
 #> native request 6: running; wait write
-#> native request 7: running; wait write
-#> native request 8: running; wait write
-#> native request 9: running; wait stat
-#> native request 10: running; wait list
-#> native request 11: running; wait read_into
-#> native request 12: done; complete
+#> native request 7: running; wait stat
+#> native request 8: running; wait list
+#> native request 9: running; wait read_into
+#> native request 10: done; complete
 if (status < 0L) {
   message <- ffi$ropendal_demo_error(task)
   ffi$ropendal_demo_free(task)
@@ -716,7 +692,7 @@ c(
   bytes_read_into_c_buffer = nread
 )
 #>                  r_ticks                   r_work bytes_read_into_c_buffer 
-#>                       12                  6006000                       17
+#>                       10                  5005000                       17
 ```
 
 ## Development
