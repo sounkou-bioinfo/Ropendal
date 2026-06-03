@@ -10,6 +10,12 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 # Ropendal
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/sounkou-bioinfo/Ropendal/actions/workflows/r-package.yml/badge.svg)](https://github.com/sounkou-bioinfo/Ropendal/actions/workflows/r-package.yml)
+[![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Ropendal)](https://sounkou-bioinfo.r-universe.dev/Ropendal)
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+<!-- badges: end -->
+
 Ropendal is an abstract filesystem interface for R backed by the Rust crate of
 [Apache OpenDAL](https://opendal.apache.org/). The package is byte-first:
 operations move raw bytes, then explicitly materialize into R objects through modes
