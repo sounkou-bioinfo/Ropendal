@@ -98,12 +98,12 @@ provider_progress <- data.frame(
 
 serializer_progress <- data.frame(
   layer = c("raw bytes", "R serialize/unserialize", "text", "codecs/compression"),
-  status = c("implemented", "implemented", "planned", "planned"),
+  status = c("implemented", "implemented", "planned", "implemented"),
   notes = c(
     "core storage contract uses R raw vectors and OpendalBytes handles",
     "mode = serial plus serial_config(), serialize_raw(), and deserialize_raw(); R hooks run on the R thread",
     "explicit encoding boundary",
-    "separate from provider transfer chunking"
+    "explicit codec_config()/codec= native byte transforms; gzip and zlib wired"
   )
 )
 

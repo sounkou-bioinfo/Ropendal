@@ -206,7 +206,7 @@ serial_config(class, sfunc, ufunc)
 
 `mode = "serial"` uses base R serialization with custom serialize/unserialize hooks. `sfunc` and `ufunc` are paired, and both R closures run only on the R thread. Current implementation stores custom-hook payloads in an explicit Ropendal serialization envelope so read-side deserialization can select the matching `ufunc` from `serial_config()`.
 
-Clarification still needed only for the optional storage-format codec layer (`codec_config()`): whether it remains explicit-only or later supports extension/content-type selection. Core behavior should avoid hidden deserializer surprises.
+The optional storage-format codec layer (`codec_config()`) starts explicit-only. Later extension/content-type selection can be added as adapter policy, but core behavior should avoid hidden deserializer surprises.
 
 ### Async cancellation semantics
 
@@ -472,3 +472,24 @@ This remains a provisional bridge over the stronger native notification design.
 C `ropendal_cv_*` lifecycle primitives exist, but C `ropendal_aio_notify()` and
 monitor event queues still need a safe ownership model before they can replace
 R-side polling for completion notifications.
+
+### Explicit native byte codecs
+
+Status: `implemented initially`
+
+`codec_config()` is now an explicit native byte-transform config for raw-byte
+storage codecs. The first implemented codecs are `identity`, `gzip`, and `zlib`.
+`codec =` can be passed directly to read/write/replace/append sync and Aio
+helpers, or installed as `opt(fs, "codec")`. `mode = "codec"` is a raw-byte
+alias that requires an explicit codec.
+
+Codec transforms are deliberately separate from `serial_config()`: serializers
+turn R objects into raw vectors on the R thread, then an optional codec transforms
+those bytes before upload; reads decode bytes first and only then deserialize for
+`mode = "serial"`. Non-identity codec reads currently require complete objects;
+byte ranges remain raw-mode operations unless a future codec explicitly supports
+partial decode.
+
+The Rust implementation is R-free, but the public C API does not yet expose codec
+helpers. That remains the next step for sharing the native transforms with C
+consumers.

@@ -648,19 +648,18 @@ deserialize_raw(raw, config = opt(fs, "serial"))
 Named codecs are different from `serial_config()`: they are storage-format byte transforms with explicit read-side selection by name, content type, extension, or sniffing. Built-in/native codecs should not call the R API and may run inside Rust async/background work. R-closure codecs, if ever allowed, must be treated like serializers and run on the R thread only.
 
 ```r
-codec <- codec_config(
-  name = "zstd",
-  encoder = "zstd",
-  decoder = "zstd",
-  content_encoding = "zstd",
-  extensions = "zst"
-)
+codec <- codec_config("gzip")
 
 opt(fs, "codec") <- codec
 
-fs_write(fs, "x.bin.zst", raw_vec, mode = "raw", codec = "zstd")
-fs_read(fs, "x.bin.zst", mode = "raw", codec = "zstd")
+fs_write(fs, "x.bin.gz", raw_vec, mode = "raw", codec = "gzip")
+fs_read(fs, "x.bin.gz", mode = "raw", codec = "gzip")
 ```
+
+Initial built-in native codecs are `identity`, `gzip`, and `zlib`. `mode =
+"codec"` is a raw-byte alias that requires a codec. Non-identity codec reads
+currently require complete-object reads; byte ranges remain `mode = "raw"`
+without a codec unless a future codec explicitly supports partial decode.
 
 Core codec selection should be explicit to avoid hidden deserializer surprises:
 

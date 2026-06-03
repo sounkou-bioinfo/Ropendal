@@ -23,6 +23,7 @@ bytes = "1"
 http = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [features]
 default = ["fs", "http", "s3", "gcs", "azblob", "gdrive"]

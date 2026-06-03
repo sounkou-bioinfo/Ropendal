@@ -8,7 +8,7 @@
 #' @name Ropendal-api
 #' @aliases CredentialProvider OpendalBytes opendal opendal_uri credentials_s3 credentials_gdrive
 #'   credentials_gdrive3 credential_schemes credential_config credential_summary
-#'   opt opt<- serial_config serialize_raw deserialize_raw
+#'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
 #'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
 #'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
 #'   fs_read_iter read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
@@ -58,9 +58,13 @@
 #' @param value Option value.
 #' @param class Class name or names matched for custom serialization.
 #' @param sfunc,ufunc Serializer and deserializer functions for
-#'   `serial_config()`.
-#' @param mode Materialization mode: raw bytes or serialized R objects.
+#'   `serial_config()`. R-closure codecs are not supported; codec transforms
+#'   are native byte transforms.
+#' @param mode Materialization mode: raw bytes, serialized R objects, or raw
+#'   bytes passed through an explicit codec.
 #' @param serial_config Serialization config, normally `opt(fs, "serial")`.
+#' @param codec Optional native byte codec name or `codec_config()` object,
+#'   normally `opt(fs, "codec")`.
 #' @param batch_concurrency Optional maximum number of independent paths/ranges
 #'   to process concurrently.
 #' @param read_concurrency Optional per-object OpenDAL read concurrency for large
@@ -107,16 +111,19 @@
 #' opt(fs, name)
 #' opt(fs, name) <- value
 #' serial_config(class, sfunc, ufunc)
+#' codec_config(name, class = "raw", sfunc = NULL, ufunc = NULL)
 #' serialize_raw(x, config = list())
 #' deserialize_raw(x, config = list())
 #' fs_read(fs, path, offset = 0, size = NULL, end = NULL,
 #'         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-#'         mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'         mode = c("raw", "serial", "codec"),
+#'         serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
 #'             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-#'             mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'             mode = c("raw", "serial", "codec"),
+#'             serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
 #'               result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'               read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
@@ -133,22 +140,28 @@
 #' fs_seek(iter, offset, whence = c("start", "current", "end"))
 #' fs_write(fs, path, data, batch_concurrency = NULL,
 #'          write_concurrency = NULL, chunk_size = NULL,
-#'          mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'          mode = c("raw", "serial", "codec"),
+#'          serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_write_aio(fs, path, data, batch_concurrency = NULL,
 #'              write_concurrency = NULL, chunk_size = NULL,
-#'              mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'              mode = c("raw", "serial", "codec"),
+#'              serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_replace(fs, path, data, batch_concurrency = NULL,
 #'            write_concurrency = NULL, chunk_size = NULL,
-#'            mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'            mode = c("raw", "serial", "codec"),
+#'            serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_replace_aio(fs, path, data, batch_concurrency = NULL,
 #'                write_concurrency = NULL, chunk_size = NULL,
-#'                mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'                mode = c("raw", "serial", "codec"),
+#'                serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_append(fs, path, data, batch_concurrency = NULL,
 #'           write_concurrency = NULL, chunk_size = NULL,
-#'           mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'           mode = c("raw", "serial", "codec"),
+#'           serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_append_aio(fs, path, data, batch_concurrency = NULL,
 #'               write_concurrency = NULL, chunk_size = NULL,
-#'               mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+#'               mode = c("raw", "serial", "codec"),
+#'               serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 #' fs_write_iter(fs, path, create = TRUE, append = FALSE,
 #'               write_concurrency = NULL, chunk_size = NULL)
 #' write_iter_write(iter, data)
@@ -417,6 +430,45 @@ serial_config <- function(class, sfunc, ufunc) {
   )
 }
 
+.ropendal_native_codecs <- c("identity", "gzip", "zlib")
+
+#' @export
+#' @noRd
+codec_config <- function(name, class = "raw", sfunc = NULL, ufunc = NULL) {
+  name <- .ropendal_normalize_codec_name(name)
+  if (!is.character(class) || length(class) != 1L || is.na(class) || !identical(class, "raw")) {
+    stop("class must be \"raw\" for native byte codecs", call. = FALSE)
+  }
+  if (!is.null(sfunc) || !is.null(ufunc)) {
+    stop("R-closure codecs are not supported; use serial_config() for R object materialization", call. = FALSE)
+  }
+  structure(
+    list(name = name, class = class, native = TRUE),
+    class = "ropendalCodecConfig"
+  )
+}
+
+.ropendal_normalize_codec_name <- function(name) {
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("codec name must be a non-empty scalar string", call. = FALSE)
+  }
+  name <- tolower(name)
+  name <- switch(name,
+    none = "identity",
+    raw = "identity",
+    gz = "gzip",
+    name
+  )
+  if (!(name %in% .ropendal_native_codecs)) {
+    stop(
+      "unsupported codec ", sQuote(name),
+      "; supported codecs are ", paste(.ropendal_native_codecs, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  name
+}
+
 .ropendal_function_list <- function(value, n, name) {
   if (is.function(value)) value <- list(value)
   if (!is.list(value) || length(value) != n || !all(vapply(value, is.function, logical(1)))) {
@@ -431,6 +483,21 @@ serial_config <- function(class, sfunc, ufunc) {
     stop("serial config must come from serial_config() or be list()", call. = FALSE)
   }
   config
+}
+
+.ropendal_normalize_codec_config <- function(config, required = FALSE) {
+  empty <- is.null(config) || (is.list(config) && !inherits(config, "ropendalCodecConfig") && !length(config))
+  if (empty) {
+    if (required) stop("mode = \"codec\" requires a codec", call. = FALSE)
+    return(NULL)
+  }
+  if (inherits(config, "ropendalCodecConfig")) return(config$name)
+  if (is.character(config)) return(.ropendal_normalize_codec_name(config))
+  stop("codec must be NULL, list(), a codec name, or codec_config()", call. = FALSE)
+}
+
+.ropendal_codec_for_mode <- function(codec, mode) {
+  .ropendal_normalize_codec_config(codec, required = identical(mode, "codec"))
 }
 
 .ropendal_check_fs <- function(fs) {
@@ -454,19 +521,28 @@ serial_config <- function(class, sfunc, ufunc) {
 #' @export
 #' @noRd
 opt <- function(fs, name) {
-  name <- match.arg(name, "serial")
+  name <- match.arg(name, c("serial", "codec"))
   opts <- .ropendal_options(fs)
-  switch(name, serial = if (is.null(opts$serial)) list() else opts$serial)
+  switch(name,
+    serial = if (is.null(opts$serial)) list() else opts$serial,
+    codec = if (is.null(opts$codec)) list() else opts$codec
+  )
 }
 
 #' @export
 #' @noRd
 `opt<-` <- function(fs, name, value) {
-  name <- match.arg(name, "serial")
+  name <- match.arg(name, c("serial", "codec"))
   opts <- .ropendal_options(fs)
-  switch(name, serial = {
-    opts$serial <- .ropendal_normalize_serial_config(value)
-  })
+  switch(name,
+    serial = {
+      opts$serial <- .ropendal_normalize_serial_config(value)
+    },
+    codec = {
+      codec_name <- .ropendal_normalize_codec_config(value)
+      opts$codec <- if (is.null(codec_name)) list() else codec_config(codec_name)
+    }
+  )
   .ropendal_set_options(fs, opts)
 }
 
@@ -548,14 +624,65 @@ deserialize_raw <- function(x, config = list()) {
   lapply(data, serialize_raw, config = config)
 }
 
-.ropendal_check_complete_serial_read <- function(offset, size, end) {
-  if (!is.null(size) || !is.null(end)) {
-    stop("mode = \"serial\" requires complete-object reads; use mode = \"raw\" for byte ranges", call. = FALSE)
-  }
+.ropendal_is_partial_read <- function(offset, size, end) {
+  if (!is.null(size) || !is.null(end)) return(TRUE)
   values <- unlist(offset, recursive = TRUE, use.names = FALSE)
-  if (length(values) && (anyNA(values) || any(values != 0))) {
+  length(values) && (anyNA(values) || any(values != 0))
+}
+
+.ropendal_check_complete_serial_read <- function(offset, size, end) {
+  if (.ropendal_is_partial_read(offset, size, end)) {
     stop("mode = \"serial\" requires complete-object reads; use mode = \"raw\" for byte ranges", call. = FALSE)
   }
+}
+
+.ropendal_check_complete_codec_read <- function(codec, offset, size, end) {
+  if (!is.null(codec) && !identical(codec, "identity") && .ropendal_is_partial_read(offset, size, end)) {
+    stop("codec reads require complete-object reads; use mode = \"raw\" without codec for byte ranges", call. = FALSE)
+  }
+}
+
+.ropendal_codec_encode_one <- function(value, codec) {
+  if (inherits(value, "OpendalBytes")) value <- as.raw(value)
+  if (!is.raw(value)) {
+    stop("codec input must be a raw vector or OpendalBytes", call. = FALSE)
+  }
+  opendal_codec_encode(codec, value)
+}
+
+.ropendal_codec_decode_one <- function(value, codec) {
+  if (inherits(value, "OpendalBytes")) value <- as.raw(value)
+  if (!is.raw(value)) {
+    stop("codec input must be a raw vector or OpendalBytes", call. = FALSE)
+  }
+  opendal_codec_decode(codec, value)
+}
+
+.ropendal_codec_encode_tree <- function(value, codec) {
+  if (is.null(codec)) return(opendal_bytes_unwrap(value))
+  if (is_error_value(value)) return(value)
+  if (is.raw(value) || inherits(value, "OpendalBytes")) return(.ropendal_codec_encode_one(value, codec))
+  if (is.list(value)) return(lapply(value, .ropendal_codec_encode_tree, codec = codec))
+  stop("codec writes require raw bytes, OpendalBytes, or lists of bytes", call. = FALSE)
+}
+
+.ropendal_codec_decode_tree <- function(value, codec) {
+  if (is.null(codec)) return(value)
+  if (is_error_value(value)) return(value)
+  if (is.raw(value) || inherits(value, "OpendalBytes")) return(.ropendal_codec_decode_one(value, codec))
+  if (is.list(value)) return(lapply(value, .ropendal_codec_decode_tree, codec = codec))
+  stop("codec reads must resolve to raw bytes or error values", call. = FALSE)
+}
+
+.ropendal_materialize_read <- function(value, mode, serial_config, codec) {
+  value <- .ropendal_codec_decode_tree(value, codec)
+  if (identical(mode, "serial")) value <- .ropendal_deserialize_tree(value, serial_config)
+  value
+}
+
+.ropendal_prepare_write_data <- function(path, data, mode, serial_config, codec) {
+  if (identical(mode, "serial")) data <- .ropendal_serial_data(path, data, serial_config)
+  .ropendal_codec_encode_tree(data, codec)
 }
 
 #' @export
@@ -566,11 +693,14 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     read_concurrency = NULL,
                     chunk_size = NULL,
                     coalesce_gap = NULL,
-                    mode = c("raw", "serial"),
-                    serial_config = opt(fs, "serial")) {
+                    mode = c("raw", "serial", "codec"),
+                    serial_config = opt(fs, "serial"),
+                    codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   result <- match.arg(result)
+  codec <- .ropendal_codec_for_mode(codec, mode)
   if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  .ropendal_check_complete_codec_read(codec, offset, size, end)
   value <- fs$read(
     path,
     offset,
@@ -582,7 +712,7 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
     chunk_size,
     coalesce_gap
   )
-  if (identical(mode, "serial")) .ropendal_deserialize_tree(value, serial_config) else value
+  .ropendal_materialize_read(value, mode, serial_config, codec)
 }
 
 #' @export
@@ -593,15 +723,15 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         read_concurrency = NULL,
                         chunk_size = NULL,
                         coalesce_gap = NULL,
-                        mode = c("raw", "serial"),
-                        serial_config = opt(fs, "serial")) {
+                        mode = c("raw", "serial", "codec"),
+                        serial_config = opt(fs, "serial"),
+                        codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
   result <- match.arg(result)
-  materializer <- identity
-  if (identical(mode, "serial")) {
-    .ropendal_check_complete_serial_read(offset, size, end)
-    materializer <- function(value) .ropendal_deserialize_tree(value, serial_config)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  .ropendal_check_complete_codec_read(codec, offset, size, end)
+  materializer <- function(value) .ropendal_materialize_read(value, mode, serial_config, codec)
   opendal_aio_with_bindings(fs$read_aio(
     path,
     offset,
@@ -685,14 +815,12 @@ opendal_bytes_unwrap <- function(x) {
 #' @noRd
 fs_write <- function(fs, path, data, batch_concurrency = NULL,
                      write_concurrency = NULL, chunk_size = NULL,
-                     mode = c("raw", "serial"),
-                     serial_config = opt(fs, "serial")) {
+                     mode = c("raw", "serial", "codec"),
+                     serial_config = opt(fs, "serial"),
+                     codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   fs$write(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -700,14 +828,12 @@ fs_write <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
                          write_concurrency = NULL, chunk_size = NULL,
-                         mode = c("raw", "serial"),
-                         serial_config = opt(fs, "serial")) {
+                         mode = c("raw", "serial", "codec"),
+                         serial_config = opt(fs, "serial"),
+                         codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   opendal_aio_with_bindings(
     fs$write_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -717,14 +843,12 @@ fs_write_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_replace <- function(fs, path, data, batch_concurrency = NULL,
                        write_concurrency = NULL, chunk_size = NULL,
-                       mode = c("raw", "serial"),
-                       serial_config = opt(fs, "serial")) {
+                       mode = c("raw", "serial", "codec"),
+                       serial_config = opt(fs, "serial"),
+                       codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   fs$replace(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -732,14 +856,12 @@ fs_replace <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
                            write_concurrency = NULL, chunk_size = NULL,
-                           mode = c("raw", "serial"),
-                           serial_config = opt(fs, "serial")) {
+                           mode = c("raw", "serial", "codec"),
+                           serial_config = opt(fs, "serial"),
+                           codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   opendal_aio_with_bindings(
     fs$replace_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )
@@ -749,14 +871,12 @@ fs_replace_aio <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_append <- function(fs, path, data, batch_concurrency = NULL,
                       write_concurrency = NULL, chunk_size = NULL,
-                      mode = c("raw", "serial"),
-                      serial_config = opt(fs, "serial")) {
+                      mode = c("raw", "serial", "codec"),
+                      serial_config = opt(fs, "serial"),
+                      codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   fs$append(path, data, batch_concurrency, write_concurrency, chunk_size)
 }
 
@@ -764,14 +884,12 @@ fs_append <- function(fs, path, data, batch_concurrency = NULL,
 #' @noRd
 fs_append_aio <- function(fs, path, data, batch_concurrency = NULL,
                           write_concurrency = NULL, chunk_size = NULL,
-                          mode = c("raw", "serial"),
-                          serial_config = opt(fs, "serial")) {
+                          mode = c("raw", "serial", "codec"),
+                          serial_config = opt(fs, "serial"),
+                          codec = opt(fs, "codec")) {
   mode <- match.arg(mode)
-  data <- if (identical(mode, "serial")) {
-    .ropendal_serial_data(path, data, serial_config)
-  } else {
-    opendal_bytes_unwrap(data)
-  }
+  codec <- .ropendal_codec_for_mode(codec, mode)
+  data <- .ropendal_prepare_write_data(path, data, mode, serial_config, codec)
   opendal_aio_with_bindings(
     fs$append_aio(path, data, batch_concurrency, write_concurrency, chunk_size)
   )

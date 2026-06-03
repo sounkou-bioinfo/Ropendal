@@ -1,6 +1,7 @@
 mod aio;
 mod bytes;
 mod c_api;
+mod codec;
 mod common;
 mod credentials;
 mod error;

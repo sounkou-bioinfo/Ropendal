@@ -62,7 +62,7 @@ No OpenDAL backend required. These tests should cover:
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
 - redacted printing for credentials
-- `serial_config()` validation and planned `codec_config()` validation
+- `serial_config()` validation and native `codec_config()` validation
 
 ### 20 local filesystem backend
 
@@ -109,9 +109,10 @@ Default tests should use only base R objects and toy custom classes. Coverage:
 - custom `serial_config(class, sfunc, ufunc)` roundtrip (implemented locally)
 - multiple class hooks
 - `opt(fs, "serial") <- list()` removes hooks (implemented locally)
-- `mode = "codec"` explicit codec roundtrip
+- `mode = "codec"` / `codec =` explicit native codec roundtrip (implemented locally for gzip/zlib)
 - deserializer runs at collect/materialization time for async reads (implemented locally)
 - partial range + `mode = "serial"` errors clearly (implemented locally)
+- partial range + non-identity `codec =` errors clearly (implemented locally)
 
 ### 50 C ABI / downstream consumer
 

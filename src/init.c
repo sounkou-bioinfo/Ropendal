@@ -49,6 +49,16 @@ SEXP savvy_opendal_bytes_len__impl(SEXP c_arg__bytes) {
     return handle_result(res);
 }
 
+SEXP savvy_opendal_codec_decode__impl(SEXP c_arg__name, SEXP c_arg__data) {
+    SEXP res = savvy_opendal_codec_decode__ffi(c_arg__name, c_arg__data);
+    return handle_result(res);
+}
+
+SEXP savvy_opendal_codec_encode__impl(SEXP c_arg__name, SEXP c_arg__data) {
+    SEXP res = savvy_opendal_codec_encode__ffi(c_arg__name, c_arg__data);
+    return handle_result(res);
+}
+
 SEXP savvy_OpendalAio_cancel__impl(SEXP self__) {
     SEXP res = savvy_OpendalAio_cancel__ffi(self__);
     return handle_result(res);
@@ -339,6 +349,8 @@ SEXP savvy_OpendalWriteIter_write__impl(SEXP self__, SEXP c_arg__data) {
 static const R_CallMethodDef CallEntries[] = {
     {"savvy_opendal_bytes_as_raw__impl", (DL_FUNC) &savvy_opendal_bytes_as_raw__impl, 1},
     {"savvy_opendal_bytes_len__impl", (DL_FUNC) &savvy_opendal_bytes_len__impl, 1},
+    {"savvy_opendal_codec_decode__impl", (DL_FUNC) &savvy_opendal_codec_decode__impl, 2},
+    {"savvy_opendal_codec_encode__impl", (DL_FUNC) &savvy_opendal_codec_encode__impl, 2},
     {"savvy_OpendalAio_cancel__impl", (DL_FUNC) &savvy_OpendalAio_cancel__impl, 1},
     {"savvy_OpendalAio_collect__impl", (DL_FUNC) &savvy_OpendalAio_collect__impl, 1},
     {"savvy_OpendalAio_error_value__impl", (DL_FUNC) &savvy_OpendalAio_error_value__impl, 1},

@@ -15,6 +15,7 @@
 \alias{opt}
 \alias{opt<-}
 \alias{serial_config}
+\alias{codec_config}
 \alias{serialize_raw}
 \alias{deserialize_raw}
 \alias{fs_info}
@@ -104,16 +105,19 @@ fs_normalize_path(fs, path, directory = FALSE)
 opt(fs, name)
 opt(fs, name) <- value
 serial_config(class, sfunc, ufunc)
+codec_config(name, class = "raw", sfunc = NULL, ufunc = NULL)
 serialize_raw(x, config = list())
 deserialize_raw(x, config = list())
 fs_read(fs, path, offset = 0, size = NULL, end = NULL,
         result = c("auto", "flat", "nested"), batch_concurrency = NULL,
         read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-        mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+        mode = c("raw", "serial", "codec"),
+        serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_read_aio(fs, path, offset = 0, size = NULL, end = NULL,
             result = c("auto", "flat", "nested"), batch_concurrency = NULL,
             read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL,
-            mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+            mode = c("raw", "serial", "codec"),
+            serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
               result = c("auto", "flat", "nested"), batch_concurrency = NULL,
               read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
@@ -130,22 +134,28 @@ fs_tell(iter)
 fs_seek(iter, offset, whence = c("start", "current", "end"))
 fs_write(fs, path, data, batch_concurrency = NULL,
          write_concurrency = NULL, chunk_size = NULL,
-         mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+         mode = c("raw", "serial", "codec"),
+         serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_write_aio(fs, path, data, batch_concurrency = NULL,
              write_concurrency = NULL, chunk_size = NULL,
-             mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+             mode = c("raw", "serial", "codec"),
+             serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_replace(fs, path, data, batch_concurrency = NULL,
            write_concurrency = NULL, chunk_size = NULL,
-           mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+           mode = c("raw", "serial", "codec"),
+           serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_replace_aio(fs, path, data, batch_concurrency = NULL,
                write_concurrency = NULL, chunk_size = NULL,
-               mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+               mode = c("raw", "serial", "codec"),
+               serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_append(fs, path, data, batch_concurrency = NULL,
           write_concurrency = NULL, chunk_size = NULL,
-          mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+          mode = c("raw", "serial", "codec"),
+          serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_append_aio(fs, path, data, batch_concurrency = NULL,
               write_concurrency = NULL, chunk_size = NULL,
-              mode = c("raw", "serial"), serial_config = opt(fs, "serial"))
+              mode = c("raw", "serial", "codec"),
+              serial_config = opt(fs, "serial"), codec = opt(fs, "codec"))
 fs_write_iter(fs, path, create = TRUE, append = FALSE,
               write_concurrency = NULL, chunk_size = NULL)
 write_iter_write(iter, data)
@@ -260,11 +270,16 @@ and \code{client_secret}.}
 \item{class}{Class name or names matched for custom serialization.}
 
 \item{sfunc, ufunc}{Serializer and deserializer functions for
-\code{serial_config()}.}
+\code{serial_config()}. R-closure codecs are not supported; codec transforms
+are native byte transforms.}
 
-\item{mode}{Materialization mode: raw bytes or serialized R objects.}
+\item{mode}{Materialization mode: raw bytes, serialized R objects, or raw
+bytes passed through an explicit codec.}
 
 \item{serial_config}{Serialization config, normally \code{opt(fs, "serial")}.}
+
+\item{codec}{Optional native byte codec name or \code{codec_config()} object,
+normally \code{opt(fs, "codec")}.}
 
 \item{batch_concurrency}{Optional maximum number of independent paths/ranges
 to process concurrently.}

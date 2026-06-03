@@ -47,6 +47,16 @@ NULL
   .Call(savvy_opendal_bytes_len__impl, `bytes`)
 }
 
+
+`opendal_codec_decode` <- function(`name`, `data`) {
+  .Call(savvy_opendal_codec_decode__impl, `name`, `data`)
+}
+
+
+`opendal_codec_encode` <- function(`name`, `data`) {
+  .Call(savvy_opendal_codec_encode__impl, `name`, `data`)
+}
+
 ### wrapper functions for OpendalAio
 
 `OpendalAio_cancel` <- function(self) {
