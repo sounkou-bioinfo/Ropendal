@@ -16,6 +16,10 @@ crate of [Apache OpenDAL](https://opendal.apache.org/). The package is
 byte-first: operations move raw bytes, then explicitly materialize into
 R objects through modes and serializers.
 
+The async API is inspired by `nanonext`-style Aio handles: issue async
+work, then `call_aio()` to trigger execution and `collect_aio()` to
+retrieve results (or an `opendalErrorValue`).
+
 ## Installation
 
 Ropendal is available from R-universe:
@@ -88,6 +92,52 @@ aio <- fs_read_aio(fs, "note.txt")
 call_aio(aio)
 collect_aio(aio)
 #>  [1] 68 65 6c 6c 6f 20 72 6f 70 65 6e 64 61 6c 0a
+```
+
+## Tour of the API across backends
+
+The same `fs_*` calls apply to HTTP(S), S3, and Google Drive handles.
+
+### HTTP/HTTPS read example
+
+``` r
+http_fs <- opendal("http", endpoint = "https://raw.githubusercontent.com", root = "/")
+http_head <- rawToChar(fs_read(http_fs, "sounkou-bioinfo/Ropendal/main/README.md", size = 64))
+http_head
+```
+
+### Public S3-compatible read example
+
+``` r
+s3_fs <- opendal(
+  "s3",
+  endpoint = "https://uk1s3.embassy.ebi.ac.uk",
+  bucket = "idr",
+  root = "/zarr/v0.4/idr0062A/6001240.zarr",
+  region = "us-east-1",
+  skip_signature = TRUE,
+  disable_config_load = TRUE
+)
+
+zarray <- rawToChar(fs_read(s3_fs, "0/.zarray", size = 64))
+zarray
+```
+
+### Google Drive read example (credentials explicit)
+
+``` r
+drive_fs <- opendal(
+  "gdrive",
+  root = "Ropendal",
+  auth = credentials_gdrive3(
+    secret_json = "/path/to/secret.json",
+    tokens_json = "/path/to/tokens.json",
+    scope = "https://www.googleapis.com/auth/drive"
+  )
+)
+
+drive_head <- rawToChar(fs_read(drive_fs, "map_catalog.txt", size = 64))
+drive_head
 ```
 
 ## Development
