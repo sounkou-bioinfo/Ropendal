@@ -88,7 +88,11 @@ remote services: paths are root-relative, reads and writes move bytes,
 metadata and listing are filesystem operations, backend failures are
 values, and Aio helpers wait on background Rust work.
 
-### Local filesystem: bytes, metadata, errors, and Aio
+### Local filesystem
+
+Create a root-relative filesystem handle. The same `fs` object shape is
+used for local files, S3-compatible buckets, HTTP roots, Google Drive
+folders, and other providers.
 
 ``` r
 library(Ropendal)
@@ -98,14 +102,26 @@ unlink(root, recursive = TRUE)
 dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
+```
 
+Byte operations are explicit. `fs_write()` is create-only, `fs_read()`
+returns a raw vector, and byte ranges avoid downloading the whole
+object.
+
+``` r
 fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
 #> [1] TRUE
 fs_read(fs, "data.bin")
 #> [1] 01 02 03 04
 fs_read(fs, "data.bin", offset = 1, size = 2)
 #> [1] 02 03
+```
 
+Metadata, byte handles, and listings are ordinary filesystem operations
+too. `OpendalBytes` keeps bytes Rust-owned until `as.raw()` materializes
+them.
+
+``` r
 fs_stat(fs, "data.bin")[c("path", "type", "size")]
 #> $path
 #> [1] "data.bin"
@@ -122,22 +138,34 @@ as.raw(bytes_handle)
 #> [1] 01 02 03 04
 vapply(fs_ls(fs), `[[`, character(1), "path")
 #> [1] "data.bin"
+```
 
+Paged listing iterators let callers drain namespaces incrementally.
+
+``` r
 it <- fs_ls_iter(fs, page_size = 1)
 page <- ls_iter_next(it)
 page$done
 #> [1] FALSE
 vapply(page$entries, `[[`, character(1), "path")
 #> [1] "data.bin"
+```
 
-# Create-only writes return an error value when the object already exists.
+Backend failures are values. A second create-only write returns an
+`opendalErrorValue` instead of overwriting `data.bin`.
+
+``` r
 err <- fs_write(fs, "data.bin", as.raw(9))
 is_error_value(err)
 #> [1] TRUE
 error_kind(err)
 #> [1] "AlreadyExists"
+```
 
-# Aio variants run the same filesystem operations on background Rust tasks.
+Aio variants submit the same I/O to background Rust tasks and are
+collected explicitly from R.
+
+``` r
 aio <- fs_read_aio(fs, "data.bin")
 call_aio(aio)
 aio$value

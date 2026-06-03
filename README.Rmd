@@ -61,9 +61,13 @@ services: paths are root-relative, reads and writes move bytes, metadata and
 listing are filesystem operations, backend failures are values, and Aio helpers
 wait on background Rust work.
 
-### Local filesystem: bytes, metadata, errors, and Aio
+### Local filesystem
 
-```{r local-fs-example}
+Create a root-relative filesystem handle. The same `fs` object shape is used
+for local files, S3-compatible buckets, HTTP roots, Google Drive folders, and
+other providers.
+
+```{r local-fs-setup}
 library(Ropendal)
 
 root <- file.path(tempdir(), "ropendal-readme-example")
@@ -71,28 +75,50 @@ unlink(root, recursive = TRUE)
 dir.create(root, recursive = TRUE)
 
 fs <- opendal("fs", root = root)
+```
 
+Byte operations are explicit. `fs_write()` is create-only, `fs_read()` returns a
+raw vector, and byte ranges avoid downloading the whole object.
+
+```{r local-fs-bytes}
 fs_write(fs, "data.bin", as.raw(c(1, 2, 3, 4)))
 fs_read(fs, "data.bin")
 fs_read(fs, "data.bin", offset = 1, size = 2)
+```
 
+Metadata, byte handles, and listings are ordinary filesystem operations too.
+`OpendalBytes` keeps bytes Rust-owned until `as.raw()` materializes them.
+
+```{r local-fs-metadata}
 fs_stat(fs, "data.bin")[c("path", "type", "size")]
 bytes_handle <- fs_read_bytes(fs, "data.bin")
 length(bytes_handle)
 as.raw(bytes_handle)
 vapply(fs_ls(fs), `[[`, character(1), "path")
+```
 
+Paged listing iterators let callers drain namespaces incrementally.
+
+```{r local-fs-list-iter}
 it <- fs_ls_iter(fs, page_size = 1)
 page <- ls_iter_next(it)
 page$done
 vapply(page$entries, `[[`, character(1), "path")
+```
 
-# Create-only writes return an error value when the object already exists.
+Backend failures are values. A second create-only write returns an
+`opendalErrorValue` instead of overwriting `data.bin`.
+
+```{r local-fs-errors}
 err <- fs_write(fs, "data.bin", as.raw(9))
 is_error_value(err)
 error_kind(err)
+```
 
-# Aio variants run the same filesystem operations on background Rust tasks.
+Aio variants submit the same I/O to background Rust tasks and are collected
+explicitly from R.
+
+```{r local-fs-aio}
 aio <- fs_read_aio(fs, "data.bin")
 call_aio(aio)
 aio$value
