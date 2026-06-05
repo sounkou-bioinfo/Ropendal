@@ -1,5 +1,14 @@
 # Ropendal agent notes
 
+
+## Prologue
+
+Always ask yourself before landing a change what other changes would have made that change easier to land and other changes to land long term.
+Sometimes as needed, you can call into the user or a PI/GPT/reviewer fellow for ideas and task to accomplish and ask them this question with current state of the project, avenues you see. Having several perspectives and long term maintenability is important ! Ambiguities should be avoided. Code sprawl and bloat too. Allignmment among actors is a must.
+
+write Rust as a Core Maintenair rather than a Java programmer that failed upwards or  confused C Dev even though Thinking ABOUT C API ERGONOMICS AND SIMPLICITY IS A MUST
+write R as a r-lib programmer rather than a Python programmer that failed upwards
+
 ## Project goal
 
 Build an R package exposing Apache OpenDAL as an abstract filesystem for R. The package should provide:

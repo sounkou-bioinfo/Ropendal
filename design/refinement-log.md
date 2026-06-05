@@ -374,12 +374,18 @@ first serialize or copy into stable owned bytes before background upload. A trul
 borrowed async write from R memory would require an explicit lifetime contract
 and is not safe for ordinary R vectors because of mutation and GC interaction.
 
-The R-facing byte object is now explicit: immutable `OpendalBytes` values contain
-Rust-owned bytes, materialize to R raw vectors via `as.raw()` when needed, report
-byte length with `length()`, and can be passed back to Ropendal writes without
-routing through another R raw-vector payload. If a user passes a normal R `raw`,
-matrix, character vector, or arbitrary object, the package still has to touch the
-R API on the R thread to copy or serialize.
+The R-facing byte object is now explicit: immutable `OpendalBytes` values are
+R-GC-managed external byte holders around OpenDAL/Rust `Buffer` storage. The R
+object owns reachability and finalization through an external pointer; the byte
+storage is not an R `RAWSXP` payload unless materialized. `length()` is cheap,
+`as.raw()` currently materializes to an R raw vector, and the handle can be
+passed back to Ropendal writes without routing through another R raw-vector
+payload. A future ALTREP raw facade is feasible by storing the external holder in
+ALTREP `data1` and materializing writable `DATAPTR()` access into an R-owned
+`RAWSXP`; the main constraint is writable/raw-vector semantics, not holder
+lifetime. If a user passes a normal R `raw`, matrix, character vector, or
+arbitrary object, the package still has to touch the R API on the R thread to
+copy or serialize.
 
 R's connection API is an adapter candidate, not the core abstraction. `readBin()`
 and `writeBin()` operate through a connection's synchronous callbacks; a
