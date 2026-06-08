@@ -28,6 +28,16 @@ reference:
       - fs_delete
       - fs_copy
       - fs_rename
+  - title: Byte stores and range requests
+    contents:
+      - byte_ranges
+      - byte_store
+      - store_read
+      - store_write
+      - store_replace
+      - store_exists
+      - store_list
+      - store_delete
   - title: Async Aio operations
     contents:
       - fs_read_aio

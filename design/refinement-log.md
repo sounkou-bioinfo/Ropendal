@@ -556,3 +556,21 @@ Zarr chunks, BGZF/Tabix, FASTA+FAI, and tiled binary indexes easier to express.
 callers can request nested or auto shaping explicitly. Optional `id` values name
 flat list results when lengths match; they are metadata for R consumers and do
 not affect OpenDAL paths or backend requests.
+
+### R byte store adapter
+
+Status: `implemented for synchronous R byte operations`
+
+`byte_store(fs, prefix)` is an R-side prefix adapter for Zarr-like key-to-bytes
+layouts. Store keys are normalized before they are joined to the store prefix so
+`../` cannot escape the store root. Object operations reject empty keys and
+trailing slash directory keys; recursive delete and listing use explicit
+directory normalization.
+
+`store_write()` preserves the filesystem create-only contract and returns an
+`opendalErrorValue` such as `AlreadyExists` when the key already exists.
+`store_replace()` is the overwrite path. `store_read()` is byte-only and returns
+raw vectors or `OpendalBytes` handles; serial/text/codec materialization remains
+on the lower-level `fs_read()` API for now. `store_list()` rewrites returned
+entry paths to store-relative paths and filters the store-root marker when a
+backend returns it.

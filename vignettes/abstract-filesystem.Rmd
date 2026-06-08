@@ -59,6 +59,20 @@ req <- byte_ranges(idx$path, idx$offset, size = idx$size, id = idx$chunk)
 fs_read(fs, req)
 ```
 
+### Zarr-like byte stores
+
+A byte store is a prefix adapter over the same filesystem handle. It is not a
+full array implementation; it provides store-relative keys for metadata and
+chunks so higher-level packages can build Zarr-like readers on top.
+
+```{r}
+store <- byte_store(fs, "toy.zarr")
+store_write(store, "zarr.json", charToRaw('{"zarr_format":3}'))
+store_write(store, "c/0/0", as.raw(c(1, 2, 3, 4)))
+store_list(store, recursive = TRUE)
+store_read(store, "c/0/0")
+```
+
 ### Control knobs belong in handles
 
 `runtime_config()`, `layer_concurrent_limit()`, and `layer_timeout()` are attached

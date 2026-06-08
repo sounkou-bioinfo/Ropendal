@@ -317,7 +317,7 @@ Operation taxonomy:
 | Data | read, write, replace, append | bytes or unit |
 | Metadata | stat, exists | metadata or bool |
 | Namespace | ls, walk, mkdir, delete, copy, rename | entries or unit |
-| Materialization/adapters | raw, bytes handle, text, serial, codec, entries data frame, connections | R values over native results |
+| Materialization/adapters | raw, bytes handle, text, serial, codec, entries data frame, byte stores, connections | R values over native results |
 
 ## Vectorized range reads
 

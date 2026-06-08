@@ -59,7 +59,7 @@ Files: `test-10-*`
 No OpenDAL backend required. These tests should cover:
 
 - path/range request normalization through the public `fs_read()` arguments
-- future public request-table helper design, if one is added
+- `byte_ranges()` request-object shape, naming, and no-recycling behavior
 - strict vector/list length matching rules; no R recycling
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
@@ -82,6 +82,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls()` output columns and ordering rules
 - `fs_ls_iter()` empty-listing, paged listing, page `cursor`, `limit`, `start_after`, best-effort cursor filtering, explicit `prefetch`, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection, iterator `limit`, and explicit `prefetch`
+- `byte_store()` / `store_*()` prefix isolation, raw and `OpendalBytes` reads, create-vs-replace behavior, listing path rewriting, deletion, and escape rejection
 - mkdir/delete/copy/rename
 - declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 

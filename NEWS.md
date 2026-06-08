@@ -14,6 +14,8 @@
   path and list-of-ranges shapes across multiple paths, while preserving ordered
   flat or nested results. `byte_ranges()` adds a request-object form for
   index-heavy readers.
+- Byte stores: `byte_store()` and `store_*()` helpers provide a small
+  store-relative key-to-bytes adapter for Zarr-like chunk layouts.
 - API: R-side `batch_concurrency = 0` is now rejected; use `NULL` for the
   default. Capability rows now include range/concurrency/recursive semantics.
 - C API: write tuning options are wired through, unsupported write header
