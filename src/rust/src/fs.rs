@@ -117,27 +117,70 @@ impl OpendalFs {
     fn capabilities(&self) -> savvy::Result<savvy::Sexp> {
         let caps = self.inner.op.info().full_capability();
         let ops = [
-            ("stat", caps.stat),
-            ("read", caps.read),
-            ("write", caps.write),
-            ("replace", caps.write),
-            ("append", caps.write && caps.write_can_append),
-            ("mkdir", caps.create_dir),
-            ("delete", caps.delete),
-            ("copy", caps.copy),
-            ("rename", caps.rename),
-            ("ls", caps.list),
+            ("stat", caps.stat, "native", "metadata lookup"),
+            ("read", caps.read, "native", "byte read"),
+            (
+                "read_range",
+                caps.read,
+                "native",
+                "offset/size range reads via fs_read()",
+            ),
+            (
+                "read_concurrent",
+                caps.read,
+                "opendal_adapter",
+                "per-object read concurrency where supported",
+            ),
+            ("write", caps.write, "native", "create-only byte write"),
+            (
+                "write_concurrent",
+                caps.write,
+                "opendal_adapter",
+                "per-object write concurrency where supported",
+            ),
+            ("replace", caps.write, "native", "overwrite byte write"),
+            (
+                "append",
+                caps.write && caps.write_can_append,
+                "native",
+                "append if backend supports append writes",
+            ),
+            ("mkdir", caps.create_dir, "native", "directory creation"),
+            ("delete", caps.delete, "native", "delete path"),
+            (
+                "delete_recursive",
+                caps.delete,
+                "native",
+                "recursive delete option where supported",
+            ),
+            ("copy", caps.copy, "native", "backend copy"),
+            (
+                "rename",
+                caps.rename,
+                "native",
+                "backend rename where supported",
+            ),
+            ("ls", caps.list, "native", "non-recursive listing"),
+            (
+                "list_recursive",
+                caps.list,
+                "native",
+                "recursive listing/walk where supported",
+            ),
         ];
         let mut operations = OwnedListSexp::new(ops.len(), true)?;
-        for (i, (name, supported)) in ops.iter().enumerate() {
-            let mut one = OwnedListSexp::new(3, true)?;
+        for (i, (name, supported, semantics, notes)) in ops.iter().enumerate() {
+            let implementation = if *supported { "opendal" } else { "unsupported" };
+            let semantics = if *supported {
+                *semantics
+            } else {
+                "unsupported"
+            };
+            let mut one = OwnedListSexp::new(4, true)?;
             one.set_name_and_value(0, "supported", bool_scalar(*supported)?)?;
-            one.set_name_and_value(
-                1,
-                "implementation",
-                str_scalar(if *supported { "opendal" } else { "unsupported" })?,
-            )?;
-            one.set_name_and_value(2, "notes", str_scalar("")?)?;
+            one.set_name_and_value(1, "implementation", str_scalar(implementation)?)?;
+            one.set_name_and_value(2, "semantics", str_scalar(semantics)?)?;
+            one.set_name_and_value(3, "notes", str_scalar(*notes)?)?;
             one.set_class(&["opendalCapabilityOperation", "list"])?;
             operations.set_name_and_value(i, name, one)?;
         }
@@ -178,9 +221,9 @@ impl OpendalFs {
             "auto" | "flat" | "nested" => {}
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
-        let requests = read_requests_from_options(path, offset, size, end)?;
+        let plan = read_requests_from_options(path, offset, size, end)?;
         let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
-        self.read_requests(requests, result, batch_concurrency.unwrap_or(0.0), tuning)
+        self.read_requests(plan, result, batch_concurrency, tuning)
     }
 
     /// Read bytes into Rust-owned byte handle(s).
@@ -202,9 +245,9 @@ impl OpendalFs {
             "auto" | "flat" | "nested" => {}
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
-        let requests = read_requests_from_options(path, offset, size, end)?;
+        let plan = read_requests_from_options(path, offset, size, end)?;
         let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
-        self.read_bytes_requests(requests, result, batch_concurrency.unwrap_or(0.0), tuning)
+        self.read_bytes_requests(plan, result, batch_concurrency, tuning)
     }
 
     /// Submit asynchronous read(s) into Rust-owned byte handle(s).
@@ -226,31 +269,30 @@ impl OpendalFs {
             "auto" | "flat" | "nested" => {}
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
-        let requests = read_requests_from_options(path, offset, size, end)?;
+        let plan = read_requests_from_options(path, offset, size, end)?;
         let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
-        let n = requests.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let n = plan.requests.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let op = self.inner.op.clone();
         let result = result.to_string();
+        let shape = plan.shape;
+        let requests = plan.requests;
         let handle = self.inner.runtime.spawn(async move {
-            if n == 1 && result == "auto" {
-                return read_request_bytes_outcome(
-                    op,
-                    requests.into_iter().next().unwrap(),
-                    tuning,
-                )
-                .await;
-            }
-            let mut values = stream::iter(requests.into_iter().enumerate())
-                .map(|(i, req)| {
+            let mut values = stream::iter(requests.into_iter())
+                .map(|req| {
                     let op = op.clone();
-                    async move { (i, read_request_bytes_outcome(op, req, tuning).await) }
+                    let key = (req.path_index, req.range_index);
+                    async move { (key, read_request_bytes_outcome(op, req, tuning).await) }
                 })
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
                 .await;
-            values.sort_by_key(|(i, _)| *i);
-            aio_many_from_sorted(values, &result)
+            values.sort_by_key(|(key, _)| *key);
+            read_outcomes_to_aio(
+                values.into_iter().map(|(_, value)| value).collect(),
+                &result,
+                &shape,
+            )
         });
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
@@ -274,27 +316,30 @@ impl OpendalFs {
             "auto" | "flat" | "nested" => {}
             _ => return Err(savvy::Error::new("result must be auto, flat, or nested")),
         }
-        let requests = read_requests_from_options(path, offset, size, end)?;
+        let plan = read_requests_from_options(path, offset, size, end)?;
         let tuning = read_tuning(read_concurrency, chunk_size, coalesce_gap)?;
-        let n = requests.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let n = plan.requests.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let op = self.inner.op.clone();
         let result = result.to_string();
+        let shape = plan.shape;
+        let requests = plan.requests;
         let handle = self.inner.runtime.spawn(async move {
-            if n == 1 && result == "auto" {
-                return read_request_outcome(op, requests.into_iter().next().unwrap(), tuning)
-                    .await;
-            }
-            let mut values = stream::iter(requests.into_iter().enumerate())
-                .map(|(i, req)| {
+            let mut values = stream::iter(requests.into_iter())
+                .map(|req| {
                     let op = op.clone();
-                    async move { (i, read_request_outcome(op, req, tuning).await) }
+                    let key = (req.path_index, req.range_index);
+                    async move { (key, read_request_outcome(op, req, tuning).await) }
                 })
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
                 .await;
-            values.sort_by_key(|(i, _)| *i);
-            aio_many_from_sorted(values, &result)
+            values.sort_by_key(|(key, _)| *key);
+            read_outcomes_to_aio(
+                values.into_iter().map(|(_, value)| value).collect(),
+                &result,
+                &shape,
+            )
         });
         Ok(OpendalAio::new(self.inner.runtime.clone(), handle))
     }
@@ -376,15 +421,7 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_common(
-            path,
-            data,
-            true,
-            false,
-            "write",
-            batch_concurrency.unwrap_or(0.0),
-            tuning,
-        )
+        self.write_many_common(path, data, true, false, "write", batch_concurrency, tuning)
     }
 
     /// Replace bytes at path(s).
@@ -404,7 +441,7 @@ impl OpendalFs {
             false,
             false,
             "replace",
-            batch_concurrency.unwrap_or(0.0),
+            batch_concurrency,
             tuning,
         )
     }
@@ -420,15 +457,7 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_common(
-            path,
-            data,
-            false,
-            true,
-            "append",
-            batch_concurrency.unwrap_or(0.0),
-            tuning,
-        )
+        self.write_many_common(path, data, false, true, "append", batch_concurrency, tuning)
     }
 
     /// Submit asynchronous write(s) to new path(s).
@@ -442,15 +471,7 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_aio_common(
-            path,
-            data,
-            true,
-            false,
-            "write",
-            batch_concurrency.unwrap_or(0.0),
-            tuning,
-        )
+        self.write_many_aio_common(path, data, true, false, "write", batch_concurrency, tuning)
     }
 
     /// Submit asynchronous replacement write(s).
@@ -470,7 +491,7 @@ impl OpendalFs {
             false,
             false,
             "replace",
-            batch_concurrency.unwrap_or(0.0),
+            batch_concurrency,
             tuning,
         )
     }
@@ -486,21 +507,14 @@ impl OpendalFs {
         chunk_size: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let tuning = write_tuning(write_concurrency, chunk_size)?;
-        self.write_many_aio_common(
-            path,
-            data,
-            false,
-            true,
-            "append",
-            batch_concurrency.unwrap_or(0.0),
-            tuning,
-        )
+        self.write_many_aio_common(path, data, false, true, "append", batch_concurrency, tuning)
     }
 
     /// Return metadata for path(s).
     /// @export
     fn stat(&self, path: StringSexp, batch_concurrency: Option<f64>) -> savvy::Result<savvy::Sexp> {
         let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
         }
@@ -508,7 +522,6 @@ impl OpendalFs {
             return self.stat_one(path.iter().next().unwrap_or(""));
         }
 
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<StatValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -563,7 +576,7 @@ impl OpendalFs {
         batch_concurrency: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let n = path.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -612,6 +625,7 @@ impl OpendalFs {
         batch_concurrency: Option<f64>,
     ) -> savvy::Result<savvy::Sexp> {
         let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
         }
@@ -619,7 +633,6 @@ impl OpendalFs {
             return self.exists_one(path.iter().next().unwrap_or(""));
         }
 
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<ExistsValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -674,7 +687,7 @@ impl OpendalFs {
         batch_concurrency: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let n = path.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -742,7 +755,7 @@ impl OpendalFs {
         batch_concurrency: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
         let n = path.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -793,6 +806,7 @@ impl OpendalFs {
     ) -> savvy::Result<savvy::Sexp> {
         let recursive = recursive.unwrap_or(false);
         let n = path.len();
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
         }
@@ -800,7 +814,6 @@ impl OpendalFs {
             return self.delete_one(path.iter().next().unwrap_or(""), recursive);
         }
 
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
         let mut values: Vec<Option<DeleteValue>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -857,7 +870,7 @@ impl OpendalFs {
     ) -> savvy::Result<OpendalAio> {
         let recursive = recursive.unwrap_or(false);
         let n = path.len();
-        let concurrency = batch_concurrency_limit(batch_concurrency.unwrap_or(0.0), n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let mut values: Vec<Option<AioOutcome>> = (0..n).map(|_| None).collect();
         let mut requests = Vec::new();
         for (i, p) in path.iter().enumerate() {
@@ -949,13 +962,7 @@ impl OpendalFs {
         to: StringSexp,
         batch_concurrency: Option<f64>,
     ) -> savvy::Result<OpendalAio> {
-        self.copy_or_rename_aio_common(
-            from,
-            to,
-            batch_concurrency.unwrap_or(0.0),
-            "copy",
-            copy_request_outcome,
-        )
+        self.copy_or_rename_aio_common(from, to, batch_concurrency, "copy", copy_request_outcome)
     }
 
     /// Submit asynchronous rename request(s) with strict length matching.
@@ -969,7 +976,7 @@ impl OpendalFs {
         self.copy_or_rename_aio_common(
             from,
             to,
-            batch_concurrency.unwrap_or(0.0),
+            batch_concurrency,
             "rename",
             rename_request_outcome,
         )
@@ -1244,13 +1251,13 @@ impl OpendalFs {
 
     fn read_requests(
         &self,
-        requests: Vec<ReadRequest>,
+        plan: ReadPlan,
         result: &str,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         tuning: ReadTuning,
     ) -> savvy::Result<savvy::Sexp> {
         self.read_requests_with_materializer(
-            requests,
+            plan,
             result,
             batch_concurrency,
             tuning,
@@ -1260,13 +1267,13 @@ impl OpendalFs {
 
     fn read_bytes_requests(
         &self,
-        requests: Vec<ReadRequest>,
+        plan: ReadPlan,
         result: &str,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         tuning: ReadTuning,
     ) -> savvy::Result<savvy::Sexp> {
         self.read_requests_with_materializer(
-            requests,
+            plan,
             result,
             batch_concurrency,
             tuning,
@@ -1276,55 +1283,38 @@ impl OpendalFs {
 
     fn read_requests_with_materializer<F>(
         &self,
-        requests: Vec<ReadRequest>,
+        plan: ReadPlan,
         result: &str,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         tuning: ReadTuning,
         materialize: F,
     ) -> savvy::Result<savvy::Sexp>
     where
         F: Fn(ReadValue) -> savvy::Result<savvy::Sexp> + Copy,
     {
-        let n = requests.len();
-        if n == 0 {
-            return OwnedListSexp::new(0, false)?.into();
-        }
-        if n == 1 && result == "auto" {
-            let req = requests.into_iter().next().unwrap();
-            return materialize(self.inner.runtime.block_on(read_request(
-                self.inner.op.clone(),
-                req,
-                tuning,
-            )));
-        }
-
+        let n = plan.requests.len();
         let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let op = self.inner.op.clone();
+        let requests = plan.requests;
         let mut values = self.inner.runtime.block_on(async move {
-            stream::iter(requests.into_iter().enumerate())
-                .map(|(i, req)| {
+            stream::iter(requests.into_iter())
+                .map(|req| {
                     let op = op.clone();
-                    async move { (i, read_request(op, req, tuning).await) }
+                    let key = (req.path_index, req.range_index);
+                    async move { (key, read_request(op, req, tuning).await) }
                 })
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
                 .await
         });
-        values.sort_by_key(|(i, _)| *i);
+        values.sort_by_key(|(key, _)| *key);
 
-        let mut out = OwnedListSexp::new(n, false)?;
-        for (i, value) in values.into_iter() {
-            if result == "nested" {
-                let mut inner = OwnedListSexp::new(1, false)?;
-                let value = materialize(value)?;
-                inner.set_value(0, value)?;
-                out.set_value(i, inner)?;
-            } else {
-                let value = materialize(value)?;
-                out.set_value(i, value)?;
-            }
-        }
-        out.into()
+        materialize_read_values(
+            values.into_iter().map(|(_, value)| value).collect(),
+            result,
+            &plan.shape,
+            materialize,
+        )
     }
 
     fn write_many_aio_common(
@@ -1334,7 +1324,7 @@ impl OpendalFs {
         create_only: bool,
         append: bool,
         operation: &str,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         tuning: WriteTuning,
     ) -> savvy::Result<OpendalAio> {
         let n = paths.len();
@@ -1411,7 +1401,7 @@ impl OpendalFs {
         &self,
         from: StringSexp,
         to: StringSexp,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         operation: &str,
         submit: F,
     ) -> savvy::Result<OpendalAio>
@@ -1485,11 +1475,12 @@ impl OpendalFs {
         create_only: bool,
         append: bool,
         operation: &str,
-        batch_concurrency: f64,
+        batch_concurrency: Option<f64>,
         tuning: WriteTuning,
     ) -> savvy::Result<savvy::Sexp> {
         let n = paths.len();
         let payloads = payloads_from_sexp(data, n)?;
+        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         if n == 0 {
             return OwnedListSexp::new(0, false)?.into();
         }
@@ -1505,7 +1496,6 @@ impl OpendalFs {
             );
         }
 
-        let concurrency = batch_concurrency_limit(batch_concurrency, n)?;
         let mut requests = Vec::with_capacity(n);
         let mut values: Vec<Option<WriteValue>> = (0..n).map(|_| None).collect();
         for (i, path) in paths.iter().enumerate() {
@@ -1595,10 +1585,33 @@ impl OpendalFs {
     }
 }
 
+struct ReadPlan {
+    requests: Vec<ReadRequest>,
+    shape: ReadShape,
+}
+
+struct ReadShape {
+    n_paths: usize,
+    ranges_per_path: Vec<usize>,
+}
+
+impl ReadShape {
+    fn is_scalar(&self) -> bool {
+        self.n_paths == 1 && self.ranges_per_path.first().copied().unwrap_or(0) == 1
+    }
+
+    fn auto_nested(&self) -> bool {
+        self.n_paths > 1 && self.ranges_per_path.iter().any(|n| *n != 1)
+    }
+}
+
 struct ReadRequest {
+    path_index: usize,
+    range_index: usize,
     path: String,
     offset: u64,
     size: Option<u64>,
+    error: Option<String>,
 }
 
 enum StatValue {
@@ -1980,6 +1993,15 @@ async fn read_request_outcome_with<F>(
 where
     F: Fn(Buffer) -> AioOutcome,
 {
+    if let Some(message) = req.error {
+        return AioOutcome::Error {
+            kind: "InvalidArgument".to_string(),
+            code: 14,
+            message,
+            operation: operation.to_string(),
+            path: req.path,
+        };
+    }
     let path_for_error = req.path.clone();
     match read_bytes_with(op, req.path, req.offset, req.size, tuning).await {
         Ok(bytes) => success(bytes),
@@ -1997,6 +2019,14 @@ where
 }
 
 async fn read_request(op: Operator, req: ReadRequest, tuning: ReadTuning) -> ReadValue {
+    if let Some(message) = req.error {
+        return ReadValue::Error {
+            kind: "InvalidArgument".to_string(),
+            code: 14,
+            message,
+            path: req.path,
+        };
+    }
     let path_for_error = req.path.clone();
     match read_bytes_with(op, req.path, req.offset, req.size, tuning).await {
         Ok(bytes) => ReadValue::Bytes(bytes),
@@ -2041,32 +2071,98 @@ where
     }
 }
 
-fn aio_many_from_sorted(values: Vec<(usize, AioOutcome)>, result: &str) -> AioOutcome {
-    let values: Vec<AioOutcome> = values.into_iter().map(|(_, value)| value).collect();
-    if result == "nested" {
-        AioOutcome::Many(
+fn materialize_read_values<F>(
+    values: Vec<ReadValue>,
+    result: &str,
+    shape: &ReadShape,
+    materialize: F,
+) -> savvy::Result<savvy::Sexp>
+where
+    F: Fn(ReadValue) -> savvy::Result<savvy::Sexp> + Copy,
+{
+    if result == "auto" && shape.is_scalar() {
+        return materialize(
             values
                 .into_iter()
-                .map(|value| AioOutcome::Many(vec![value]))
-                .collect(),
-        )
+                .next()
+                .unwrap_or_else(unexpected_read_value),
+        );
+    }
+
+    let use_nested = result == "nested" || (result == "auto" && shape.auto_nested());
+    if use_nested {
+        let mut iter = values.into_iter();
+        let mut out = OwnedListSexp::new(shape.n_paths, false)?;
+        for (path_index, range_count) in shape.ranges_per_path.iter().copied().enumerate() {
+            let mut one_path = OwnedListSexp::new(range_count, false)?;
+            for range_index in 0..range_count {
+                one_path.set_value(
+                    range_index,
+                    materialize(iter.next().unwrap_or_else(unexpected_read_value))?,
+                )?;
+            }
+            out.set_value(path_index, one_path)?;
+        }
+        return out.into();
+    }
+
+    let mut out = OwnedListSexp::new(values.len(), false)?;
+    for (i, value) in values.into_iter().enumerate() {
+        out.set_value(i, materialize(value)?)?;
+    }
+    out.into()
+}
+
+fn read_outcomes_to_aio(values: Vec<AioOutcome>, result: &str, shape: &ReadShape) -> AioOutcome {
+    if result == "auto" && shape.is_scalar() {
+        return values
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| unexpected_outcome("read"));
+    }
+
+    let use_nested = result == "nested" || (result == "auto" && shape.auto_nested());
+    if use_nested {
+        let mut iter = values.into_iter();
+        let mut out = Vec::with_capacity(shape.n_paths);
+        for range_count in shape.ranges_per_path.iter().copied() {
+            let mut one_path = Vec::with_capacity(range_count);
+            for _ in 0..range_count {
+                one_path.push(iter.next().unwrap_or_else(|| unexpected_outcome("read")));
+            }
+            out.push(AioOutcome::Many(one_path));
+        }
+        AioOutcome::Many(out)
     } else {
         AioOutcome::Many(values)
     }
 }
 
-fn batch_concurrency_limit(value: f64, n: usize) -> savvy::Result<usize> {
-    if n == 0 {
-        return Ok(1);
+fn unexpected_read_value() -> ReadValue {
+    ReadValue::Error {
+        kind: "Unexpected".to_string(),
+        code: 1,
+        message: "missing read result".to_string(),
+        path: String::new(),
     }
-    if value == 0.0 {
-        return Ok(n.min(16));
-    }
+}
+
+fn batch_concurrency_limit(value: Option<f64>, n: usize) -> savvy::Result<usize> {
+    let Some(value) = value else {
+        return Ok(if n == 0 { 1 } else { n.min(16) });
+    };
     let checked = checked_u64(value, "batch_concurrency")?;
     if checked == 0 {
-        Ok(n.min(16))
+        return Err(savvy::Error::new(
+            "batch_concurrency must be NULL or greater than zero",
+        ));
+    }
+    if checked > usize::MAX as u64 {
+        Err(savvy::Error::new("batch_concurrency is too large"))
+    } else if n == 0 {
+        Ok(1)
     } else {
-        Ok((checked as usize).max(1).min(n))
+        Ok((checked as usize).min(n))
     }
 }
 
@@ -2111,64 +2207,207 @@ fn read_requests_from_options(
     offsets: Option<Sexp>,
     sizes: Option<Sexp>,
     ends: Option<Sexp>,
-) -> savvy::Result<Vec<ReadRequest>> {
+) -> savvy::Result<ReadPlan> {
     if sizes.is_some() && ends.is_some() {
         return Err(savvy::Error::new("use only one of size or end"));
     }
-    let n = paths.len();
-    let offset_values = expand_numeric_arg(offsets, n, 0.0, "offset")?;
-    let size_values = optional_numeric_arg(sizes, "size")?;
-    let end_values = optional_numeric_arg(ends, "end")?;
-    if let Some(values) = &size_values {
-        if values.len() != n {
-            return Err(savvy::Error::new("size length must match path length"));
-        }
-    }
-    if let Some(values) = &end_values {
-        if values.len() != n {
-            return Err(savvy::Error::new("end length must match path length"));
+    let n_paths = paths.len();
+    let offset_groups = parse_offset_groups(offsets, n_paths)?;
+    let size_groups = parse_bound_groups(sizes, "size", &offset_groups)?;
+    let end_groups = parse_bound_groups(ends, "end", &offset_groups)?;
+    let ranges_per_path: Vec<usize> = offset_groups.iter().map(Vec::len).collect();
+    let request_count = ranges_per_path.iter().sum();
+
+    let mut requests = Vec::with_capacity(request_count);
+    for (path_index, path) in paths.iter().enumerate() {
+        let (normalized_path, path_error) = match normalize_user_path(path, false) {
+            Ok(path) => (path, None),
+            Err(error) => (path.to_string(), Some(error)),
+        };
+        for (range_index, offset_value) in offset_groups[path_index].iter().copied().enumerate() {
+            let offset = checked_u64(offset_value, "offset")?;
+            let size = if let Some(groups) = &size_groups {
+                Some(checked_u64(groups[path_index][range_index], "size")?)
+            } else if let Some(groups) = &end_groups {
+                let end = checked_u64(groups[path_index][range_index], "end")?;
+                if end < offset {
+                    return Err(savvy::Error::new(
+                        "end must be greater than or equal to offset",
+                    ));
+                }
+                Some(end - offset)
+            } else {
+                None
+            };
+            requests.push(ReadRequest {
+                path_index,
+                range_index,
+                path: normalized_path.clone(),
+                offset,
+                size,
+                error: path_error.clone(),
+            });
         }
     }
 
-    let mut out = Vec::with_capacity(n);
-    for (i, path) in paths.iter().enumerate() {
-        let path = match normalize_user_path(path, false) {
-            Ok(p) => p,
-            Err(e) => return Err(savvy::Error::new(&e)),
-        };
-        let offset = checked_u64(offset_values[i], "offset")?;
-        let size = if let Some(values) = &size_values {
-            Some(checked_u64(values[i], "size")?)
-        } else if let Some(values) = &end_values {
-            Some(checked_u64(values[i] - offset_values[i], "size")?)
-        } else {
-            None
-        };
-        out.push(ReadRequest { path, offset, size });
-    }
-    Ok(out)
+    Ok(ReadPlan {
+        requests,
+        shape: ReadShape {
+            n_paths,
+            ranges_per_path,
+        },
+    })
 }
 
-fn expand_numeric_arg(
-    value: Option<Sexp>,
-    n: usize,
-    default: f64,
-    name: &str,
-) -> savvy::Result<Vec<f64>> {
+fn parse_offset_groups(value: Option<Sexp>, n_paths: usize) -> savvy::Result<Vec<Vec<f64>>> {
     let Some(value) = value else {
-        return Ok(vec![default; n]);
+        return Ok(vec![vec![0.0]; n_paths]);
     };
-    let values = numeric_arg(value, name)?;
-    if values.len() != n {
+    match value.into_typed() {
+        TypedSexp::Null(_) => Ok(vec![vec![0.0]; n_paths]),
+        TypedSexp::Real(real) => flat_offset_groups(real.as_slice(), n_paths),
+        TypedSexp::Integer(int) => {
+            let values: Vec<f64> = int.as_slice().iter().map(|v| *v as f64).collect();
+            flat_offset_groups(&values, n_paths)
+        }
+        TypedSexp::List(list) => {
+            let groups = numeric_list_groups(list, "offset", n_paths)?;
+            validate_offset_groups(&groups)?;
+            Ok(groups)
+        }
+        _ => Err(savvy::Error::new(
+            "offset must be numeric or a list of numeric vectors",
+        )),
+    }
+}
+
+fn flat_offset_groups(values: &[f64], n_paths: usize) -> savvy::Result<Vec<Vec<f64>>> {
+    if n_paths == 0 {
+        return if values.is_empty() {
+            Ok(Vec::new())
+        } else {
+            Err(savvy::Error::new("offset length must match path length"))
+        };
+    }
+    if n_paths == 1 {
+        if values.is_empty() {
+            return Err(savvy::Error::new(
+                "offset must contain at least one range per path",
+            ));
+        }
+        return Ok(vec![values.to_vec()]);
+    }
+    if values.len() != n_paths {
+        return Err(savvy::Error::new(
+            "offset length must match path length or use a list of ranges",
+        ));
+    }
+    Ok(values.iter().map(|value| vec![*value]).collect())
+}
+
+fn validate_offset_groups(groups: &[Vec<f64>]) -> savvy::Result<()> {
+    for (i, group) in groups.iter().enumerate() {
+        if group.is_empty() {
+            return Err(savvy::Error::new(&format!(
+                "offset for path {} must contain at least one range",
+                i + 1
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn parse_bound_groups(
+    value: Option<Sexp>,
+    name: &str,
+    offset_groups: &[Vec<f64>],
+) -> savvy::Result<Option<Vec<Vec<f64>>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value.into_typed() {
+        TypedSexp::Null(_) => Ok(None),
+        TypedSexp::Real(real) => flat_bound_groups(real.as_slice(), name, offset_groups).map(Some),
+        TypedSexp::Integer(int) => {
+            let values: Vec<f64> = int.as_slice().iter().map(|v| *v as f64).collect();
+            flat_bound_groups(&values, name, offset_groups).map(Some)
+        }
+        TypedSexp::List(list) => numeric_list_groups(list, name, offset_groups.len()).map(Some),
+        _ => Err(savvy::Error::new(&format!(
+            "{name} must be numeric or a list of numeric vectors"
+        ))),
+    }
+    .and_then(|groups| {
+        if let Some(groups) = &groups {
+            validate_bound_groups(groups, name, offset_groups)?;
+        }
+        Ok(groups)
+    })
+}
+
+fn flat_bound_groups(
+    values: &[f64],
+    name: &str,
+    offset_groups: &[Vec<f64>],
+) -> savvy::Result<Vec<Vec<f64>>> {
+    let n_paths = offset_groups.len();
+    if n_paths == 0 {
+        return if values.is_empty() {
+            Ok(Vec::new())
+        } else {
+            Err(savvy::Error::new(&format!(
+                "{name} length must match path length"
+            )))
+        };
+    }
+    if n_paths == 1 {
+        if values.len() != offset_groups[0].len() {
+            return Err(savvy::Error::new(&format!(
+                "{name} length must match offset length"
+            )));
+        }
+        return Ok(vec![values.to_vec()]);
+    }
+    if offset_groups.iter().all(|group| group.len() == 1) && values.len() == n_paths {
+        return Ok(values.iter().map(|value| vec![*value]).collect());
+    }
+    Err(savvy::Error::new(&format!(
+        "{name} must match path length or be a list matching offset ranges"
+    )))
+}
+
+fn numeric_list_groups(list: ListSexp, name: &str, n_paths: usize) -> savvy::Result<Vec<Vec<f64>>> {
+    if list.len() != n_paths {
         return Err(savvy::Error::new(&format!(
-            "{name} length must match path length"
+            "{name} list length must match path length"
         )));
     }
-    Ok(values)
+    let mut groups = Vec::with_capacity(n_paths);
+    for value in list.values_iter() {
+        groups.push(numeric_arg(value, name)?);
+    }
+    Ok(groups)
 }
 
-fn optional_numeric_arg(value: Option<Sexp>, name: &str) -> savvy::Result<Option<Vec<f64>>> {
-    value.map(|value| numeric_arg(value, name)).transpose()
+fn validate_bound_groups(
+    groups: &[Vec<f64>],
+    name: &str,
+    offset_groups: &[Vec<f64>],
+) -> savvy::Result<()> {
+    if groups.len() != offset_groups.len() {
+        return Err(savvy::Error::new(&format!(
+            "{name} list length must match path length"
+        )));
+    }
+    for (i, (values, offsets)) in groups.iter().zip(offset_groups.iter()).enumerate() {
+        if values.len() != offsets.len() {
+            return Err(savvy::Error::new(&format!(
+                "{name} length for path {} must match offset length",
+                i + 1
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn numeric_arg(value: Sexp, name: &str) -> savvy::Result<Vec<f64>> {
@@ -2177,6 +2416,90 @@ fn numeric_arg(value: Sexp, name: &str) -> savvy::Result<Vec<f64>> {
         TypedSexp::Real(real) => Ok(real.as_slice().to_vec()),
         TypedSexp::Integer(int) => Ok(int.as_slice().iter().map(|v| *v as f64).collect()),
         _ => Err(savvy::Error::new(&format!("{name} must be numeric"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn batch_concurrency_distinguishes_missing_from_zero() {
+        assert_eq!(batch_concurrency_limit(None, 100).unwrap(), 16);
+        assert_eq!(batch_concurrency_limit(None, 4).unwrap(), 4);
+        assert_eq!(batch_concurrency_limit(None, 0).unwrap(), 1);
+        assert_eq!(batch_concurrency_limit(Some(1.0), 100).unwrap(), 1);
+        assert_eq!(batch_concurrency_limit(Some(32.0), 10).unwrap(), 10);
+        assert!(batch_concurrency_limit(Some(0.0), 10).is_err());
+        assert!(batch_concurrency_limit(Some(0.0), 0).is_err());
+        assert!(batch_concurrency_limit(Some(-1.0), 10).is_err());
+    }
+
+    #[test]
+    fn flat_offset_groups_preserve_range_shape_without_recycling() {
+        assert_eq!(
+            flat_offset_groups(&[0.0, 2.0], 1).unwrap(),
+            vec![vec![0.0, 2.0]]
+        );
+        assert_eq!(
+            flat_offset_groups(&[0.0, 4.0], 2).unwrap(),
+            vec![vec![0.0], vec![4.0]]
+        );
+        assert!(flat_offset_groups(&[0.0], 2).is_err());
+        assert!(flat_offset_groups(&[], 1).is_err());
+        assert!(flat_offset_groups(&[0.0], 0).is_err());
+        assert_eq!(flat_offset_groups(&[], 0).unwrap(), Vec::<Vec<f64>>::new());
+        assert!(validate_offset_groups(&[vec![0.0], Vec::new()]).is_err());
+    }
+
+    #[test]
+    fn flat_bound_groups_match_offset_shape() {
+        let scalar_path_offsets = vec![vec![0.0, 2.0]];
+        assert_eq!(
+            flat_bound_groups(&[1.0, 3.0], "size", &scalar_path_offsets).unwrap(),
+            vec![vec![1.0, 3.0]]
+        );
+        assert!(flat_bound_groups(&[1.0], "size", &scalar_path_offsets).is_err());
+
+        let multi_path_offsets = vec![vec![0.0], vec![2.0]];
+        assert_eq!(
+            flat_bound_groups(&[1.0, 3.0], "size", &multi_path_offsets).unwrap(),
+            vec![vec![1.0], vec![3.0]]
+        );
+        let nested_offsets = vec![vec![0.0, 2.0], vec![1.0]];
+        assert!(flat_bound_groups(&[1.0, 2.0, 3.0], "size", &nested_offsets).is_err());
+        assert!(
+            validate_bound_groups(&vec![vec![1.0], vec![2.0]], "size", &nested_offsets).is_err()
+        );
+    }
+
+    #[test]
+    fn read_shape_auto_rules_match_r_contract() {
+        let scalar = ReadShape {
+            n_paths: 1,
+            ranges_per_path: vec![1],
+        };
+        assert!(scalar.is_scalar());
+        assert!(!scalar.auto_nested());
+
+        let scalar_many_ranges = ReadShape {
+            n_paths: 1,
+            ranges_per_path: vec![2],
+        };
+        assert!(!scalar_many_ranges.is_scalar());
+        assert!(!scalar_many_ranges.auto_nested());
+
+        let many_paths_one_range_each = ReadShape {
+            n_paths: 2,
+            ranges_per_path: vec![1, 1],
+        };
+        assert!(!many_paths_one_range_each.auto_nested());
+
+        let many_paths_nested_ranges = ReadShape {
+            n_paths: 2,
+            ranges_per_path: vec![2, 1],
+        };
+        assert!(many_paths_nested_ranges.auto_nested());
     }
 }
 

@@ -302,11 +302,16 @@ and \code{client_secret}.}
 
 \item{directory}{Whether to normalize as a directory path.}
 
-\item{offset}{Zero-based byte offset.}
+\item{offset}{Zero-based byte offset or offsets. Omit or use \code{NULL} to read
+each path from byte zero; explicit numeric offsets are not recycled across
+multiple paths. Use numeric vectors for many ranges from one path and lists
+of numeric vectors for per-path ranges.}
 
-\item{size}{Number of bytes to read, or \code{NULL} to read to EOF.}
+\item{size}{Number of bytes to read, or \code{NULL} to read to EOF. When supplied,
+\code{size} follows the same scalar/vector/list shape as \code{offset}.}
 
-\item{end}{Exclusive byte end offset.}
+\item{end}{Exclusive byte end offset. When supplied, \code{end} follows the same
+scalar/vector/list shape as \code{offset}.}
 
 \item{result}{Requested result shape.}
 
@@ -333,7 +338,8 @@ for those storage formats.}
 normally \code{opt(fs, "codec")}.}
 
 \item{batch_concurrency}{Optional maximum number of independent paths/ranges
-to process concurrently.}
+to process concurrently. \code{NULL} uses the Ropendal default; explicit \code{0} is
+invalid in the R API.}
 
 \item{read_concurrency}{Optional per-object OpenDAL read concurrency for large
 reads where the backend supports chunked/concurrent reads.}

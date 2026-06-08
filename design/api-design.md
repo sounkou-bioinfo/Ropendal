@@ -360,8 +360,9 @@ Semantics:
 - `size` is a byte count; `end = offset + size`
 - `size = NULL` and `end = NULL` means `offset..EOF`
 - scalar path plus scalar range returns one raw vector in `result = "auto"`
-- atomic `path` with list `offset`/`size` returns a nested list in `result = "auto"`: one element per path, then one raw vector per requested range
-- flat request objects/data frames return a flat list in `result = "auto"`: one raw vector per row/request
+- scalar path plus many numeric ranges returns a flat list in `result = "auto"`
+- multiple paths with list `offset`/`size` return a nested list in `result = "auto"`: one element per path, then one raw vector per requested range
+- flat request objects/data frames, if added later, return a flat list in `result = "auto"`: one raw vector per row/request
 - `result = "flat"` always returns a flat list of raw vectors, one per expanded request
 - `result = "nested"` always returns a list aligned with input paths, with per-path lists of range results
 - `coalesce_gap` may merge nearby backend requests internally, but the returned object is split into the originally requested ranges

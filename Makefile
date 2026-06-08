@@ -28,6 +28,7 @@ help:
 	  'Common development targets:' \
 	  '  make rd              regenerate savvy wrappers, roxygen docs, and NAMESPACE' \
 	  '  make test-fast       install current source and run non-network tinytest' \
+	  '  make test-rust       run Rust unit tests in src/rust' \
 	  '  make test-http       run opt-in local HTTP fixture tests' \
 	  '  make test-s3         run opt-in public read-only S3-compatible tests' \
 	  '  make test-s3-minio   start local MinIO and run writable S3-compatible tests' \
@@ -80,6 +81,9 @@ test0:
 
 test-fast: dev-install
 	ROPENDAL_TEST_NETWORK=false R -e "tinytest::test_package('$(PKGNAME)', testdir = 'inst/tinytest')"
+
+test-rust:
+	cargo test --manifest-path=src/rust/Cargo.toml
 
 test-local: test-fast
 
@@ -153,4 +157,4 @@ test-webr:
 site:
 	R -e "pkgdown::build_site()"
 
-.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws bench-gdrive-minio-stress test-webr site
+.PHONY: all help rd build check install_deps install install2 install3 clean dev-install test1 test2 test0 test-fast test-rust test-local test-network test-http test-s3 test-s3-minio test-c-api-header test-c-api-roundtrip test-ci ci test-gdrive test rdm bench-minio-paws bench-gdrive-minio-stress test-webr site

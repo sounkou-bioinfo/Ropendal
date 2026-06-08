@@ -39,16 +39,6 @@ pub(crate) async fn read_bytes_with(
     op.read_options(&path, opts).await
 }
 
-pub(crate) async fn write_bytes(
-    op: Operator,
-    path: String,
-    bytes: Buffer,
-    create_only: bool,
-    append: bool,
-) -> Result<(), opendal::Error> {
-    write_bytes_with(op, path, bytes, create_only, append, WriteTuning::default()).await
-}
-
 pub(crate) async fn write_bytes_with(
     op: Operator,
     path: String,

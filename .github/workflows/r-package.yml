@@ -44,6 +44,8 @@ jobs:
         with:
           extra-packages: any::tinytest
           needs: check
+      - name: Rust unit tests
+        run: make test-rust
       - name: Source header compile check
         run: make test-c-api-header
       - name: Installed native API contract tests

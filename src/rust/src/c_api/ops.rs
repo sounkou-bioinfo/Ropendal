@@ -5,7 +5,7 @@ use futures::{StreamExt, stream};
 use opendal::options::{DeleteOptions, ListOptions, ReadOptions};
 use opendal::{Buffer, Operator};
 
-use crate::ops::{ReadTuning, write_bytes};
+use crate::ops::{ReadTuning, WriteTuning, write_bytes_with};
 use crate::path::normalize_user_path;
 use crate::r_values::copy_buffer_to_slice;
 
@@ -47,6 +47,13 @@ struct CReadIntoTask {
 
 fn c_optional_usize(value: usize) -> Option<usize> {
     if value == 0 { None } else { Some(value) }
+}
+
+fn c_write_tuning_from_options(opt: &ropendal_write_options) -> WriteTuning {
+    WriteTuning {
+        write_concurrency: c_optional_usize(opt.part_concurrency),
+        chunk_size: c_optional_usize(opt.chunk_size),
+    }
 }
 
 unsafe fn c_optional_string(
@@ -394,6 +401,21 @@ fn c_submit_write(
                 return 2;
             }
         };
+        if !opt.if_match.is_null()
+            || !opt.if_none_match.is_null()
+            || !opt.content_type.is_null()
+            || !opt.content_encoding.is_null()
+            || !opt.content_disposition.is_null()
+            || !opt.cache_control.is_null()
+        {
+            return unsupported_option(
+                err,
+                operation,
+                &path,
+                "conditional and content-header write options are not implemented yet",
+            );
+        }
+        let tuning = c_write_tuning_from_options(opt);
         let bytes = if src_len == 0 {
             opendal::Buffer::new()
         } else {
@@ -404,7 +426,7 @@ fn c_submit_write(
         let runtime = native.runtime.clone();
         let operation_owned = operation.to_string();
         let handle = runtime.spawn(async move {
-            match write_bytes(op, path.clone(), bytes, create_only, append).await {
+            match write_bytes_with(op, path.clone(), bytes, create_only, append, tuning).await {
                 Ok(_) => COutcome::Unit,
                 Err(e) => COutcome::Error(c_error_from_opendal(e, &operation_owned, &path)),
             }

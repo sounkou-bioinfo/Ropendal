@@ -55,6 +55,8 @@ expect_equal(fs_caps$scheme, "fs")
 expect_true(inherits(fs_caps$operations$read, "opendalCapabilityOperation"))
 expect_true(fs_caps$operations$read$supported)
 expect_equal(fs_caps$operations$read$implementation, "opendal")
+expect_true(fs_caps$operations$read_range$supported)
+expect_equal(fs_caps$operations$read_range$semantics, "native")
 expect_true(fs_caps$operations$ls$supported)
 uri_root <- ropendal_temp_root()
 fs_uri <- opendal_uri(paste0("fs://", uri_root))
@@ -69,6 +71,52 @@ bytes <- as.raw(c(1, 2, 3, 4))
 expect_true(identical(fs_write(fs, "a.bin", bytes), TRUE))
 expect_equal(fs_read(fs, "a.bin"), bytes)
 expect_equal(fs_read(fs, "a.bin", offset = 1, size = 2), as.raw(c(2, 3)))
+expect_equal(
+  fs_read(fs, "a.bin", offset = c(0, 2), size = c(2, 2), result = "flat"),
+  list(as.raw(c(1, 2)), as.raw(c(3, 4)))
+)
+expect_equal(
+  fs_read(fs, "a.bin", offset = c(0, 2), size = c(1, 2)),
+  list(as.raw(1), as.raw(c(3, 4)))
+)
+expect_equal(
+  fs_read(fs, "a.bin", offset = c(0, 2), end = c(1, 4), result = "flat"),
+  list(as.raw(1), as.raw(c(3, 4)))
+)
+range_nested <- fs_read(fs, "a.bin", offset = c(0, 2), size = c(1, 1), result = "nested")
+expect_equal(length(range_nested), 1)
+expect_equal(range_nested[[1]], list(as.raw(1), as.raw(3)))
+expect_true(identical(fs_write(fs, "ranges-b.bin", as.raw(c(10, 11, 12))), TRUE))
+expect_equal(
+  fs_read(fs, c("a.bin", "ranges-b.bin"), result = "flat"),
+  list(bytes, as.raw(c(10, 11, 12)))
+)
+range_nested_many <- fs_read(
+  fs,
+  c("a.bin", "ranges-b.bin"),
+  offset = list(c(0, 2), c(1)),
+  size = list(c(1, 2), c(2))
+)
+expect_equal(length(range_nested_many), 2)
+expect_equal(range_nested_many[[1]], list(as.raw(1), as.raw(c(3, 4))))
+expect_equal(range_nested_many[[2]], list(as.raw(c(11, 12))))
+range_end_many <- fs_read(
+  fs,
+  c("a.bin", "ranges-b.bin"),
+  offset = list(c(0, 2), c(1)),
+  end = list(c(1, 4), c(3))
+)
+expect_equal(range_end_many[[1]], list(as.raw(1), as.raw(c(3, 4))))
+expect_equal(range_end_many[[2]], list(as.raw(c(11, 12))))
+bytes_ranges <- fs_read_bytes(fs, "a.bin", offset = c(0, 2), size = c(1, 1), result = "flat")
+expect_true(all(vapply(bytes_ranges, inherits, logical(1), "OpendalBytes")))
+expect_equal(as.raw(bytes_ranges[[2]]), as.raw(3))
+bytes_ranges_aio <- collect_aio(fs_read_bytes_aio(fs, "a.bin", offset = c(1, 3), size = c(1, 1), result = "flat"))
+expect_equal(as.raw(bytes_ranges_aio[[1]]), as.raw(2))
+expect_equal(as.raw(bytes_ranges_aio[[2]]), as.raw(4))
+raw_ranges_aio <- collect_aio(fs_read_aio(fs, c("a.bin", "ranges-b.bin"), offset = list(c(1), c(0, 2)), size = list(c(2), c(1, 1))))
+expect_equal(raw_ranges_aio[[1]], list(as.raw(c(2, 3))))
+expect_equal(raw_ranges_aio[[2]], list(as.raw(10), as.raw(12)))
 expect_equal(
   fs_read(
     fs,
@@ -382,6 +430,10 @@ expect_equal(sort(vapply(single_thread_prefetch, `[[`, "", "path")), c("one.txt"
 expect_true(identical(fs_delete(fs, "dir/c.bin"), TRUE))
 
 expect_error(fs_read(fs, c("a.bin", "a.bin"), offset = 0))
+expect_error(fs_read(fs, "a.bin", batch_concurrency = 0), "batch_concurrency")
+expect_error(fs_read(fs, "a.bin", offset = numeric()), "offset")
+expect_error(fs_read(fs, "a.bin", offset = list(numeric())), "offset")
+expect_error(fs_read(fs, "a.bin", offset = numeric(), mode = "serial"), "offset")
 expect_error(fs_write(fs, c("x", "y"), as.raw(1)))
 expect_error(fs_read(fs, "a.bin", read_concurrency = -1))
 expect_error(fs_write(fs, "bad.bin", as.raw(1), write_concurrency = -1))

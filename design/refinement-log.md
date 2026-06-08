@@ -381,11 +381,13 @@ storage is not an R `RAWSXP` payload unless materialized. `length()` is cheap,
 `as.raw()` currently materializes to an R raw vector, and the handle can be
 passed back to Ropendal writes without routing through another R raw-vector
 payload. A future ALTREP raw facade is feasible by storing the external holder in
-ALTREP `data1` and materializing writable `DATAPTR()` access into an R-owned
-`RAWSXP`; the main constraint is writable/raw-vector semantics, not holder
-lifetime. If a user passes a normal R `raw`, matrix, character vector, or
-arbitrary object, the package still has to touch the R API on the R thread to
-copy or serialize.
+ALTREP `data1`; `Elt`/`Get_region` can copy requested bytes without full
+materialization, and read-only `Dataptr()`/`Dataptr_or_null()` can expose a stable
+contiguous pointer when the underlying buffer shape permits it. Writable
+`Dataptr()` must materialize into an R-owned `RAWSXP` cache in `data2`. The main
+constraint is writable/raw-vector pointer semantics, not holder lifetime. If a
+user passes a normal R `raw`, matrix, character vector, or arbitrary object, the
+package still has to touch the R API on the R thread to copy or serialize.
 
 R's connection API is an adapter candidate, not the core abstraction. `readBin()`
 and `writeBin()` operate through a connection's synchronous callbacks; a
@@ -521,3 +523,19 @@ alive. Monitor release waits for registered notification workers to exit before
 releasing retained Aio/CV references. This keeps the C API R-free and avoids
 callbacks touching R while still allowing downstream native packages to block on
 condition variables and drain completion events.
+
+### Missing/default sentinel handling
+
+Status: `implemented for R batch concurrency and read offsets; ongoing review item`
+
+R-facing `NULL`/missing defaults and explicit user-supplied values must remain
+distinct when they carry different API meaning. `batch_concurrency = NULL` means
+use Ropendal's bounded default, while `batch_concurrency = 0` is an invalid R
+argument; the C API keeps zero-as-unset only for documented zero-initialized
+option structs. Read wrappers also distinguish a missing `offset` from an
+explicit scalar `offset = 0`, so vectorized reads can default each path to
+`0..EOF` without introducing general scalar recycling for user-supplied range
+vectors.
+
+When adding new options, avoid using `unwrap_or()` as a shortcut until the API
+semantics of missing, zero, false, and empty-string values have been reviewed.

@@ -72,9 +72,14 @@
 #' @param fs Ropendal filesystem handle.
 #' @param path Root-relative path or paths.
 #' @param directory Whether to normalize as a directory path.
-#' @param offset Zero-based byte offset.
-#' @param size Number of bytes to read, or `NULL` to read to EOF.
-#' @param end Exclusive byte end offset.
+#' @param offset Zero-based byte offset or offsets. Omit or use `NULL` to read
+#'   each path from byte zero; explicit numeric offsets are not recycled across
+#'   multiple paths. Use numeric vectors for many ranges from one path and lists
+#'   of numeric vectors for per-path ranges.
+#' @param size Number of bytes to read, or `NULL` to read to EOF. When supplied,
+#'   `size` follows the same scalar/vector/list shape as `offset`.
+#' @param end Exclusive byte end offset. When supplied, `end` follows the same
+#'   scalar/vector/list shape as `offset`.
 #' @param result Requested result shape.
 #' @param name Option name.
 #' @param value Option value.
@@ -91,7 +96,8 @@
 #' @param codec Optional native byte codec name or `codec_config()` object,
 #'   normally `opt(fs, "codec")`.
 #' @param batch_concurrency Optional maximum number of independent paths/ranges
-#'   to process concurrently.
+#'   to process concurrently. `NULL` uses the Ropendal default; explicit `0` is
+#'   invalid in the R API.
 #' @param read_concurrency Optional per-object OpenDAL read concurrency for large
 #'   reads where the backend supports chunked/concurrent reads.
 #' @param write_concurrency Optional per-object OpenDAL write concurrency for
@@ -930,18 +936,19 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     encoding = "UTF-8",
                     serial_config = opt(fs, "serial"),
                     codec = opt(fs, "codec")) {
+  offset_arg <- if (missing(offset)) NULL else offset
   mode <- match.arg(mode)
   result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset_arg, size, end)
   if (identical(mode, "text")) {
     encoding <- .ropendal_check_text_encoding(encoding)
-    .ropendal_check_complete_text_read(offset, size, end)
+    .ropendal_check_complete_text_read(offset_arg, size, end)
   }
-  .ropendal_check_complete_codec_read(codec, offset, size, end)
+  .ropendal_check_complete_codec_read(codec, offset_arg, size, end)
   value <- fs$read(
     path,
-    offset,
+    offset_arg,
     size,
     end,
     result,
@@ -965,19 +972,20 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         encoding = "UTF-8",
                         serial_config = opt(fs, "serial"),
                         codec = opt(fs, "codec")) {
+  offset_arg <- if (missing(offset)) NULL else offset
   mode <- match.arg(mode)
   result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset, size, end)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset_arg, size, end)
   if (identical(mode, "text")) {
     encoding <- .ropendal_check_text_encoding(encoding)
-    .ropendal_check_complete_text_read(offset, size, end)
+    .ropendal_check_complete_text_read(offset_arg, size, end)
   }
-  .ropendal_check_complete_codec_read(codec, offset, size, end)
+  .ropendal_check_complete_codec_read(codec, offset_arg, size, end)
   materializer <- function(value) .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
   opendal_aio_with_bindings(fs$read_aio(
     path,
-    offset,
+    offset_arg,
     size,
     end,
     result,
@@ -996,9 +1004,10 @@ fs_read_bytes <- function(fs, path, offset = 0, size = NULL, end = NULL,
                           read_concurrency = NULL,
                           chunk_size = NULL,
                           coalesce_gap = NULL) {
+  offset_arg <- if (missing(offset)) NULL else offset
   opendal_bytes_wrap(fs$read_bytes(
     path,
-    offset,
+    offset_arg,
     size,
     end,
     match.arg(result),
@@ -1017,9 +1026,10 @@ fs_read_bytes_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                               read_concurrency = NULL,
                               chunk_size = NULL,
                               coalesce_gap = NULL) {
+  offset_arg <- if (missing(offset)) NULL else offset
   opendal_aio_with_bindings(fs$read_bytes_aio(
     path,
-    offset,
+    offset_arg,
     size,
     end,
     match.arg(result),

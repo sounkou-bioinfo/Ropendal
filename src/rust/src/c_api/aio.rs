@@ -1,5 +1,6 @@
 use std::ptr;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 use super::{CErrorInfo, set_c_error};
 use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error, ropendal_readv_result};
@@ -50,19 +51,41 @@ pub(crate) unsafe fn c_aio_release_ref(aio: *mut ropendal_aio) {
     }
 }
 
+unsafe fn c_aio_ready(aio: *mut ropendal_aio) -> Result<bool, CErrorInfo> {
+    if aio.is_null() {
+        return Err(CErrorInfo {
+            status: 2,
+            kind: "InvalidArgument".to_string(),
+            message: "aio pointer is null".to_string(),
+            operation: "aio".to_string(),
+            path: String::new(),
+        });
+    }
+    if (*aio).cached.lock().unwrap().is_some() {
+        return Ok(true);
+    }
+    Ok(match &*(*aio).handle.lock().unwrap() {
+        Some(handle) => handle.is_finished(),
+        None => true,
+    })
+}
+
+fn aio_timeout_error() -> CErrorInfo {
+    CErrorInfo {
+        status: 8,
+        kind: "Timeout".to_string(),
+        message: "aio wait timed out".to_string(),
+        operation: "aio".to_string(),
+        path: String::new(),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_poll(aio: *mut ropendal_aio) -> i32 {
-    if aio.is_null() {
-        return 2;
-    }
-    let cached = (*aio).cached.lock().unwrap();
-    if cached.is_some() {
-        return 1;
-    }
-    match &*(*aio).handle.lock().unwrap() {
-        Some(handle) if handle.is_finished() => 1,
-        Some(_) => 0,
-        None => 1,
+    match c_aio_ready(aio) {
+        Ok(true) => 1,
+        Ok(false) => 0,
+        Err(_) => 2,
     }
 }
 
@@ -72,7 +95,28 @@ pub unsafe extern "C" fn ropendal_aio_wait(
     timeout_ms: i32,
     err: *mut *mut ropendal_error,
 ) -> i32 {
-    let _ = timeout_ms;
+    if timeout_ms >= 0 {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+        loop {
+            match c_aio_ready(aio) {
+                Ok(true) => break,
+                Ok(false) => {
+                    if timeout_ms == 0 || Instant::now() >= deadline {
+                        let info = aio_timeout_error();
+                        let status = info.status;
+                        set_c_error(err, info);
+                        return status;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(info) => {
+                    let status = info.status;
+                    set_c_error(err, info);
+                    return status;
+                }
+            }
+        }
+    }
     match c_aio_finish(aio) {
         Ok(COutcome::Error(info)) => {
             let status = info.status;

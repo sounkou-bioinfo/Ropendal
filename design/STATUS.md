@@ -18,8 +18,9 @@ Ropendal currently has a working implementation through the Apache OpenDAL Rust 
 |---|---|---:|---:|---|
 | R package build | `R CMD build .` | yes | yes | implemented/tested |
 | Default tinytest | `make test-fast` | yes | yes | implemented/tested-default |
+| Rust unit tests | `make test-rust` | yes | yes | implemented/tested-default |
 | C API source-header compile check | `make test-c-api-header` | no | yes | implemented/tested-ci |
-| Installed C API roundtrip | `make test-c-api-roundtrip` | no | yes | implemented/tested-ci |
+| Installed C API roundtrip | `make test-c-api-roundtrip` | no | yes | implemented/tested-ci; covers timeout polling and unsupported write-header rejection |
 | Installed C API contract lint | `make test-ci` | no | yes | implemented/tested-ci |
 | R CMD check | `R CMD check --no-manual` | yes | yes | implemented in workflow on Ubuntu, Windows, and macOS |
 | Network/service tests | `make test-network` | no | opt-in | implemented for S3/HTTP/GDrive; broader services planned |
@@ -33,7 +34,7 @@ Ropendal currently has a working implementation through the Apache OpenDAL Rust 
 GitHub Actions jobs:
 
 - `R API tinytest (non-network)` on Ubuntu, Windows, and macOS
-- `C API contract and CI-only tests` on Ubuntu
+- `C API contract and CI-only tests` on Ubuntu, including Rust unit tests
 - `Local MinIO S3-compatible tests` on Ubuntu
 - `R CMD check (no CI-only/network tests)` on Ubuntu, Windows, and macOS
 - `pkgdown` site build/deploy
@@ -47,7 +48,7 @@ GitHub Actions jobs:
 | `inst/tinytest/helper-ropendal.R` | yes | yes | yes | env gates, temp helpers |
 | CI-only gating via `ROPENDAL_TEST_CI` | yes | yes | yes | default tests skip CI-only files |
 | Network/service gating | yes | no | partial | public S3, local MinIO, HTTP fixture, and Google Drive tests exist; other cloud service tests planned |
-| Makefile test targets | yes | yes | yes | includes R tests, C API tests, and development benchmark rendering |
+| Makefile test targets | yes | yes | yes | includes R tests, Rust unit tests, C API tests, and development benchmark rendering |
 | Development MinIO/GDrive benchmarks | yes | n/a | n/a | `benchmarks/minio-paws.Rmd` rendered to GitHub Markdown; `benchmarks/gdrive-minio-read-stress.R` / `make bench-gdrive-minio-stress` read-stresses a large Google Drive object against local MinIO; ignored from package build |
 | GitHub Actions workflow | yes | no local | defined | R API tinytest and R CMD check run on Ubuntu/Windows/macOS; C API and MinIO jobs run on Ubuntu; pkgdown deploy workflow exists |
 | savvy/roxygen generated wrappers and namespace | yes | yes | yes | `R/000-wrappers.R`, `src/init.c`, `src/rust/api.h`, `NAMESPACE` via `make rd` |
@@ -64,10 +65,10 @@ GitHub Actions jobs:
 | declarative `fs_capabilities()` | yes | yes | partial | partial | classed Rust-built capability values; local `fs` shape/read/list support tested by default; HTTP fixture and S3 public/MinIO service profile checks added |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
-| vectorized `fs_read()` shape | yes | partial | partial | partial | scalar/range reads, strict mismatch, and read transfer tuning tested |
+| vectorized `fs_read()` shape | yes | yes | yes | partial | scalar reads, many ranges for one path, list-of-ranges per path, strict mismatch, result shaping, and read transfer tuning tested |
 | strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added; batch write now uses bounded async execution |
 | metadata as Rust/C-defined lists | yes | yes | yes | yes | stat/list tested |
-| `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning; async local and MinIO tests |
+| `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning; async local and MinIO tests; R `batch_concurrency = 0` is rejected while `NULL` keeps the default |
 | `fs_replace()` / `fs_replace_aio()` replacement | yes | yes | yes | yes | local sync/async and MinIO async tests |
 | `fs_append()` / `fs_append_aio()` separate append op | yes | partial | no | yes | local `fs` roundtrip in installed C API; R async API wired; broader backend capability coverage remains service-dependent |
 | `fs_read_iter()` chunked reads | yes | yes | yes | no | one path returns a seekable/tellable iterator; many paths return a list; local test |
@@ -112,7 +113,7 @@ GitHub Actions jobs:
 | async `read_into_aio()` | yes | yes | no | yes | caller buffer roundtrip |
 | async `readv_aio()` | yes | yes | no | yes | installed-library roundtrip returns flattened borrowed bytes plus per-request success/failure details |
 | async `readv_into_aio()` | yes | yes | no | yes | installed-library roundtrip fills multiple caller-owned range buffers and checks per-request success/failure result details |
-| `write_aio()` create | yes | yes | no | yes | roundtrip |
+| `write_aio()` create | yes | yes | no | yes | roundtrip; C `part_concurrency` and `chunk_size` are wired to the tuning-aware write path, unsupported conditional/content headers reject explicitly |
 | `replace_aio()` | yes | yes | no | yes | local `fs` roundtrip |
 | `append_aio()` | yes | partial | no | yes | local `fs` roundtrip; broader backend capability coverage remains service-dependent |
 | `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
@@ -124,7 +125,7 @@ GitHub Actions jobs:
 ## Next implementation milestones
 
 1. Add traversal fanout and stronger backend-token continuation for namespace iterators where OpenDAL/service support warrants them; `limit`, `start_after`, best-effort page `cursor` markers, and explicit entry `prefetch` buffering are implemented for listing collection and iterators.
-2. Extend the `OpendalBytes` byte boundary with any needed ALTREP-backed optimizations; C API byte-handle accessors are implemented.
+2. Extend the `OpendalBytes` byte boundary with an ALTREP raw facade if profiling warrants it; the safe design is `data1` holding the external byte holder, `Elt`/`Get_region` copying regions, read-only `Dataptr()` only for stable contiguous storage, and writable `Dataptr()` materializing an R-owned `RAWSXP`. C API byte-handle accessors are implemented.
 3. Add any remaining memory/backpressure controls and service-level layers where they justify public API. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, `layer_timeout(request_timeout=, io_timeout=)`, explicit listing iterator `prefetch`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.

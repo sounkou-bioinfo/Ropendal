@@ -35,10 +35,11 @@ Reference checkouts must not be committed. If needed, keep them outside the repo
 8. Prefer errors-as-values for primitive resolution ergonomics, nanonext-like: Aios and sync primitives resolve to values or `opendalErrorValue`, not surprise throws. Hard errors may still throw for invalid arguments, serializer/deserializer exceptions, unsafe pointer misuse, internal bugs, or allocation failures.
 9. Expose declarative capabilities explicitly. Do not add user-facing knobs for internal composition strategy. If Ropendal declares a capability, implement it in Rust/C via OpenDAL, layers, or adapters; otherwise return `opendalUnsupportedValue`.
 10. Keep concurrency knobs explicit and separated: runtime threads, global in-flight limit, batch concurrency, and per-object read/write chunk concurrency are different controls.
-11. Secrets must be redacted in print/format and should not be stored in package metadata, README outputs, or test fixtures.
-12. When an API ambiguity is discovered, update `design/refinement-log.md` with status and provisional resolution.
-13. When implementation or test coverage changes, update `design/STATUS.md`.
-14. Avoid bogus internal R helpers named like `.something()` when they only hide one line, duplicate Rust validation, or create fake abstraction. Prefer direct public wrappers, S7 classes/generics for real R-level interfaces, and Rust/savvy methods for operation logic.
+11. Treat `Option::unwrap_or()` / sentinel defaults as API decisions, not convenience. Review every use for whether `NULL`/missing and an explicit value (especially `0`, `FALSE`, or empty string) must remain distinguishable; add a short comment or helper when the default is semantically intentional. R-facing `NULL` defaults must not be silently conflated with user-supplied invalid values, while C zero-initialized option structs may deliberately use zero as unset when documented.
+12. Secrets must be redacted in print/format and should not be stored in package metadata, README outputs, or test fixtures.
+13. When an API ambiguity is discovered, update `design/refinement-log.md` with status and provisional resolution.
+14. When implementation or test coverage changes, update `design/STATUS.md`.
+15. Avoid bogus internal R helpers named like `.something()` when they only hide one line, duplicate Rust validation, or create fake abstraction. Prefer direct public wrappers, S7 classes/generics for real R-level interfaces, and Rust/savvy methods for operation logic.
 
 ## Naming conventions
 
@@ -63,6 +64,7 @@ Follow the R package workflow. Use the Makefile once present:
 - `make rd` for roxygen2 documentation, generated `NAMESPACE`, and savvy wrapper refresh; do not hand-edit generated Rd/wrapper/namespace files
 - `make rdm` to render `README.Rmd` to `README.md`; never edit `README.md` manually
 - `make dev-install` for fast local install
+- `make test-rust` for Rust unit tests that cover pure parser/shape/concurrency helpers and other R-free Rust logic
 - `make test-fast` for quick non-network tinytest iteration
 - `make test` for build/install/tinytest
 - `make test-network` for opt-in network tests

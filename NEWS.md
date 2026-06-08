@@ -10,6 +10,13 @@
   current async, credential, serializer, and native C API behavior.
 - Documentation: documented R-universe Linux binary repository setup.
 - Build: added a webR/wasm package-load fallback and local rwasm build helper.
+- Reads: `fs_read()` / `fs_read_bytes()` now support multiple ranges from one
+  path and list-of-ranges shapes across multiple paths, while preserving ordered
+  flat or nested results.
+- API: R-side `batch_concurrency = 0` is now rejected; use `NULL` for the
+  default. Capability rows now include range/concurrency/recursive semantics.
+- C API: write tuning options are wired through, unsupported write header
+  options reject explicitly, and `ropendal_aio_wait()` honors its timeout.
 
 ## Ropendal 0.0.1
 

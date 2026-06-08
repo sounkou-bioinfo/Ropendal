@@ -187,6 +187,7 @@ typedef struct ropendal_readv_result {
 typedef struct ropendal_write_options {
   size_t struct_size;
   const char *path;
+  /* Reserved conditional/content options. Non-NULL currently returns ROPENDAL_UNSUPPORTED. */
   const char *if_match;
   const char *if_none_match;
   const char *content_type;
@@ -448,9 +449,11 @@ void ropendal_monitor_release(ropendal_monitor_t *monitor);
 /*
  * Aio lifecycle / completion.
  *
- * poll is non-blocking. wait blocks until terminal state; timeout_ms is reserved
- * for bounded waits and may be ignored by early implementations. cancel requests
- * cancellation, but remote I/O may already have happened. Releasing an Aio drops
+ * poll is non-blocking. wait uses timeout_ms as follows: negative waits
+ * indefinitely, zero polls without waiting, and positive values bound the wait
+ * in milliseconds. On timeout, wait returns ROPENDAL_TIMEOUT without resolving
+ * or cancelling the Aio. cancel requests cancellation, but remote I/O may already
+ * have happened. Releasing an Aio drops
  * the handle and invalidates all borrowed result pointers from that Aio.
  */
 ropendal_aio_status_t ropendal_aio_poll(ropendal_aio_t *aio);
