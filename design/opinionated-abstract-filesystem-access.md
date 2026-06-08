@@ -560,7 +560,7 @@ adapters can live on top.
 2. Stabilize `OpendalBytes` lifetime, ALTREP ownership, and C-level byte rules.
 3. Make `as.raw.OpendalBytes()` eligible to return a first-class ALTREP raw
    integration layer, with `Get_region` avoiding full materialization.
-4. Add `byte_ranges()` request objects feeding `fs_read()`.
+4. Add `byte_ranges()` request objects feeding `fs_read()` (implemented for R read wrappers).
 5. Add `fs_connection()` backed by read/write iterators.
 6. Add read-only `fs_zip()` over any range-readable parent filesystem.
 7. Add `ropendal_fs_zip()` to the C API.

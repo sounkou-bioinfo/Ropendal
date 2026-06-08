@@ -12,7 +12,8 @@
 - Build: added a webR/wasm package-load fallback and local rwasm build helper.
 - Reads: `fs_read()` / `fs_read_bytes()` now support multiple ranges from one
   path and list-of-ranges shapes across multiple paths, while preserving ordered
-  flat or nested results.
+  flat or nested results. `byte_ranges()` adds a request-object form for
+  index-heavy readers.
 - API: R-side `batch_concurrency = 0` is now rejected; use `NULL` for the
   default. Capability rows now include range/concurrency/recursive semantics.
 - C API: write tuning options are wired through, unsupported write header

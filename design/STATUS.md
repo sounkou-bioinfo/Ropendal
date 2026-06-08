@@ -65,7 +65,7 @@ GitHub Actions jobs:
 | declarative `fs_capabilities()` | yes | yes | partial | partial | classed Rust-built capability values; local `fs` shape/read/list support tested by default; HTTP fixture and S3 public/MinIO service profile checks added |
 | path normalization relative to root | yes | yes | yes | yes | escape above root errors |
 | errors as values / `opendalErrorValue` | yes | yes | yes | yes | Rust assigns S3 classes; NotFound and AlreadyExists tested |
-| vectorized `fs_read()` shape | yes | yes | yes | partial | scalar reads, many ranges for one path, list-of-ranges per path, strict mismatch, result shaping, and read transfer tuning tested |
+| vectorized `fs_read()` shape | yes | yes | yes | partial | scalar reads, many ranges for one path, list-of-ranges per path, `byte_ranges()` request objects, strict mismatch, result shaping, and read transfer tuning tested |
 | strict length matching, no recycling | yes | partial | yes | yes | read/write mismatch tests added; batch write now uses bounded async execution |
 | metadata as Rust/C-defined lists | yes | yes | yes | yes | stat/list tested |
 | `fs_write()` / `fs_write_aio()` create-only | yes | yes | yes | yes | Rust checks existence before create; accepts batch/write transfer tuning; async local and MinIO tests; R `batch_concurrency = 0` is rejected while `NULL` keeps the default |
@@ -125,7 +125,7 @@ GitHub Actions jobs:
 ## Next implementation milestones
 
 1. Add traversal fanout and stronger backend-token continuation for namespace iterators where OpenDAL/service support warrants them; `limit`, `start_after`, best-effort page `cursor` markers, and explicit entry `prefetch` buffering are implemented for listing collection and iterators.
-2. Extend the `OpendalBytes` byte boundary with an ALTREP raw facade if profiling warrants it; the safe design is `data1` holding the external byte holder, `Elt`/`Get_region` copying regions, read-only `Dataptr()` only for stable contiguous storage, and writable `Dataptr()` materializing an R-owned `RAWSXP`. C API byte-handle accessors are implemented.
+2. Extend the `OpendalBytes` byte boundary with an ALTREP raw facade if profiling warrants it; the safe design is `data1` holding the external byte holder, `Elt`/`Get_region` copying regions, read-only `Dataptr()` only for stable contiguous storage, and writable `Dataptr()` materializing an R-owned `RAWSXP`. C API byte-handle accessors are implemented, and `byte_ranges()` request objects now cover index-heavy R range readers.
 3. Add any remaining memory/backpressure controls and service-level layers where they justify public API. `runtime_config(threads=)`, `layer_concurrent_limit(max=)`, `layer_timeout(request_timeout=, io_timeout=)`, explicit listing iterator `prefetch`, per-call batch/read/write/chunk/coalesce tuning, async operations, active Aio bindings, read/write/listing/walking iterators, and `OpendalBytes` handles are now wired through Rust/OpenDAL.
 4. Extend serializer/deserializer coverage and ergonomics where needed; `serial_config()`, `serialize_raw()`, `deserialize_raw()`, `mode = "serial"`, and `mode = "text"` are implemented with R-thread-only hooks/materialization.
 5. Extend native byte codecs beyond explicit `identity`/`gzip`/`zlib` where useful and add async/background codec composition only where it preserves the R-thread boundary.

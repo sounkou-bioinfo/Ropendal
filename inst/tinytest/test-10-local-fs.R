@@ -117,6 +117,43 @@ expect_equal(as.raw(bytes_ranges_aio[[2]]), as.raw(4))
 raw_ranges_aio <- collect_aio(fs_read_aio(fs, c("a.bin", "ranges-b.bin"), offset = list(c(1), c(0, 2)), size = list(c(2), c(1, 1))))
 expect_equal(raw_ranges_aio[[1]], list(as.raw(c(2, 3))))
 expect_equal(raw_ranges_aio[[2]], list(as.raw(10), as.raw(12)))
+range_req <- byte_ranges(
+  path = c("a.bin", "a.bin", "ranges-b.bin"),
+  offset = c(0, 2, 1),
+  size = c(1, 2, 2),
+  id = c("a:first", "a:tail", "b:middle")
+)
+expect_equal(
+  fs_read(fs, range_req),
+  structure(
+    list(as.raw(1), as.raw(c(3, 4)), as.raw(c(11, 12))),
+    names = c("a:first", "a:tail", "b:middle")
+  )
+)
+range_req_aio <- collect_aio(fs_read_aio(fs, range_req))
+expect_equal(names(range_req_aio), c("a:first", "a:tail", "b:middle"))
+expect_equal(range_req_aio[[2]], as.raw(c(3, 4)))
+range_req_bytes <- fs_read_bytes(fs, range_req)
+expect_equal(names(range_req_bytes), c("a:first", "a:tail", "b:middle"))
+expect_true(all(vapply(range_req_bytes, inherits, logical(1), "OpendalBytes")))
+expect_equal(as.raw(range_req_bytes[[3]]), as.raw(c(11, 12)))
+range_req_bytes_aio <- collect_aio(fs_read_bytes_aio(fs, range_req))
+expect_equal(names(range_req_bytes_aio), c("a:first", "a:tail", "b:middle"))
+expect_equal(as.raw(range_req_bytes_aio[[1]]), as.raw(1))
+range_req_nested <- byte_ranges(
+  path = c("a.bin", "ranges-b.bin"),
+  offset = list(c(0, 2), c(1)),
+  end = list(c(1, 4), c(3)),
+  id = list(c("a:first", "a:tail"), "b:middle"),
+  result = "nested"
+)
+expect_equal(names(fs_read(fs, range_req_nested)[[1]]), c("a:first", "a:tail"))
+expect_error(fs_read(fs, range_req, offset = 0), "byte_ranges")
+expect_error(fs_read(fs, range_req, size = 1), "byte_ranges")
+expect_error(byte_ranges("a.bin", 0, size = 1, end = 1), "use only one")
+expect_error(fs_read(fs, byte_ranges(c("a.bin", "ranges-b.bin"), c(0, 1, 2), size = c(1, 1, 1))), "offset length")
+expect_error(fs_read(fs, range_req, mode = "serial"), "complete-object reads")
+expect_error(fs_read(fs, range_req, mode = "text"), "complete-object reads")
 expect_equal(
   fs_read(
     fs,

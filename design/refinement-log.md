@@ -539,3 +539,20 @@ vectors.
 
 When adding new options, avoid using `unwrap_or()` as a shortcut until the API
 semantics of missing, zero, false, and empty-string values have been reviewed.
+
+### `byte_ranges()` request objects
+
+Status: `implemented`
+
+Range-heavy R readers can now build a `byte_ranges(path, offset, size/end, id)`
+request object and pass it as the `path` argument to `fs_read()`,
+`fs_read_aio()`, `fs_read_bytes()`, or `fs_read_bytes_aio()`. The request is an
+R-side convenience layer only: wrappers unpack it into the same vector/list
+`path`, `offset`, `size`, and `end` shapes consumed by the Rust read planner.
+This preserves one read surface while making index/table-driven formats such as
+Zarr chunks, BGZF/Tabix, FASTA+FAI, and tiled binary indexes easier to express.
+
+`byte_ranges()` defaults to flat results for row-oriented index tables, but
+callers can request nested or auto shaping explicitly. Optional `id` values name
+flat list results when lengths match; they are metadata for R consumers and do
+not affect OpenDAL paths or backend requests.

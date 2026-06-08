@@ -346,9 +346,15 @@ xs <- fs_read(fs,
   size = list(c(100, 100), c(200))
 )
 
-# Fully flat request-table helpers may be added later.
-# For now, use vector/list arguments and `result = "flat"` when a flat
-# return shape is desired.
+# Range-heavy readers can use a small request object. The request feeds the
+# same path/offset/size/end machinery and defaults to flat results.
+req <- byte_ranges(
+  path = index$path,
+  offset = index$offset,
+  size = index$size,
+  id = index$chunk_id
+)
+chunks <- fs_read(fs, req)
 ```
 
 Semantics:
@@ -362,13 +368,13 @@ Semantics:
 - scalar path plus scalar range returns one raw vector in `result = "auto"`
 - scalar path plus many numeric ranges returns a flat list in `result = "auto"`
 - multiple paths with list `offset`/`size` return a nested list in `result = "auto"`: one element per path, then one raw vector per requested range
-- flat request objects/data frames, if added later, return a flat list in `result = "auto"`: one raw vector per row/request
+- `byte_ranges()` request objects are unpacked into the same vector/list shapes; they default to `result = "flat"` so flat index tables return one raw vector per row/request
 - `result = "flat"` always returns a flat list of raw vectors, one per expanded request
 - `result = "nested"` always returns a list aligned with input paths, with per-path lists of range results
 - `coalesce_gap` may merge nearby backend requests internally, but the returned object is split into the originally requested ranges
 - for partial ranges, `mode = "serial"` should be rejected unless the caller explicitly opts into reading a complete serialized object; byte range reads are fundamentally `mode = "raw"`
 
-A small request-table constructor can exist later for clarity, but it should feed `fs_read()` rather than create another verb. Directory paths are for `fs_ls(recursive = TRUE)` and `fs_walk_iter()`; byte ranges apply to file reads.
+`byte_ranges()` is only a request-object constructor; it feeds `fs_read()` / `fs_read_aio()` / `fs_read_bytes()` / `fs_read_bytes_aio()` rather than creating another read verb. Directory paths are for `fs_ls(recursive = TRUE)` and `fs_walk_iter()`; byte ranges apply to file reads.
 
 The native C API remains more explicit (`read_aio`, `read_into_aio`, `readv_into_aio`) because C callers need direct buffer ownership and cannot rely on R vector/list recycling.
 

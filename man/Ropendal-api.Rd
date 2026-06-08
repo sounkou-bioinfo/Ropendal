@@ -26,6 +26,7 @@
 \alias{fs_info}
 \alias{fs_capabilities}
 \alias{fs_normalize_path}
+\alias{byte_ranges}
 \alias{fs_read}
 \alias{fs_read_aio}
 \alias{fs_read_bytes}
@@ -114,6 +115,7 @@ layer_timeout(request_timeout = NULL, io_timeout = NULL)
 fs_info(fs)
 fs_capabilities(fs)
 fs_normalize_path(fs, path, directory = FALSE)
+byte_ranges(path, offset, size = NULL, end = NULL, id = NULL, result = "flat")
 opt(fs, name)
 opt(fs, name) <- value
 serial_config(class, sfunc, ufunc)
@@ -298,7 +300,9 @@ and \code{client_secret}.}
 
 \item{fs}{Ropendal filesystem handle.}
 
-\item{path}{Root-relative path or paths.}
+\item{path}{Root-relative path or paths. For \code{fs_read()}, \code{fs_read_aio()},
+\code{fs_read_bytes()}, and \code{fs_read_bytes_aio()}, may also be a
+\code{byte_ranges()} request object.}
 
 \item{directory}{Whether to normalize as a directory path.}
 
@@ -312,6 +316,10 @@ of numeric vectors for per-path ranges.}
 
 \item{end}{Exclusive byte end offset. When supplied, \code{end} follows the same
 scalar/vector/list shape as \code{offset}.}
+
+\item{id}{Optional identifiers for ranges in a \code{byte_ranges()} request. Flat
+request results are named with \code{id} when lengths match; nested result names
+require a list-shaped \code{id} aligned with per-path ranges.}
 
 \item{result}{Requested result shape.}
 
@@ -421,4 +429,11 @@ error value afterwards. \verb{$data} and \verb{$result} are aliases for \verb{$v
 \code{collect_aio()} waits and returns the value. \code{call_aio()} waits, updates the
 Aio, and returns the Aio invisibly. \code{unresolved()} constructs the unresolved
 sentinel; \code{unresolved(aio)} and \code{unresolved(value)} are predicates.
+
+\code{byte_ranges()} builds a small range request object for index-heavy formats.
+Pass it as the \code{path} argument to \code{fs_read()}, \code{fs_read_aio()},
+\code{fs_read_bytes()}, or \code{fs_read_bytes_aio()}; the object is unpacked into the
+same vector/list \code{path}, \code{offset}, \code{size}, and \code{end} shapes as direct calls.
+Request objects default to \code{result = "flat"}, which is convenient for
+row-oriented index tables.
 }

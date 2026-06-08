@@ -41,6 +41,24 @@ fs_read(fs, "a/b/c.bin")
 fs_stat(fs, "a/b/c.bin")$path
 ```
 
+### Range-heavy readers
+
+Index-heavy formats can build a small range request object and pass it to the
+same read verbs. This keeps Zarr-like chunk readers, FASTA indexes, and other
+binary table lookups on the byte-first API.
+
+```{r}
+fs_write(fs, "chunks.bin", as.raw(1:8))
+idx <- data.frame(
+  path = "chunks.bin",
+  offset = c(0, 4),
+  size = c(4, 4),
+  chunk = c("0.0", "0.1")
+)
+req <- byte_ranges(idx$path, idx$offset, size = idx$size, id = idx$chunk)
+fs_read(fs, req)
+```
+
 ### Control knobs belong in handles
 
 `runtime_config()`, `layer_concurrent_limit()`, and `layer_timeout()` are attached

@@ -11,7 +11,7 @@
 #'   credentials_azblob credentials_gdrive credentials_gdrive3 credential_schemes
 #'   credential_config credential_summary runtime_config layer_concurrent_limit layer_timeout
 #'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
-#'   fs_info fs_capabilities fs_normalize_path fs_read fs_read_aio
+#'   fs_info fs_capabilities fs_normalize_path byte_ranges fs_read fs_read_aio
 #'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
 #'   fs_read_iter read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
 #'   ls_iter_collect walk_iter_next walk_iter_collect fs_seek fs_tell fs_write fs_write_aio
@@ -70,7 +70,9 @@
 #' @param provider Credential provider object.
 #' @param service OpenDAL service scheme for credential materialization.
 #' @param fs Ropendal filesystem handle.
-#' @param path Root-relative path or paths.
+#' @param path Root-relative path or paths. For `fs_read()`, `fs_read_aio()`,
+#'   `fs_read_bytes()`, and `fs_read_bytes_aio()`, may also be a
+#'   `byte_ranges()` request object.
 #' @param directory Whether to normalize as a directory path.
 #' @param offset Zero-based byte offset or offsets. Omit or use `NULL` to read
 #'   each path from byte zero; explicit numeric offsets are not recycled across
@@ -80,6 +82,9 @@
 #'   `size` follows the same scalar/vector/list shape as `offset`.
 #' @param end Exclusive byte end offset. When supplied, `end` follows the same
 #'   scalar/vector/list shape as `offset`.
+#' @param id Optional identifiers for ranges in a `byte_ranges()` request. Flat
+#'   request results are named with `id` when lengths match; nested result names
+#'   require a list-shaped `id` aligned with per-path ranges.
 #' @param result Requested result shape.
 #' @param name Option name.
 #' @param value Option value.
@@ -156,6 +161,7 @@
 #' fs_info(fs)
 #' fs_capabilities(fs)
 #' fs_normalize_path(fs, path, directory = FALSE)
+#' byte_ranges(path, offset, size = NULL, end = NULL, id = NULL, result = "flat")
 #' opt(fs, name)
 #' opt(fs, name) <- value
 #' serial_config(class, sfunc, ufunc)
@@ -272,6 +278,13 @@
 #' `collect_aio()` waits and returns the value. `call_aio()` waits, updates the
 #' Aio, and returns the Aio invisibly. `unresolved()` constructs the unresolved
 #' sentinel; `unresolved(aio)` and `unresolved(value)` are predicates.
+#'
+#' `byte_ranges()` builds a small range request object for index-heavy formats.
+#' Pass it as the `path` argument to `fs_read()`, `fs_read_aio()`,
+#' `fs_read_bytes()`, or `fs_read_bytes_aio()`; the object is unpacked into the
+#' same vector/list `path`, `offset`, `size`, and `end` shapes as direct calls.
+#' Request objects default to `result = "flat"`, which is convenient for
+#' row-oriented index tables.
 #' @return Filesystem handles, raw vectors, `OpendalBytes` handles,
 #'   deserialized R objects, metadata lists, logical results, Aio handles, or
 #'   classed error values depending on the operation and mode.
@@ -583,6 +596,99 @@ print.opendalCapabilityValue <- function(x, ...) {
 #' @noRd
 fs_normalize_path <- function(fs, path, directory = FALSE) {
   fs$normalize_path(path, directory)
+}
+
+#' @export
+#' @noRd
+byte_ranges <- function(path, offset, size = NULL, end = NULL, id = NULL, result = "flat") {
+  if (missing(path)) stop("path is required", call. = FALSE)
+  if (missing(offset)) stop("offset is required", call. = FALSE)
+  if (!is.null(size) && !is.null(end)) stop("use only one of size or end", call. = FALSE)
+  result <- match.arg(result, c("flat", "nested", "auto"))
+  structure(
+    list(path = path, offset = offset, size = size, end = end, id = id, result = result),
+    class = "ropendalByteRanges"
+  )
+}
+
+#' @export
+#' @noRd
+print.ropendalByteRanges <- function(x, ...) {
+  cat(
+    "<opendal byte ranges> ", .ropendal_range_count(x$offset), " range(s) over ",
+    length(x$path), " path(s)\n",
+    sep = ""
+  )
+  invisible(x)
+}
+
+.ropendal_is_byte_ranges <- function(x) inherits(x, "ropendalByteRanges")
+
+.ropendal_range_count <- function(offset) {
+  if (is.list(offset) && !is.data.frame(offset)) return(sum(lengths(offset)))
+  length(offset)
+}
+
+.ropendal_read_args <- function(path, offset, size, end, result,
+                                offset_missing, size_missing, end_missing,
+                                result_missing) {
+  if (!.ropendal_is_byte_ranges(path)) {
+    return(list(
+      path = path,
+      offset = if (offset_missing) NULL else offset,
+      size = size,
+      end = end,
+      result = match.arg(result, c("auto", "flat", "nested")),
+      request = NULL
+    ))
+  }
+
+  if (!offset_missing && !is.null(offset)) {
+    stop("offset must not be supplied when path is a byte_ranges() request", call. = FALSE)
+  }
+  if (!size_missing && !is.null(size)) {
+    stop("size must not be supplied when path is a byte_ranges() request", call. = FALSE)
+  }
+  if (!end_missing && !is.null(end)) {
+    stop("end must not be supplied when path is a byte_ranges() request", call. = FALSE)
+  }
+  if (!is.list(path) || is.null(path$path) || is.null(path$offset) || is.null(path$result)) {
+    stop("invalid byte_ranges() request", call. = FALSE)
+  }
+
+  list(
+    path = path$path,
+    offset = path$offset,
+    size = path$size,
+    end = path$end,
+    result = if (result_missing) path$result else match.arg(result, c("auto", "flat", "nested")),
+    request = path
+  )
+}
+
+.ropendal_name_byte_ranges <- function(value, request, result = NULL) {
+  if (is.null(request) || is.null(request$id) || is_error_value(value) || !is.list(value)) {
+    return(value)
+  }
+
+  ids <- request$id
+  if (identical(result, "nested")) {
+    if (is.list(ids) && !is.data.frame(ids) && length(ids) == length(value)) {
+      for (i in seq_along(value)) {
+        if (is.list(value[[i]]) && length(ids[[i]]) == length(value[[i]])) {
+          names(value[[i]]) <- as.character(ids[[i]])
+        }
+      }
+    }
+    return(value)
+  }
+
+  if (is.list(ids) && !is.data.frame(ids)) {
+    ids <- unlist(ids, recursive = FALSE, use.names = FALSE)
+  }
+
+  if (length(ids) == length(value)) names(value) <- as.character(ids)
+  value
 }
 
 .ropendal_serial_magic <- "Ropendal.serial.v1"
@@ -936,28 +1042,31 @@ fs_read <- function(fs, path, offset = 0, size = NULL, end = NULL,
                     encoding = "UTF-8",
                     serial_config = opt(fs, "serial"),
                     codec = opt(fs, "codec")) {
-  offset_arg <- if (missing(offset)) NULL else offset
+  args <- .ropendal_read_args(
+    path, offset, size, end, result,
+    missing(offset), missing(size), missing(end), missing(result)
+  )
   mode <- match.arg(mode)
-  result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset_arg, size, end)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(args$offset, args$size, args$end)
   if (identical(mode, "text")) {
     encoding <- .ropendal_check_text_encoding(encoding)
-    .ropendal_check_complete_text_read(offset_arg, size, end)
+    .ropendal_check_complete_text_read(args$offset, args$size, args$end)
   }
-  .ropendal_check_complete_codec_read(codec, offset_arg, size, end)
+  .ropendal_check_complete_codec_read(codec, args$offset, args$size, args$end)
   value <- fs$read(
-    path,
-    offset_arg,
-    size,
-    end,
-    result,
+    args$path,
+    args$offset,
+    args$size,
+    args$end,
+    args$result,
     batch_concurrency,
     read_concurrency,
     chunk_size,
     coalesce_gap
   )
-  .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
+  value <- .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
+  .ropendal_name_byte_ranges(value, args$request, args$result)
 }
 
 #' @export
@@ -972,23 +1081,29 @@ fs_read_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                         encoding = "UTF-8",
                         serial_config = opt(fs, "serial"),
                         codec = opt(fs, "codec")) {
-  offset_arg <- if (missing(offset)) NULL else offset
+  args <- .ropendal_read_args(
+    path, offset, size, end, result,
+    missing(offset), missing(size), missing(end), missing(result)
+  )
   mode <- match.arg(mode)
-  result <- match.arg(result)
   codec <- .ropendal_codec_for_mode(codec, mode)
-  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(offset_arg, size, end)
+  if (identical(mode, "serial")) .ropendal_check_complete_serial_read(args$offset, args$size, args$end)
   if (identical(mode, "text")) {
     encoding <- .ropendal_check_text_encoding(encoding)
-    .ropendal_check_complete_text_read(offset_arg, size, end)
+    .ropendal_check_complete_text_read(args$offset, args$size, args$end)
   }
-  .ropendal_check_complete_codec_read(codec, offset_arg, size, end)
-  materializer <- function(value) .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
+  .ropendal_check_complete_codec_read(codec, args$offset, args$size, args$end)
+  request <- args$request
+  materializer <- function(value) {
+    value <- .ropendal_materialize_read(value, mode, serial_config, codec, encoding)
+    .ropendal_name_byte_ranges(value, request, args$result)
+  }
   opendal_aio_with_bindings(fs$read_aio(
-    path,
-    offset_arg,
-    size,
-    end,
-    result,
+    args$path,
+    args$offset,
+    args$size,
+    args$end,
+    args$result,
     batch_concurrency,
     read_concurrency,
     chunk_size,
@@ -1004,18 +1119,22 @@ fs_read_bytes <- function(fs, path, offset = 0, size = NULL, end = NULL,
                           read_concurrency = NULL,
                           chunk_size = NULL,
                           coalesce_gap = NULL) {
-  offset_arg <- if (missing(offset)) NULL else offset
-  opendal_bytes_wrap(fs$read_bytes(
-    path,
-    offset_arg,
-    size,
-    end,
-    match.arg(result),
+  args <- .ropendal_read_args(
+    path, offset, size, end, result,
+    missing(offset), missing(size), missing(end), missing(result)
+  )
+  value <- opendal_bytes_wrap(fs$read_bytes(
+    args$path,
+    args$offset,
+    args$size,
+    args$end,
+    args$result,
     batch_concurrency,
     read_concurrency,
     chunk_size,
     coalesce_gap
   ))
+  .ropendal_name_byte_ranges(value, args$request, args$result)
 }
 
 #' @export
@@ -1026,18 +1145,22 @@ fs_read_bytes_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
                               read_concurrency = NULL,
                               chunk_size = NULL,
                               coalesce_gap = NULL) {
-  offset_arg <- if (missing(offset)) NULL else offset
+  args <- .ropendal_read_args(
+    path, offset, size, end, result,
+    missing(offset), missing(size), missing(end), missing(result)
+  )
+  request <- args$request
   opendal_aio_with_bindings(fs$read_bytes_aio(
-    path,
-    offset_arg,
-    size,
-    end,
-    match.arg(result),
+    args$path,
+    args$offset,
+    args$size,
+    args$end,
+    args$result,
     batch_concurrency,
     read_concurrency,
     chunk_size,
     coalesce_gap
-  ))
+  ), materializer = function(value) .ropendal_name_byte_ranges(value, request, args$result))
 }
 
 #' @export
