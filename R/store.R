@@ -4,14 +4,20 @@
 #' substrate for Zarr-like chunk layouts and other index-driven readers that want
 #' store-relative keys without leaving Ropendal's byte-first filesystem API.
 #'
+#' `store_read()` returns `OpendalBytes` by default so callers can stay below R
+#' raw-vector materialization until they explicitly ask for `mode = "raw"` or
+#' `as.raw()`. The store layer is intentionally byte-only: serializers,
+#' deserializers, codecs, and format parsers belong above it.
+#'
 #' `store_cache()` wraps a byte store in an explicit local full-object cache. It
 #' is useful for chunked layouts where each key is already a small block. Partial
 #' byte-range reads and non-default read shaping bypass this first cache layer;
 #' future block caches can add range-aware eviction and readahead.
 #'
 #' @name byte-store
-#' @aliases byte_store store_cache store_cache_clear store_read store_write
-#'   store_replace store_exists store_list store_delete
+#' @aliases byte_store store_cache store_cache_clear store_read store_read_aio
+#'   store_write store_write_aio store_replace store_replace_aio store_exists
+#'   store_exists_aio store_list store_list_aio store_delete store_delete_aio
 #' @param fs Ropendal filesystem handle.
 #' @param prefix Root-relative filesystem prefix used as the store root.
 #' @param store Byte store object returned by `byte_store()` or `store_cache()`.
@@ -22,7 +28,7 @@
 #' @param key Store-relative object key or keys.
 #' @param path Store-relative directory path for `store_list()`.
 #' @param data Raw vector, `OpendalBytes`, or list of raw vectors/byte handles.
-#' @param mode Read materialization: raw vectors or `OpendalBytes` handles.
+#' @param mode Read materialization: `OpendalBytes` handles or raw vectors.
 #' @param offset,size,end Optional byte-range controls forwarded to the read
 #'   operation.
 #' @param result Requested read result shape.
@@ -44,9 +50,9 @@
 #' fs <- opendal("fs", root = root)
 #' store <- byte_store(fs, "array.zarr")
 #' store_write(store, "zarr.json", charToRaw("{}"))
-#' store_read(store, "zarr.json")
+#' as.raw(store_read(store, "zarr.json"))
 #' cached <- store_cache(store, tempfile("ropendal-cache-"), validate = "none")
-#' store_read(cached, "zarr.json")
+#' as.raw(store_read(cached, "zarr.json"))
 #' @export
 byte_store <- function(fs, prefix = "") {
   .ropendal_check_fs(fs)
@@ -113,7 +119,7 @@ store_cache_clear <- function(store) {
 
 #' @rdname byte-store
 #' @export
-store_read <- function(store, key, mode = c("raw", "bytes"),
+store_read <- function(store, key, mode = c("bytes", "raw"),
                        offset = NULL, size = NULL, end = NULL,
                        result = c("auto", "flat", "nested"),
                        batch_concurrency = NULL,
@@ -150,6 +156,43 @@ store_read <- function(store, key, mode = c("raw", "bytes"),
 
 #' @rdname byte-store
 #' @export
+store_read_aio <- function(store, key, mode = c("bytes", "raw"),
+                           offset = NULL, size = NULL, end = NULL,
+                           result = c("auto", "flat", "nested"),
+                           batch_concurrency = NULL,
+                           read_concurrency = NULL,
+                           chunk_size = NULL,
+                           coalesce_gap = NULL) {
+  store <- .ropendal_check_store(store)
+  mode <- match.arg(mode)
+  result <- match.arg(result)
+  if (.ropendal_is_cached_store(store)) {
+    return(.ropendal_cached_store_read_aio(
+      store, key, mode = mode, offset = offset, size = size, end = end,
+      result = result, batch_concurrency = batch_concurrency,
+      read_concurrency = read_concurrency, chunk_size = chunk_size,
+      coalesce_gap = coalesce_gap
+    ))
+  }
+  path <- .ropendal_store_path(store, key, object = TRUE)
+  if (identical(mode, "bytes")) {
+    return(fs_read_bytes_aio(
+      store$fs, path, offset = offset, size = size, end = end,
+      result = result, batch_concurrency = batch_concurrency,
+      read_concurrency = read_concurrency, chunk_size = chunk_size,
+      coalesce_gap = coalesce_gap
+    ))
+  }
+  fs_read_aio(
+    store$fs, path, offset = offset, size = size, end = end,
+    result = result, batch_concurrency = batch_concurrency,
+    read_concurrency = read_concurrency, chunk_size = chunk_size,
+    coalesce_gap = coalesce_gap
+  )
+}
+
+#' @rdname byte-store
+#' @export
 store_write <- function(store, key, data, batch_concurrency = NULL,
                         write_concurrency = NULL, chunk_size = NULL) {
   store <- .ropendal_check_store(store)
@@ -164,6 +207,30 @@ store_write <- function(store, key, data, batch_concurrency = NULL,
     return(value)
   }
   fs_write(
+    store$fs,
+    .ropendal_store_path(store, key, object = TRUE),
+    data,
+    batch_concurrency = batch_concurrency,
+    write_concurrency = write_concurrency,
+    chunk_size = chunk_size
+  )
+}
+
+#' @rdname byte-store
+#' @export
+store_write_aio <- function(store, key, data, batch_concurrency = NULL,
+                            write_concurrency = NULL, chunk_size = NULL) {
+  store <- .ropendal_check_store(store)
+  if (.ropendal_is_cached_store(store)) {
+    .ropendal_cached_store_invalidate(store, key)
+    return(store_write_aio(
+      store$parent, key, data,
+      batch_concurrency = batch_concurrency,
+      write_concurrency = write_concurrency,
+      chunk_size = chunk_size
+    ))
+  }
+  fs_write_aio(
     store$fs,
     .ropendal_store_path(store, key, object = TRUE),
     data,
@@ -200,12 +267,50 @@ store_replace <- function(store, key, data, batch_concurrency = NULL,
 
 #' @rdname byte-store
 #' @export
+store_replace_aio <- function(store, key, data, batch_concurrency = NULL,
+                              write_concurrency = NULL, chunk_size = NULL) {
+  store <- .ropendal_check_store(store)
+  if (.ropendal_is_cached_store(store)) {
+    .ropendal_cached_store_invalidate(store, key)
+    return(store_replace_aio(
+      store$parent, key, data,
+      batch_concurrency = batch_concurrency,
+      write_concurrency = write_concurrency,
+      chunk_size = chunk_size
+    ))
+  }
+  fs_replace_aio(
+    store$fs,
+    .ropendal_store_path(store, key, object = TRUE),
+    data,
+    batch_concurrency = batch_concurrency,
+    write_concurrency = write_concurrency,
+    chunk_size = chunk_size
+  )
+}
+
+#' @rdname byte-store
+#' @export
 store_exists <- function(store, key, batch_concurrency = NULL) {
   store <- .ropendal_check_store(store)
   if (.ropendal_is_cached_store(store)) {
     return(store_exists(store$parent, key, batch_concurrency = batch_concurrency))
   }
   fs_exists(
+    store$fs,
+    .ropendal_store_path(store, key, object = TRUE),
+    batch_concurrency = batch_concurrency
+  )
+}
+
+#' @rdname byte-store
+#' @export
+store_exists_aio <- function(store, key, batch_concurrency = NULL) {
+  store <- .ropendal_check_store(store)
+  if (.ropendal_is_cached_store(store)) {
+    return(store_exists_aio(store$parent, key, batch_concurrency = batch_concurrency))
+  }
+  fs_exists_aio(
     store$fs,
     .ropendal_store_path(store, key, object = TRUE),
     batch_concurrency = batch_concurrency
@@ -231,6 +336,25 @@ store_list <- function(store, path = "", recursive = FALSE, limit = NULL, start_
 
 #' @rdname byte-store
 #' @export
+store_list_aio <- function(store, path = "", recursive = FALSE, limit = NULL, start_after = NULL) {
+  store <- .ropendal_check_store(store)
+  if (.ropendal_is_cached_store(store)) {
+    return(store_list_aio(store$parent, path, recursive = recursive, limit = limit, start_after = start_after))
+  }
+  path <- .ropendal_store_path(store, path, directory = TRUE, allow_empty = TRUE)
+  start_after <- if (is.null(start_after)) {
+    NULL
+  } else {
+    .ropendal_store_path(store, start_after, allow_empty = FALSE)
+  }
+  opendal_aio_with_bindings(
+    fs_ls_aio(store$fs, path, recursive = recursive, limit = limit, start_after = start_after),
+    materializer = function(entries) .ropendal_store_relative_entries(store, entries)
+  )
+}
+
+#' @rdname byte-store
+#' @export
 store_delete <- function(store, key, recursive = FALSE, batch_concurrency = NULL) {
   store <- .ropendal_check_store(store)
   if (.ropendal_is_cached_store(store)) {
@@ -239,6 +363,22 @@ store_delete <- function(store, key, recursive = FALSE, batch_concurrency = NULL
     return(value)
   }
   fs_delete(
+    store$fs,
+    .ropendal_store_path(store, key, directory = recursive, object = !recursive),
+    recursive = recursive,
+    batch_concurrency = batch_concurrency
+  )
+}
+
+#' @rdname byte-store
+#' @export
+store_delete_aio <- function(store, key, recursive = FALSE, batch_concurrency = NULL) {
+  store <- .ropendal_check_store(store)
+  if (.ropendal_is_cached_store(store)) {
+    if (recursive) store_cache_clear(store) else .ropendal_cached_store_invalidate(store, key)
+    return(store_delete_aio(store$parent, key, recursive = recursive, batch_concurrency = batch_concurrency))
+  }
+  fs_delete_aio(
     store$fs,
     .ropendal_store_path(store, key, directory = recursive, object = !recursive),
     recursive = recursive,
@@ -325,6 +465,51 @@ store_delete <- function(store, key, recursive = FALSE, batch_concurrency = NULL
   if (length(values) == 1L) values[[1L]] else values
 }
 
+.ropendal_cached_store_read_aio <- function(store, key, mode, offset, size, end, result,
+                                            batch_concurrency, read_concurrency,
+                                            chunk_size, coalesce_gap) {
+  if (!.ropendal_is_complete_store_read(offset, size, end) || !identical(result, "auto")) {
+    return(store_read_aio(
+      store$parent, key, mode = mode, offset = offset, size = size, end = end,
+      result = result, batch_concurrency = batch_concurrency,
+      read_concurrency = read_concurrency, chunk_size = chunk_size,
+      coalesce_gap = coalesce_gap
+    ))
+  }
+  .ropendal_store_path(store$parent, key, object = TRUE)
+  cache_keys <- vapply(key, .ropendal_cache_object_key, character(1), USE.NAMES = FALSE)
+  meta_keys <- vapply(key, .ropendal_cache_meta_key, character(1), USE.NAMES = FALSE)
+  hits <- vapply(
+    seq_along(key),
+    function(i) isTRUE(store_exists(store$cache_store, cache_keys[[i]])) &&
+      .ropendal_cached_store_valid(store, key[[i]], meta_keys[[i]]),
+    logical(1)
+  )
+  if (all(hits)) {
+    return(store_read_aio(
+      store$cache_store, cache_keys, mode = mode,
+      batch_concurrency = batch_concurrency,
+      read_concurrency = read_concurrency, chunk_size = chunk_size,
+      coalesce_gap = coalesce_gap
+    ))
+  }
+
+  paths <- .ropendal_store_path(store$parent, key, object = TRUE)
+  aio <- fs_read_bytes_aio(
+    store$parent$fs, paths, result = result,
+    batch_concurrency = batch_concurrency,
+    read_concurrency = read_concurrency, chunk_size = chunk_size,
+    coalesce_gap = coalesce_gap
+  )
+  opendal_aio_with_bindings(
+    aio,
+    materializer = function(value) {
+      .ropendal_cached_store_fill(store, key, cache_keys, meta_keys, value)
+      .ropendal_store_materialize_mode(value, mode)
+    }
+  )
+}
+
 .ropendal_is_complete_store_read <- function(offset, size, end) {
   is.null(offset) && is.null(size) && is.null(end)
 }
@@ -375,6 +560,36 @@ store_delete <- function(store, key, recursive = FALSE, batch_concurrency = NULL
     if (isTRUE(store_exists(store$cache_store, meta_key))) invisible(store_delete(store$cache_store, meta_key))
   }
   invisible(TRUE)
+}
+
+.ropendal_cached_store_fill <- function(store, key, cache_keys, meta_keys, value) {
+  if (is_error_value(value)) return(invisible(FALSE))
+  values <- if (length(key) == 1L) list(value) else value
+  if (!is.list(values) || length(values) != length(key)) return(invisible(FALSE))
+
+  for (i in seq_along(key)) {
+    one <- values[[i]]
+    if (is_error_value(one)) next
+    invisible(store_replace(store$cache_store, cache_keys[[i]], one))
+    meta <- .ropendal_parent_store_meta(store$parent, key[[i]])
+    if (!is_error_value(meta)) {
+      invisible(store_replace(store$cache_store, meta_keys[[i]], serialize(meta, NULL)))
+    }
+  }
+  invisible(TRUE)
+}
+
+.ropendal_store_materialize_mode <- function(value, mode) {
+  if (!identical(mode, "raw")) return(value)
+  .ropendal_store_as_raw_tree(value)
+}
+
+.ropendal_store_as_raw_tree <- function(value) {
+  if (is_error_value(value)) return(value)
+  if (is.raw(value)) return(value)
+  if (inherits(value, "OpendalBytes")) return(as.raw(value))
+  if (is.list(value)) return(lapply(value, .ropendal_store_as_raw_tree))
+  value
 }
 
 .ropendal_cache_object_key <- function(key) paste0("objects/", .ropendal_store_key_hex(key))

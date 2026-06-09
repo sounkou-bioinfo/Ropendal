@@ -6,11 +6,17 @@
 \alias{store_cache}
 \alias{store_cache_clear}
 \alias{store_read}
+\alias{store_read_aio}
 \alias{store_write}
+\alias{store_write_aio}
 \alias{store_replace}
+\alias{store_replace_aio}
 \alias{store_exists}
+\alias{store_exists_aio}
 \alias{store_list}
+\alias{store_list_aio}
 \alias{store_delete}
+\alias{store_delete_aio}
 \title{Byte store adapter}
 \usage{
 byte_store(fs, prefix = "")
@@ -26,7 +32,21 @@ store_cache_clear(store)
 store_read(
   store,
   key,
-  mode = c("raw", "bytes"),
+  mode = c("bytes", "raw"),
+  offset = NULL,
+  size = NULL,
+  end = NULL,
+  result = c("auto", "flat", "nested"),
+  batch_concurrency = NULL,
+  read_concurrency = NULL,
+  chunk_size = NULL,
+  coalesce_gap = NULL
+)
+
+store_read_aio(
+  store,
+  key,
+  mode = c("bytes", "raw"),
   offset = NULL,
   size = NULL,
   end = NULL,
@@ -46,7 +66,25 @@ store_write(
   chunk_size = NULL
 )
 
+store_write_aio(
+  store,
+  key,
+  data,
+  batch_concurrency = NULL,
+  write_concurrency = NULL,
+  chunk_size = NULL
+)
+
 store_replace(
+  store,
+  key,
+  data,
+  batch_concurrency = NULL,
+  write_concurrency = NULL,
+  chunk_size = NULL
+)
+
+store_replace_aio(
   store,
   key,
   data,
@@ -57,6 +95,8 @@ store_replace(
 
 store_exists(store, key, batch_concurrency = NULL)
 
+store_exists_aio(store, key, batch_concurrency = NULL)
+
 store_list(
   store,
   path = "",
@@ -65,7 +105,17 @@ store_list(
   start_after = NULL
 )
 
+store_list_aio(
+  store,
+  path = "",
+  recursive = FALSE,
+  limit = NULL,
+  start_after = NULL
+)
+
 store_delete(store, key, recursive = FALSE, batch_concurrency = NULL)
+
+store_delete_aio(store, key, recursive = FALSE, batch_concurrency = NULL)
 }
 \arguments{
 \item{fs}{Ropendal filesystem handle.}
@@ -82,7 +132,7 @@ parent object size and modification time before using a cached value;
 
 \item{key}{Store-relative object key or keys.}
 
-\item{mode}{Read materialization: raw vectors or \code{OpendalBytes} handles.}
+\item{mode}{Read materialization: \code{OpendalBytes} handles or raw vectors.}
 
 \item{offset, size, end}{Optional byte-range controls forwarded to the read
 operation.}
@@ -120,6 +170,11 @@ substrate for Zarr-like chunk layouts and other index-driven readers that want
 store-relative keys without leaving Ropendal's byte-first filesystem API.
 }
 \details{
+\code{store_read()} returns \code{OpendalBytes} by default so callers can stay below R
+raw-vector materialization until they explicitly ask for \code{mode = "raw"} or
+\code{as.raw()}. The store layer is intentionally byte-only: serializers,
+deserializers, codecs, and format parsers belong above it.
+
 \code{store_cache()} wraps a byte store in an explicit local full-object cache. It
 is useful for chunked layouts where each key is already a small block. Partial
 byte-range reads and non-default read shaping bypass this first cache layer;
@@ -131,7 +186,7 @@ dir.create(root)
 fs <- opendal("fs", root = root)
 store <- byte_store(fs, "array.zarr")
 store_write(store, "zarr.json", charToRaw("{}"))
-store_read(store, "zarr.json")
+as.raw(store_read(store, "zarr.json"))
 cached <- store_cache(store, tempfile("ropendal-cache-"), validate = "none")
-store_read(cached, "zarr.json")
+as.raw(store_read(cached, "zarr.json"))
 }

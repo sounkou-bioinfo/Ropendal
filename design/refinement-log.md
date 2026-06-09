@@ -569,11 +569,14 @@ directory normalization.
 
 `store_write()` preserves the filesystem create-only contract and returns an
 `opendalErrorValue` such as `AlreadyExists` when the key already exists.
-`store_replace()` is the overwrite path. `store_read()` is byte-only and returns
-raw vectors or `OpendalBytes` handles; serial/text/codec materialization remains
-on the lower-level `fs_read()` API for now. `store_list()` rewrites returned
-entry paths to store-relative paths and filters the store-root marker when a
-backend returns it.
+`store_replace()` is the overwrite path. `store_read()` is byte-only and now
+returns `OpendalBytes` by default, with `mode = "raw"` as an explicit
+materialization request; serial/text/codec materialization remains on the
+lower-level `fs_read()` API for now. `store_list()` rewrites returned entry
+paths to store-relative paths and filters the store-root marker when a backend
+returns it. `store_*_aio()` wrappers are available for read/write/replace,
+exists/list/delete; R-side cached async reads fill cache entries during main
+thread collection rather than from background tasks.
 
 ### Byte-store full-object cache
 
@@ -586,8 +589,8 @@ scheme/root and byte-store prefix. This matches Zarr-like chunk stores where
 keys are already small blocks and avoids an implicit whole-object cache on
 ordinary `fs_read()` calls.
 
-The first cache layer caches only complete `store_read()` calls with default
-`result = "auto"`. Partial byte ranges and non-default read shaping delegate to
+The first cache layer caches only complete `store_read()` and `store_read_aio()`
+calls with default `result = "auto"`. Partial byte ranges and non-default read shaping delegate to
 the parent store so callers cannot accidentally assemble large hidden downloads
 or observe cache-specific shape changes. `validate = "last_modified_size"`
 compares parent size and modification time before using a cached object;

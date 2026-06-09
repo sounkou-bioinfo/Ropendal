@@ -511,14 +511,17 @@ byte-only, and delegates to `fs_read()`, `fs_read_bytes()`, `fs_write()`,
 `fs_replace()`, `fs_exists()`, `fs_ls()`, and `fs_delete()`. An explicit
 `store_cache()` wrapper adds a local full-object cache for complete chunk-key
 reads; range reads and non-default shaping bypass that first cache layer until a
-range-aware block cache is designed.
+range-aware block cache is designed. Store reads are bytes-first and return
+`OpendalBytes` by default so ALTREP-compatible materialization and C consumers
+can stay below R raw-vector copies.
 
 Current shape:
 
 ```r
 store <- byte_store(fs, prefix = "array.zarr")
 
-store_read(store, "zarr.json")
+store_read(store, "zarr.json")        # OpendalBytes by default
+as.raw(store_read(store, "zarr.json")) # explicit materialization
 store_write(store, "c/0/0", chunk_raw)
 store_exists(store, "c/0/0")
 store_list(store, "c/", recursive = TRUE)
@@ -533,7 +536,6 @@ keys <- sprintf("c/0/%d", 0:99)
 chunks <- store_read(
   store,
   keys,
-  mode = "bytes",
   batch_concurrency = 32
 )
 
@@ -552,8 +554,8 @@ store <- opendal("s3", bucket = "datasets", root = "arrays", auth = credentials_
   fs_zip("array.zarr.zip") |>
   byte_store(prefix = "array.zarr")
 
-meta <- store_read(store, "zarr.json")
-chunk <- store_read(store, "c/0/0", mode = "bytes")
+meta <- store_read(store, "zarr.json") # OpendalBytes; parse explicitly above store layer
+chunk <- store_read(store, "c/0/0")
 ```
 
 Core Ropendal should not implement full Zarr array semantics. It should provide
@@ -570,7 +572,7 @@ adapters can live on top.
 5. Add `fs_connection()` backed by read/write iterators.
 6. Add read-only `fs_zip()` over any range-readable parent filesystem.
 7. Add `ropendal_fs_zip()` to the C API.
-8. Add `byte_store()` / `chunk_store()` with vectorized store operations (`byte_store()` implemented for R sync byte operations).
+8. Add `byte_store()` / `chunk_store()` with vectorized store operations (`byte_store()` implemented for R sync and Aio byte operations).
 9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` implements an explicit local full-object cache for byte stores; range-aware block caching remains future work).
 10. Build targeted integrations: BioC range readers, Arrow/Parquet, and Zarr-like
     chunk stores.

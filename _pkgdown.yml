@@ -35,11 +35,17 @@ reference:
       - store_cache
       - store_cache_clear
       - store_read
+      - store_read_aio
       - store_write
+      - store_write_aio
       - store_replace
+      - store_replace_aio
       - store_exists
+      - store_exists_aio
       - store_list
+      - store_list_aio
       - store_delete
+      - store_delete_aio
   - title: Async Aio operations
     contents:
       - fs_read_aio
