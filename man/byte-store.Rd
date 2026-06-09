@@ -3,6 +3,8 @@
 \name{byte-store}
 \alias{byte-store}
 \alias{byte_store}
+\alias{store_cache}
+\alias{store_cache_clear}
 \alias{store_read}
 \alias{store_write}
 \alias{store_replace}
@@ -12,6 +14,14 @@
 \title{Byte store adapter}
 \usage{
 byte_store(fs, prefix = "")
+
+store_cache(
+  store,
+  cache_dir = tools::R_user_dir("Ropendal", "cache"),
+  validate = c("last_modified_size", "none")
+)
+
+store_cache_clear(store)
 
 store_read(
   store,
@@ -62,7 +72,13 @@ store_delete(store, key, recursive = FALSE, batch_concurrency = NULL)
 
 \item{prefix}{Root-relative filesystem prefix used as the store root.}
 
-\item{store}{Byte store object returned by \code{byte_store()}.}
+\item{store}{Byte store object returned by \code{byte_store()} or \code{store_cache()}.}
+
+\item{cache_dir}{Local directory used by \code{store_cache()}.}
+
+\item{validate}{Cache validation strategy. \code{"last_modified_size"} compares
+parent object size and modification time before using a cached value;
+\code{"none"} trusts cached objects until explicit invalidation.}
 
 \item{key}{Store-relative object key or keys.}
 
@@ -94,14 +110,20 @@ concurrency.}
 \item{start_after}{Optional store-relative listing continuation marker.}
 }
 \value{
-\code{byte_store()} returns a \code{ropendalByteStore}. Store operations return
-the corresponding filesystem values with paths rewritten relative to the
-store root for listings.
+\code{byte_store()} and \code{store_cache()} return byte-store objects. Store
+operations return the corresponding filesystem values with paths rewritten
+relative to the store root for listings.
 }
 \description{
 A small key-to-bytes adapter over an \code{OpendalFs} prefix. It is intended as a
 substrate for Zarr-like chunk layouts and other index-driven readers that want
 store-relative keys without leaving Ropendal's byte-first filesystem API.
+}
+\details{
+\code{store_cache()} wraps a byte store in an explicit local full-object cache. It
+is useful for chunked layouts where each key is already a small block. Partial
+byte-range reads and non-default read shaping bypass this first cache layer;
+future block caches can add range-aware eviction and readahead.
 }
 \examples{
 root <- tempfile("ropendal-store-")
@@ -110,4 +132,6 @@ fs <- opendal("fs", root = root)
 store <- byte_store(fs, "array.zarr")
 store_write(store, "zarr.json", charToRaw("{}"))
 store_read(store, "zarr.json")
+cached <- store_cache(store, tempfile("ropendal-cache-"), validate = "none")
+store_read(cached, "zarr.json")
 }

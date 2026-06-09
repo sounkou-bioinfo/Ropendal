@@ -83,6 +83,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls_iter()` empty-listing, paged listing, page `cursor`, `limit`, `start_after`, best-effort cursor filtering, explicit `prefetch`, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection, iterator `limit`, and explicit `prefetch`
 - `byte_store()` / `store_*()` prefix isolation, raw and `OpendalBytes` reads, create-vs-replace behavior, listing path rewriting, deletion, and escape rejection
+- `store_cache()` explicit local full-object cache behavior, validation and stale-cache modes, invalidation on mutation, range bypass, and cache clearing
 - mkdir/delete/copy/rename
 - declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 

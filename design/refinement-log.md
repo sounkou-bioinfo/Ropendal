@@ -574,3 +574,24 @@ raw vectors or `OpendalBytes` handles; serial/text/codec materialization remains
 on the lower-level `fs_read()` API for now. `store_list()` rewrites returned
 entry paths to store-relative paths and filters the store-root marker when a
 backend returns it.
+
+### Byte-store full-object cache
+
+Status: `implemented for synchronous R byte stores`
+
+`store_cache(store, cache_dir, validate)` wraps a `byte_store()` in an explicit
+local cache rooted in an OpenDAL `fs` store. The cache stores complete key
+payloads under a namespaced cache prefix derived from the parent filesystem
+scheme/root and byte-store prefix. This matches Zarr-like chunk stores where
+keys are already small blocks and avoids an implicit whole-object cache on
+ordinary `fs_read()` calls.
+
+The first cache layer caches only complete `store_read()` calls with default
+`result = "auto"`. Partial byte ranges and non-default read shaping delegate to
+the parent store so callers cannot accidentally assemble large hidden downloads
+or observe cache-specific shape changes. `validate = "last_modified_size"`
+compares parent size and modification time before using a cached object;
+`validate = "none"` deliberately trusts cached objects until `store_write()`,
+`store_replace()`, `store_delete()`, or `store_cache_clear()` invalidates them.
+Range-aware block caching, eviction, and service-specific validators such as
+ETag/version are future work.

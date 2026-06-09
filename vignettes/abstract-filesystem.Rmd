@@ -71,6 +71,10 @@ store_write(store, "zarr.json", charToRaw('{"zarr_format":3}'))
 store_write(store, "c/0/0", as.raw(c(1, 2, 3, 4)))
 store_list(store, recursive = TRUE)
 store_read(store, "c/0/0")
+
+# Add an explicit local full-object cache for repeated chunk reads.
+cached_store <- store_cache(store, tempfile("ropendal-cache-"), validate = "none")
+store_read(cached_store, "c/0/0")
 ```
 
 ### Control knobs belong in handles

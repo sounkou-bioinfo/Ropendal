@@ -1,0 +1,60 @@
+library(Ropendal)
+
+helper <- system.file("tinytest", "helper-ropendal.R", package = "Ropendal")
+source(helper, local = TRUE)
+
+root <- ropendal_temp_root()
+cache_dir <- ropendal_temp_root()
+fs <- opendal("fs", root = root)
+store <- byte_store(fs, "chunks")
+
+expect_true(identical(store_write(store, "c/0", as.raw(c(1, 2, 3))), TRUE))
+cached <- store_cache(store, cache_dir, validate = "last_modified_size")
+expect_true(inherits(cached, "ropendalCachedByteStore"))
+expect_error(store_cache(cached, cache_dir), "already cached")
+expect_error(store_cache(store, ""), "cache_dir")
+
+expect_equal(store_read(cached, "c/0"), as.raw(c(1, 2, 3)))
+expect_true(identical(store_replace(store, "c/0", as.raw(c(4, 5, 6, 7))), TRUE))
+expect_equal(store_read(cached, "c/0"), as.raw(c(4, 5, 6, 7)))
+bytes <- store_read(cached, "c/0", mode = "bytes")
+expect_true(inherits(bytes, "OpendalBytes"))
+expect_equal(as.raw(bytes), as.raw(c(4, 5, 6, 7)))
+
+expect_true(identical(store_write(store, "c/1", as.raw(c(9, 8))), TRUE))
+expect_equal(
+  store_read(cached, c("c/0", "c/1")),
+  list(as.raw(c(4, 5, 6, 7)), as.raw(c(9, 8)))
+)
+expect_equal(store_read(cached, "c/0", offset = 1, size = 2), as.raw(c(5, 6)))
+expect_equal(store_read(cached, "c/0", result = "flat"), list(as.raw(c(4, 5, 6, 7))))
+
+cache_dir_none <- ropendal_temp_root()
+cached_none <- store_cache(store, cache_dir_none, validate = "none")
+expect_equal(store_read(cached_none, "c/0"), as.raw(c(4, 5, 6, 7)))
+expect_true(identical(store_replace(store, "c/0", as.raw(10)), TRUE))
+expect_equal(store_read(cached_none, "c/0"), as.raw(c(4, 5, 6, 7)))
+expect_true(identical(store_replace(cached_none, "c/0", as.raw(11)), TRUE))
+expect_equal(store_read(cached_none, "c/0"), as.raw(11))
+expect_equal(store_read(store, "c/0"), as.raw(11))
+
+expect_true(identical(store_write(cached_none, "new", as.raw(12)), TRUE))
+expect_equal(store_read(cached_none, "new"), as.raw(12))
+expect_true(is_error_value(store_write(cached_none, "new", as.raw(13))))
+
+expect_true(identical(store_delete(cached_none, "new"), TRUE))
+expect_false(store_exists(cached_none, "new"))
+missing <- store_read(cached_none, "new")
+expect_true(is_error_value(missing))
+expect_equal(error_kind(missing), "NotFound")
+
+expect_true(identical(store_write(store, "dir/a", as.raw(1)), TRUE))
+expect_true(identical(store_write(store, "dir/b", as.raw(2)), TRUE))
+expect_true(identical(store_delete(cached_none, "dir/", recursive = TRUE), TRUE))
+expect_false(store_exists(cached_none, "dir/a"))
+expect_true(identical(store_cache_clear(cached_none), TRUE))
+
+entries <- store_list(cached, recursive = TRUE)
+paths <- vapply(entries, `[[`, character(1), "path")
+expect_true("c/0" %in% paths)
+expect_false(any(startsWith(paths, "chunks/")))

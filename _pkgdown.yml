@@ -32,6 +32,8 @@ reference:
     contents:
       - byte_ranges
       - byte_store
+      - store_cache
+      - store_cache_clear
       - store_read
       - store_write
       - store_replace

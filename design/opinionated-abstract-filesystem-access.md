@@ -508,7 +508,10 @@ Ropendal exposes a R-native key-to-bytes store for Zarr-like layouts, but
 avoids Python mapper ergonomics as the primary API. The first implementation is
 an R-side prefix adapter over an existing `OpendalFs`: it is synchronous,
 byte-only, and delegates to `fs_read()`, `fs_read_bytes()`, `fs_write()`,
-`fs_replace()`, `fs_exists()`, `fs_ls()`, and `fs_delete()`.
+`fs_replace()`, `fs_exists()`, `fs_ls()`, and `fs_delete()`. An explicit
+`store_cache()` wrapper adds a local full-object cache for complete chunk-key
+reads; range reads and non-default shaping bypass that first cache layer until a
+range-aware block cache is designed.
 
 Current shape:
 
@@ -568,6 +571,6 @@ adapters can live on top.
 6. Add read-only `fs_zip()` over any range-readable parent filesystem.
 7. Add `ropendal_fs_zip()` to the C API.
 8. Add `byte_store()` / `chunk_store()` with vectorized store operations (`byte_store()` implemented for R sync byte operations).
-9. Add explicit memory/file block cache adapter once invalidation is designed.
+9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` implements an explicit local full-object cache for byte stores; range-aware block caching remains future work).
 10. Build targeted integrations: BioC range readers, Arrow/Parquet, and Zarr-like
     chunk stores.
