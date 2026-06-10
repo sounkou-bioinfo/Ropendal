@@ -24,7 +24,8 @@
 - C API: write tuning options are wired through, unsupported write header
   options reject explicitly, `ropendal_aio_wait()` honors its timeout, and
   prefix-scoped byte stores now expose async read/write/read-into/list/delete
-  operations for downstream native code. The C ABI version is now 2.
+  plus explicit full-object cache adapters for downstream native code. The C ABI
+  version is now 3.
 
 ## Ropendal 0.0.1
 

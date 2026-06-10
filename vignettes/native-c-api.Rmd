@@ -111,6 +111,28 @@ ropendal_store_release(store);
 Store operations are still async-first and byte-only. They do not know about
 Zarr, VCF, serializers, codecs, or R objects.
 
+For repeated chunk reads, native code can opt into a full-object cache adapter by
+supplying a second store as the cache namespace:
+
+```c
+ropendal_store_t *cache = NULL;
+ropendal_store_t *cached = NULL;
+ropendal_store_options_t cache_opts = {
+  .struct_size = sizeof(cache_opts),
+  .prefix = "cache/array.zarr"
+};
+ropendal_store_open(fs, &cache_opts, &cache, &err);
+
+ropendal_store_cache_options_t cache_policy = {
+  .struct_size = sizeof(cache_policy),
+  .validate = ROPENDAL_STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE
+};
+ropendal_store_cache_open(store, cache, &cache_policy, &cached, &err);
+```
+
+Partial reads bypass this first cache layer; it is intended for chunk-key layouts
+where each key is already a reasonable cache unit.
+
 ## Why this exists
 
 Downstream packages can perform byte-oriented async operations without going through

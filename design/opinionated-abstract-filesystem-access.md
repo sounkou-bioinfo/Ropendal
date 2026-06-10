@@ -511,8 +511,10 @@ prefix adapter over an existing `OpendalFs`: it is byte-only and delegates to
 `fs_ls()`, and `fs_delete()` for sync and Aio variants. The native C API also
 exposes an opaque prefix-scoped `ropendal_store_t` with async read/write,
 read-into, existence, listing, and delete operations for downstream packages
-that need caller-owned buffers without R raw vectors. An explicit `store_cache()`
-wrapper adds a local full-object cache for complete chunk-key reads; range reads
+that need caller-owned buffers without R raw vectors. Native callers can also
+wrap parent/cache stores with `ropendal_store_cache_open()` for explicit
+full-object caching. An explicit `store_cache()` wrapper adds a local full-object
+cache for complete chunk-key reads; range reads
 and non-default shaping bypass that first cache layer until a range-aware block
 cache is designed. Store reads are bytes-first and return `OpendalBytes` by
 default so ALTREP-compatible materialization and C consumers can stay below R
@@ -576,6 +578,6 @@ adapters can live on top.
 6. Add read-only `fs_zip()` over any range-readable parent filesystem.
 7. Add `ropendal_fs_zip()` to the C API.
 8. Add `byte_store()` / `chunk_store()` with vectorized store operations (`byte_store()` implemented for R sync and Aio byte operations; `ropendal_store_t` implemented for native C byte operations).
-9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` implements an explicit local full-object cache for byte stores; range-aware block caching remains future work).
+9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` and `ropendal_store_cache_open()` implement explicit full-object caches for byte stores; range-aware block caching remains future work).
 10. Build targeted integrations: BioC range readers, Arrow/Parquet, and Zarr-like
     chunk stores.

@@ -10,7 +10,7 @@ use super::{ropendal_error, ropendal_fs, ropendal_kv};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ropendal_api_version() -> u32 {
-    2
+    3
 }
 
 #[unsafe(no_mangle)]

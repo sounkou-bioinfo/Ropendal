@@ -29,6 +29,12 @@ pub struct ropendal_store_options {
 }
 
 #[repr(C)]
+pub struct ropendal_store_cache_options {
+    pub(crate) struct_size: usize,
+    pub(crate) validate: i32,
+}
+
+#[repr(C)]
 pub struct ropendal_store_read_options {
     pub(crate) struct_size: usize,
     pub(crate) key: *const c_char,
@@ -476,10 +482,27 @@ pub struct ropendal_fs {
     pub(crate) native: Arc<NativeFs>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CStoreCacheValidate {
+    LastModifiedSize,
+    None,
+}
+
+pub(crate) enum CStoreBackend {
+    Direct {
+        native: Arc<NativeFs>,
+        prefix: String,
+    },
+    Cached {
+        parent: Arc<CStoreBackend>,
+        cache: Arc<CStoreBackend>,
+        validate: CStoreCacheValidate,
+    },
+}
+
 pub struct ropendal_store {
     pub(crate) refs: AtomicUsize,
-    pub(crate) native: Arc<NativeFs>,
-    pub(crate) prefix: String,
+    pub(crate) backend: Arc<CStoreBackend>,
 }
 
 #[derive(Clone)]

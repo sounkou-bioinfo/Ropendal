@@ -504,7 +504,7 @@ SEXP savvy_OpendalWriteIter_write__ffi(SEXP self__, SEXP c_arg__data) {
     return ropendal_wasm_savvy_error();
 }
 
-uint32_t ropendal_api_version(void) { return 2; }
+uint32_t ropendal_api_version(void) { return 3; }
 
 static ropendal_status_t ropendal_wasm_unsupported(void) { return ROPENDAL_UNSUPPORTED; }
 
@@ -529,6 +529,11 @@ void ropendal_fs_release(ropendal_fs_t *fs) { (void)fs; }
 ropendal_status_t ropendal_store_open(ropendal_fs_t *fs, const ropendal_store_options_t *opts,
                                       ropendal_store_t **out, ropendal_error_t **err) {
     (void)fs; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_cache_open(ropendal_store_t *parent, ropendal_store_t *cache,
+                                            const ropendal_store_cache_options_t *opts,
+                                            ropendal_store_t **out, ropendal_error_t **err) {
+    (void)parent; (void)cache; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
 }
 void ropendal_store_retain(ropendal_store_t *store) { (void)store; }
 void ropendal_store_release(ropendal_store_t *store) { (void)store; }

@@ -26,6 +26,7 @@ ropendal_any_fn ropendal_c_api_anchor[] = {
     (ropendal_any_fn)ropendal_fs_retain,
     (ropendal_any_fn)ropendal_fs_release,
     (ropendal_any_fn)ropendal_store_open,
+    (ropendal_any_fn)ropendal_store_cache_open,
     (ropendal_any_fn)ropendal_store_retain,
     (ropendal_any_fn)ropendal_store_release,
     (ropendal_any_fn)ropendal_store_read_aio,

@@ -103,6 +103,11 @@ typedef enum ropendal_event_kind {
   ROPENDAL_EVENT_FS_CLOSED = 4
 } ropendal_event_kind_t;
 
+typedef enum ropendal_store_cache_validate {
+  ROPENDAL_STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE = 0,
+  ROPENDAL_STORE_CACHE_VALIDATE_NONE = 1
+} ropendal_store_cache_validate_t;
+
 typedef void (*ropendal_aio_callback_t)(ropendal_aio_t *aio, void *userdata);
 
 typedef struct ropendal_kv {
@@ -124,6 +129,12 @@ typedef struct ropendal_store_options {
   /* Optional directory prefix relative to the filesystem root. NULL/empty means root. */
   const char *prefix;
 } ropendal_store_options_t;
+
+typedef struct ropendal_store_cache_options {
+  size_t struct_size;
+  /* Zero/default validates cached objects by parent last-modified plus size. */
+  ropendal_store_cache_validate_t validate;
+} ropendal_store_cache_options_t;
 
 typedef struct ropendal_store_read_options {
   size_t struct_size;
@@ -319,12 +330,20 @@ void ropendal_fs_release(ropendal_fs_t *fs);
  * Write submits create-only semantics; replace overwrites or creates according
  * to the backend. read_into writes directly into caller-owned memory, which must
  * remain valid until the Aio reaches a terminal state. Returned entry paths from
- * store_ls_aio() are relative to the store prefix.
+ * store_ls_aio() are relative to the store prefix. ropendal_store_cache_open()
+ * creates an explicit full-object cache adapter from an uncached parent store
+ * plus an uncached cache store supplied by the caller; partial reads bypass the
+ * cache, and recursive deletes clear cached objects for that cache store.
  */
 ropendal_status_t ropendal_store_open(ropendal_fs_t *fs,
                                       const ropendal_store_options_t *opts,
                                       ropendal_store_t **out,
                                       ropendal_error_t **err);
+ropendal_status_t ropendal_store_cache_open(ropendal_store_t *parent,
+                                            ropendal_store_t *cache,
+                                            const ropendal_store_cache_options_t *opts,
+                                            ropendal_store_t **out,
+                                            ropendal_error_t **err);
 void ropendal_store_retain(ropendal_store_t *store);
 void ropendal_store_release(ropendal_store_t *store);
 
