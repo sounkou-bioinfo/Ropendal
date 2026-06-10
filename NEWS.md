@@ -18,7 +18,8 @@
   store-relative key-to-bytes adapter for Zarr-like chunk layouts. `store_read()`
   is now bytes-first for `OpendalBytes`/ALTREP-compatible flows, async `store_*_aio()`
   wrappers are available, and `store_cache()` adds an explicit local full-object
-  cache for chunk-key stores.
+  cache for chunk-key stores. New vignettes and tests show pure-R chunked-array
+  and indexed range-reader patterns on top of the byte substrate.
 - API: R-side `batch_concurrency = 0` is now rejected; use `NULL` for the
   default. Capability rows now include range/concurrency/recursive semantics.
 - C API: write tuning options are wired through, unsupported write header

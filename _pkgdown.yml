@@ -100,6 +100,11 @@ articles:
       - serializers
       - credentials
       - native-c-api
+  - title: Byte substrate examples
+    navbar: ~
+    contents:
+      - byte-stores-zarr
+      - indexed-range-readers
   - title: Internals
     navbar: ~
     contents:

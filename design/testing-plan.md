@@ -59,7 +59,7 @@ Files: `test-10-*`
 No OpenDAL backend required. These tests should cover:
 
 - path/range request normalization through the public `fs_read()` arguments
-- `byte_ranges()` request-object shape, naming, and no-recycling behavior
+- `byte_ranges()` request-object shape, naming, no-recycling behavior, and a pure-R indexed VCF-like range-reader pattern
 - strict vector/list length matching rules; no R recycling
 - `result = "auto"`, `"flat"`, and `"nested"` shape contracts
 - `opendalErrorValue` construction for filesystem/backend failures
@@ -82,8 +82,8 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls()` output columns and ordering rules
 - `fs_ls_iter()` empty-listing, paged listing, page `cursor`, `limit`, `start_after`, best-effort cursor filtering, explicit `prefetch`, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection, iterator `limit`, and explicit `prefetch`
-- `byte_store()` / `store_*()` prefix isolation, bytes-first `OpendalBytes` reads, explicit raw reads, create-vs-replace behavior, async wrappers, listing path rewriting, deletion, and escape rejection
-- `store_cache()` explicit local full-object cache behavior, validation and stale-cache modes, async read/fill, invalidation on sync/async mutation, range bypass, and cache clearing
+- `byte_store()` / `store_*()` prefix isolation, bytes-first `OpendalBytes` reads, explicit raw reads, create-vs-replace behavior, async wrappers, listing path rewriting, deletion, escape rejection, and pure-R chunked-array layout access
+- `store_cache()` explicit local full-object cache behavior, validation and stale-cache modes, async read/fill, invalidation on sync/async mutation, range bypass, cache clearing, and pure-R chunked-array cache refresh
 - mkdir/delete/copy/rename
 - declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 

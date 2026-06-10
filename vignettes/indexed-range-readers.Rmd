@@ -1,0 +1,104 @@
+---
+title: "Indexed range readers"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Indexed range readers}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Many scientific formats are a large byte object plus a small index. Ropendal's
+range request objects keep that pattern in the byte layer: build offsets and
+sizes in R, then submit the same `fs_read()` or `fs_read_bytes_aio()` call you
+would use for any other object.
+
+This vignette uses a tiny VCF-like text file. It is not a VCF parser; the parser
+is deliberately a few explicit lines above byte reads.
+
+```{r}
+library(Ropendal)
+
+root <- tempfile("ropendal-vcf-")
+dir.create(root)
+fs <- opendal("fs", root = root)
+```
+
+## Write an object and an index
+
+For ASCII fixtures, byte counts match `length(charToRaw(x))`. Real index formats
+such as FAI, Tabix, BAI, or custom tile indexes would usually be read from their
+own files instead of being constructed in memory.
+
+```{r}
+header <- c(
+  "##fileformat=VCFv4.3\n",
+  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+)
+records <- c(
+  "chr1\t10\t.\tA\tG\t50\tPASS\t.\n",
+  "chr1\t20\t.\tC\tT\t51\tPASS\t.\n",
+  "chr2\t15\t.\tG\tA\t52\tPASS\t.\n",
+  "chr1\t30\t.\tT\tC\t53\tPASS\t.\n"
+)
+
+payload <- charToRaw(paste0(c(header, records), collapse = ""))
+fs_write(fs, "toy.vcf", payload)
+
+record_sizes <- vapply(records, function(x) length(charToRaw(x)), integer(1))
+index <- data.frame(
+  chrom = c("chr1", "chr1", "chr2", "chr1"),
+  pos = c(10L, 20L, 15L, 30L),
+  offset = length(charToRaw(paste0(header, collapse = ""))) + cumsum(c(0L, head(record_sizes, -1L))),
+  size = record_sizes
+)
+index
+```
+
+## Read selected records by range
+
+`byte_ranges()` packages path, offset, size, and optional row identifiers without
+adding another read verb.
+
+```{r}
+hits <- index[index$chrom == "chr1" & index$pos >= 20L, ]
+ids <- paste0(hits$chrom, ":", hits$pos)
+req <- byte_ranges("toy.vcf", hits$offset, size = hits$size, id = ids)
+
+raw_records <- fs_read(fs, req)
+names(raw_records)
+vapply(raw_records, rawToChar, character(1))
+```
+
+Parsing remains explicit and format-specific.
+
+```{r}
+parse_vcf_records <- function(records) {
+  fields <- strsplit(trimws(vapply(records, rawToChar, character(1))), "\t", fixed = TRUE)
+  data.frame(
+    chrom = vapply(fields, `[[`, character(1), 1L),
+    pos = as.integer(vapply(fields, `[[`, character(1), 2L)),
+    ref = vapply(fields, `[[`, character(1), 4L),
+    alt = vapply(fields, `[[`, character(1), 5L)
+  )
+}
+parse_vcf_records(raw_records)
+```
+
+## Async and byte handles
+
+The same request object works with `fs_read_bytes_aio()`. Collection returns
+`OpendalBytes` handles; raw-vector materialization is still explicit.
+
+```{r}
+aio <- fs_read_bytes_aio(fs, req)
+bytes <- collect_aio(aio)
+vapply(bytes, function(x) rawToChar(as.raw(x)), character(1))
+```
+
+Range readers built this way can later move hot parsing paths to C or Rust while
+keeping the same byte ownership boundary: background I/O resolves bytes, and the
+caller decides when and how to materialize or parse them.

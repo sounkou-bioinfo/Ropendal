@@ -586,7 +586,9 @@ completion, and return listing paths relative to the store prefix. `ropendal_sto
 wraps an uncached parent store plus an uncached cache store as a native full-object
 cache adapter; partial reads bypass it, validation can use last-modified plus size
 or trust cached objects, and recursive deletes clear cached objects for that cache
-store. C zero values remain documented as unset, while
+store. Pure-R vignettes now demonstrate a toy chunked-array reader and a VCF-like
+range reader built above these primitives without moving format semantics into
+the store layer. C zero values remain documented as unset, while
 `ropendal_store_read_options_t.has_offset` and `has_size` make valid zero
 offsets/sizes explicit for downstream structs.
 

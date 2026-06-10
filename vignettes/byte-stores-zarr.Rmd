@@ -1,0 +1,115 @@
+---
+title: "Byte stores for chunked arrays"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Byte stores for chunked arrays}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`byte_store()` is a key-to-bytes substrate. It deliberately stops below array
+semantics: metadata parsing, chunk layout, compression, and type conversion live
+in ordinary R code or in a package layered above Ropendal.
+
+This vignette builds a tiny uncompressed, Zarr-like integer matrix reader to show
+where those boundaries sit.
+
+```{r}
+library(Ropendal)
+
+root <- tempfile("ropendal-zarr-")
+dir.create(root)
+fs <- opendal("fs", root = root)
+store <- byte_store(fs, "array.zarr")
+```
+
+## A small explicit format layer
+
+The store only knows keys and bytes. The toy format below stores one text
+metadata object and `2 x 2` little-endian integer chunks under `c/<row>/<col>`.
+
+```{r}
+encode_i32 <- function(x) writeBin(as.integer(x), raw(), size = 4L, endian = "little")
+decode_i32 <- function(x, n) readBin(x, integer(), n = n, size = 4L, endian = "little")
+chunk_key <- function(i, j) sprintf("c/%d/%d", i - 1L, j - 1L)
+
+write_array <- function(store, x, chunk_dim = c(2L, 2L)) {
+  meta <- paste0(
+    "dim=", nrow(x), ",", ncol(x), "\n",
+    "chunk_dim=", chunk_dim[[1L]], ",", chunk_dim[[2L]], "\n",
+    "type=int32\n"
+  )
+  store_write(store, "zarr.json", charToRaw(meta))
+
+  for (i0 in seq(1L, nrow(x), by = chunk_dim[[1L]])) {
+    for (j0 in seq(1L, ncol(x), by = chunk_dim[[2L]])) {
+      rows <- i0:min(i0 + chunk_dim[[1L]] - 1L, nrow(x))
+      cols <- j0:min(j0 + chunk_dim[[2L]] - 1L, ncol(x))
+      key <- chunk_key((i0 - 1L) %/% chunk_dim[[1L]] + 1L, (j0 - 1L) %/% chunk_dim[[2L]] + 1L)
+      store_write(store, key, encode_i32(as.vector(x[rows, cols])))
+    }
+  }
+  invisible(store)
+}
+```
+
+Reading is symmetric: fetch bytes, explicitly materialize bytes where needed,
+and parse above the store layer.
+
+```{r}
+parse_meta <- function(bytes) {
+  lines <- strsplit(rawToChar(as.raw(bytes)), "\n", fixed = TRUE)[[1L]]
+  pairs <- strsplit(lines[nzchar(lines)], "=", fixed = TRUE)
+  values <- setNames(lapply(pairs, `[[`, 2L), vapply(pairs, `[[`, character(1), 1L))
+  list(
+    dim = as.integer(strsplit(values$dim, ",", fixed = TRUE)[[1L]]),
+    chunk_dim = as.integer(strsplit(values$chunk_dim, ",", fixed = TRUE)[[1L]]),
+    type = values$type
+  )
+}
+
+read_array <- function(store) {
+  meta <- parse_meta(store_read(store, "zarr.json"))
+  out <- matrix(NA_integer_, nrow = meta$dim[[1L]], ncol = meta$dim[[2L]])
+
+  for (i0 in seq(1L, meta$dim[[1L]], by = meta$chunk_dim[[1L]])) {
+    for (j0 in seq(1L, meta$dim[[2L]], by = meta$chunk_dim[[2L]])) {
+      rows <- i0:min(i0 + meta$chunk_dim[[1L]] - 1L, meta$dim[[1L]])
+      cols <- j0:min(j0 + meta$chunk_dim[[2L]] - 1L, meta$dim[[2L]])
+      key <- chunk_key((i0 - 1L) %/% meta$chunk_dim[[1L]] + 1L, (j0 - 1L) %/% meta$chunk_dim[[2L]] + 1L)
+      raw <- store_read(store, key, mode = "raw")
+      out[rows, cols] <- matrix(decode_i32(raw, length(rows) * length(cols)), nrow = length(rows))
+    }
+  }
+  out
+}
+```
+
+```{r}
+x <- matrix(seq_len(16L), nrow = 4L)
+write_array(store, x)
+store_list(store, recursive = TRUE)
+read_array(store)
+```
+
+## Add an explicit cache
+
+A cache is another store wrapper. Complete chunk-key reads can be cached; partial
+range reads still go to the parent store.
+
+```{r}
+cached <- store_cache(store, tempfile("ropendal-zarr-cache-"), validate = "last_modified_size")
+read_array(cached)
+
+# Mutating the parent changes validation metadata, so the cached read refreshes.
+store_replace(store, "c/0/0", encode_i32(rep(99L, 4L)))
+read_array(cached)
+```
+
+The example is intentionally small. Real Zarr support would add metadata schema
+handling, chunk codecs, fill values, dimension names, and array slicing above
+this byte-store layer rather than inside it.
