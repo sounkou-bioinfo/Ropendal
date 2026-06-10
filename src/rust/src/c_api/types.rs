@@ -23,6 +23,57 @@ pub struct ropendal_kv {
 }
 
 #[repr(C)]
+pub struct ropendal_store_options {
+    pub(crate) struct_size: usize,
+    pub(crate) prefix: *const c_char,
+}
+
+#[repr(C)]
+pub struct ropendal_store_read_options {
+    pub(crate) struct_size: usize,
+    pub(crate) key: *const c_char,
+    pub(crate) has_offset: i32,
+    pub(crate) offset: u64,
+    pub(crate) has_size: i32,
+    pub(crate) size: u64,
+    pub(crate) part_concurrency: usize,
+    pub(crate) chunk_size: usize,
+    pub(crate) coalesce_gap: usize,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
+pub struct ropendal_store_write_options {
+    pub(crate) struct_size: usize,
+    pub(crate) key: *const c_char,
+    pub(crate) part_concurrency: usize,
+    pub(crate) chunk_size: usize,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
+pub struct ropendal_store_ls_options {
+    pub(crate) struct_size: usize,
+    pub(crate) path: *const c_char,
+    pub(crate) recursive: i32,
+    pub(crate) limit: usize,
+    pub(crate) start_after: *const c_char,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
+pub struct ropendal_store_delete_options {
+    pub(crate) struct_size: usize,
+    pub(crate) key: *const c_char,
+    pub(crate) recursive: i32,
+    pub(crate) callback: AioCallback,
+    pub(crate) userdata: *mut c_void,
+}
+
+#[repr(C)]
 pub struct ropendal_read_options {
     pub(crate) struct_size: usize,
     pub(crate) path: *const c_char,
@@ -423,6 +474,12 @@ pub struct ropendal_error {
 pub struct ropendal_fs {
     pub(crate) refs: AtomicUsize,
     pub(crate) native: Arc<NativeFs>,
+}
+
+pub struct ropendal_store {
+    pub(crate) refs: AtomicUsize,
+    pub(crate) native: Arc<NativeFs>,
+    pub(crate) prefix: String,
 }
 
 #[derive(Clone)]

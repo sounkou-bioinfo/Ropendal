@@ -29,6 +29,10 @@ expect_match(header_text, "ropendal_aio_result_bool")
 expect_match(header_text, "ropendal_codec_encode")
 expect_match(header_text, "ropendal_codec_decode")
 expect_match(header_text, "ropendal_bytes_release")
+expect_match(header_text, "ropendal_store_open")
+expect_match(header_text, "ropendal_store_read_into_aio")
+expect_match(header_text, "ropendal_store_replace_aio")
+expect_match(header_text, "ropendal_store_delete_aio")
 
 # Notification/monitor primitives inspired by nanonext condition variables.
 expect_match(header_text, "ropendal_cv_alloc")
@@ -50,6 +54,11 @@ if (length(cc_candidates) > 0L) {
     '#include "ropendal.h"',
     'void ropendal_header_compile(void) {',
     '  ropendal_kv_t kv = {0};',
+    '  ropendal_store_options_t store_opts = {0};',
+    '  ropendal_store_read_options_t store_read_opts = {0};',
+    '  ropendal_store_write_options_t store_write_opts = {0};',
+    '  ropendal_store_ls_options_t store_ls_opts = {0};',
+    '  ropendal_store_delete_options_t store_delete_opts = {0};',
     '  ropendal_read_options_t read_opts = {0};',
     '  ropendal_read_request_t read_req = {0};',
     '  ropendal_read_into_request_t read_into_req = {0};',
@@ -63,8 +72,15 @@ if (length(cc_candidates) > 0L) {
     '  ropendal_bytes_t *bytes = 0;',
     '  const uint8_t *byte_ptr = ropendal_bytes_data(bytes);',
     '  size_t byte_len = ropendal_bytes_len(bytes);',
+    '  ropendal_store_t *store = 0;',
     '  ropendal_status_t (*codec_fn)(const char *, const uint8_t *, size_t, ropendal_bytes_t **, ropendal_error_t **) = ropendal_codec_decode;',
+    '  ropendal_status_t (*store_open_fn)(ropendal_fs_t *, const ropendal_store_options_t *, ropendal_store_t **, ropendal_error_t **) = ropendal_store_open;',
     '  kv.struct_size = sizeof kv;',
+    '  store_opts.struct_size = sizeof store_opts;',
+    '  store_read_opts.struct_size = sizeof store_read_opts;',
+    '  store_write_opts.struct_size = sizeof store_write_opts;',
+    '  store_ls_opts.struct_size = sizeof store_ls_opts;',
+    '  store_delete_opts.struct_size = sizeof store_delete_opts;',
     '  read_opts.struct_size = sizeof read_opts;',
     '  read_req.struct_size = sizeof read_req;',
     '  read_into_req.struct_size = sizeof read_into_req;',
@@ -75,7 +91,9 @@ if (length(cc_candidates) > 0L) {
     '  delete_opts.struct_size = sizeof delete_opts;',
     '  entry.struct_size = sizeof entry;',
     '  event.struct_size = sizeof event;',
-    '  (void)kv; (void)read_opts; (void)read_req; (void)read_into_req;',
+    '  (void)kv; (void)store; (void)store_opts; (void)store_read_opts; (void)store_write_opts;',
+    '  (void)store_ls_opts; (void)store_delete_opts; (void)store_open_fn;',
+    '  (void)read_opts; (void)read_req; (void)read_into_req;',
     '  (void)readv_opts; (void)readv_result; (void)write_opts; (void)ls_opts; (void)delete_opts;',
     '  (void)entry; (void)event; (void)byte_ptr; (void)byte_len; (void)codec_fn;',
     '}'

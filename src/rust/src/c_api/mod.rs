@@ -6,6 +6,7 @@ mod codec;
 mod error;
 mod fs;
 mod ops;
+mod store;
 mod sync;
 mod types;
 

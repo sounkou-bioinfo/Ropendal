@@ -504,7 +504,7 @@ SEXP savvy_OpendalWriteIter_write__ffi(SEXP self__, SEXP c_arg__data) {
     return ropendal_wasm_savvy_error();
 }
 
-uint32_t ropendal_api_version(void) { return 1; }
+uint32_t ropendal_api_version(void) { return 2; }
 
 static ropendal_status_t ropendal_wasm_unsupported(void) { return ROPENDAL_UNSUPPORTED; }
 
@@ -525,6 +525,45 @@ ropendal_status_t ropendal_fs_from_uri(const char *uri, ropendal_fs_t **out,
 
 void ropendal_fs_retain(ropendal_fs_t *fs) { (void)fs; }
 void ropendal_fs_release(ropendal_fs_t *fs) { (void)fs; }
+
+ropendal_status_t ropendal_store_open(ropendal_fs_t *fs, const ropendal_store_options_t *opts,
+                                      ropendal_store_t **out, ropendal_error_t **err) {
+    (void)fs; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+void ropendal_store_retain(ropendal_store_t *store) { (void)store; }
+void ropendal_store_release(ropendal_store_t *store) { (void)store; }
+ropendal_status_t ropendal_store_read_aio(ropendal_store_t *store, const ropendal_store_read_options_t *opts,
+                                          ropendal_aio_t **out, ropendal_error_t **err) {
+    (void)store; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_read_into_aio(ropendal_store_t *store, const ropendal_store_read_options_t *opts,
+                                               uint8_t *dst, size_t dst_len, ropendal_aio_t **out,
+                                               ropendal_error_t **err) {
+    (void)store; (void)opts; (void)dst; (void)dst_len; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_write_aio(ropendal_store_t *store, const ropendal_store_write_options_t *opts,
+                                           const uint8_t *src, size_t src_len, ropendal_aio_t **out,
+                                           ropendal_error_t **err) {
+    (void)store; (void)opts; (void)src; (void)src_len; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_replace_aio(ropendal_store_t *store, const ropendal_store_write_options_t *opts,
+                                             const uint8_t *src, size_t src_len, ropendal_aio_t **out,
+                                             ropendal_error_t **err) {
+    (void)store; (void)opts; (void)src; (void)src_len; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_exists_aio(ropendal_store_t *store, const char *key,
+                                            ropendal_aio_callback_t callback, void *userdata,
+                                            ropendal_aio_t **out, ropendal_error_t **err) {
+    (void)store; (void)key; (void)callback; (void)userdata; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_ls_aio(ropendal_store_t *store, const ropendal_store_ls_options_t *opts,
+                                        ropendal_aio_t **out, ropendal_error_t **err) {
+    (void)store; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
+ropendal_status_t ropendal_store_delete_aio(ropendal_store_t *store, const ropendal_store_delete_options_t *opts,
+                                            ropendal_aio_t **out, ropendal_error_t **err) {
+    (void)store; (void)opts; (void)err; if (out) *out = NULL; return ropendal_wasm_unsupported();
+}
 
 ropendal_status_t ropendal_codec_encode(const char *codec, const uint8_t *src,
                                         size_t src_len, ropendal_bytes_t **out,

@@ -22,7 +22,9 @@
 - API: R-side `batch_concurrency = 0` is now rejected; use `NULL` for the
   default. Capability rows now include range/concurrency/recursive semantics.
 - C API: write tuning options are wired through, unsupported write header
-  options reject explicitly, and `ropendal_aio_wait()` honors its timeout.
+  options reject explicitly, `ropendal_aio_wait()` honors its timeout, and
+  prefix-scoped byte stores now expose async read/write/read-into/list/delete
+  operations for downstream native code. The C ABI version is now 2.
 
 ## Ropendal 0.0.1
 

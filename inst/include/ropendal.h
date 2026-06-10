@@ -11,13 +11,14 @@
  *
  * Allocation and ownership follow one rule: any function that writes a non-NULL
  * handle through an out parameter transfers one ownership reference to the
- * caller. ropendal_fs_open(), ropendal_fs_from_uri(), ropendal_cv_alloc(),
- * ropendal_monitor_create(), and the *_aio() submission functions allocate such
- * handles. The caller must eventually release each owned reference with the
- * matching release function: ropendal_fs_release(), ropendal_cv_release(),
- * ropendal_monitor_release(), ropendal_bytes_release(), or
- * ropendal_aio_release(). ropendal_fs_retain() creates one additional
- * filesystem reference that must also be released.
+ * caller. ropendal_fs_open(), ropendal_fs_from_uri(), ropendal_store_open(),
+ * ropendal_cv_alloc(), ropendal_monitor_create(), and the *_aio() submission
+ * functions allocate such handles. The caller must eventually release each owned
+ * reference with the matching release function: ropendal_fs_release(),
+ * ropendal_store_release(), ropendal_cv_release(), ropendal_monitor_release(),
+ * ropendal_bytes_release(), or ropendal_aio_release(). ropendal_fs_retain() and
+ * ropendal_store_retain() create one additional reference that must also be
+ * released.
  * Passing NULL to a release function is allowed and has no effect.
  *
  * Errors are also allocated values. When a function accepts ropendal_error_t
@@ -63,6 +64,7 @@ extern "C" {
 #endif
 
 typedef struct ropendal_fs ropendal_fs_t;
+typedef struct ropendal_store ropendal_store_t;
 typedef struct ropendal_aio ropendal_aio_t;
 typedef struct ropendal_bytes ropendal_bytes_t;
 typedef struct ropendal_error ropendal_error_t;
@@ -115,6 +117,55 @@ typedef struct ropendal_monitor_event {
   ropendal_aio_t *aio;
   uint64_t id;
 } ropendal_monitor_event_t;
+
+/* Byte-store options. Store keys are normalized relative to the store prefix. */
+typedef struct ropendal_store_options {
+  size_t struct_size;
+  /* Optional directory prefix relative to the filesystem root. NULL/empty means root. */
+  const char *prefix;
+} ropendal_store_options_t;
+
+typedef struct ropendal_store_read_options {
+  size_t struct_size;
+  const char *key;
+  /* has_offset preserves explicit offset 0 versus unset for forward-compatible callers. */
+  int has_offset;
+  uint64_t offset;
+  int has_size;
+  uint64_t size;
+  size_t part_concurrency;
+  size_t chunk_size;
+  size_t coalesce_gap;
+  ropendal_aio_callback_t callback;
+  void *userdata;
+} ropendal_store_read_options_t;
+
+typedef struct ropendal_store_write_options {
+  size_t struct_size;
+  const char *key;
+  size_t part_concurrency;
+  size_t chunk_size;
+  ropendal_aio_callback_t callback;
+  void *userdata;
+} ropendal_store_write_options_t;
+
+typedef struct ropendal_store_ls_options {
+  size_t struct_size;
+  const char *path;
+  int recursive;
+  size_t limit;
+  const char *start_after;
+  ropendal_aio_callback_t callback;
+  void *userdata;
+} ropendal_store_ls_options_t;
+
+typedef struct ropendal_store_delete_options {
+  size_t struct_size;
+  const char *key;
+  int recursive;
+  ropendal_aio_callback_t callback;
+  void *userdata;
+} ropendal_store_delete_options_t;
 
 typedef struct ropendal_read_options {
   size_t struct_size;
@@ -259,6 +310,60 @@ ropendal_status_t ropendal_fs_from_uri(const char *uri,
                                        ropendal_error_t **err);
 void ropendal_fs_retain(ropendal_fs_t *fs);
 void ropendal_fs_release(ropendal_fs_t *fs);
+
+/*
+ * Byte-store lifecycle and async operations.
+ *
+ * A store is a lightweight key-to-bytes view over a filesystem plus a normalized
+ * prefix. Store operations never serialize R objects and never call R's C API.
+ * Write submits create-only semantics; replace overwrites or creates according
+ * to the backend. read_into writes directly into caller-owned memory, which must
+ * remain valid until the Aio reaches a terminal state. Returned entry paths from
+ * store_ls_aio() are relative to the store prefix.
+ */
+ropendal_status_t ropendal_store_open(ropendal_fs_t *fs,
+                                      const ropendal_store_options_t *opts,
+                                      ropendal_store_t **out,
+                                      ropendal_error_t **err);
+void ropendal_store_retain(ropendal_store_t *store);
+void ropendal_store_release(ropendal_store_t *store);
+
+ropendal_status_t ropendal_store_read_aio(ropendal_store_t *store,
+                                          const ropendal_store_read_options_t *opts,
+                                          ropendal_aio_t **out,
+                                          ropendal_error_t **err);
+ropendal_status_t ropendal_store_read_into_aio(ropendal_store_t *store,
+                                               const ropendal_store_read_options_t *opts,
+                                               uint8_t *dst,
+                                               size_t dst_len,
+                                               ropendal_aio_t **out,
+                                               ropendal_error_t **err);
+ropendal_status_t ropendal_store_write_aio(ropendal_store_t *store,
+                                           const ropendal_store_write_options_t *opts,
+                                           const uint8_t *src,
+                                           size_t src_len,
+                                           ropendal_aio_t **out,
+                                           ropendal_error_t **err);
+ropendal_status_t ropendal_store_replace_aio(ropendal_store_t *store,
+                                             const ropendal_store_write_options_t *opts,
+                                             const uint8_t *src,
+                                             size_t src_len,
+                                             ropendal_aio_t **out,
+                                             ropendal_error_t **err);
+ropendal_status_t ropendal_store_exists_aio(ropendal_store_t *store,
+                                            const char *key,
+                                            ropendal_aio_callback_t callback,
+                                            void *userdata,
+                                            ropendal_aio_t **out,
+                                            ropendal_error_t **err);
+ropendal_status_t ropendal_store_ls_aio(ropendal_store_t *store,
+                                        const ropendal_store_ls_options_t *opts,
+                                        ropendal_aio_t **out,
+                                        ropendal_error_t **err);
+ropendal_status_t ropendal_store_delete_aio(ropendal_store_t *store,
+                                            const ropendal_store_delete_options_t *opts,
+                                            ropendal_aio_t **out,
+                                            ropendal_error_t **err);
 
 /*
  * Native byte codecs.

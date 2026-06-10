@@ -559,7 +559,7 @@ not affect OpenDAL paths or backend requests.
 
 ### R byte store adapter
 
-Status: `implemented for synchronous R byte operations`
+Status: `implemented for synchronous and Aio R byte operations; native C byte-store operations implemented`
 
 `byte_store(fs, prefix)` is an R-side prefix adapter for Zarr-like key-to-bytes
 layouts. Store keys are normalized before they are joined to the store prefix so
@@ -578,9 +578,17 @@ returns it. `store_*_aio()` wrappers are available for read/write/replace,
 exists/list/delete; R-side cached async reads fill cache entries during main
 thread collection rather than from background tasks.
 
+The native C API exposes the same lower substrate as an opaque `ropendal_store_t`
+opened from an existing `ropendal_fs_t` plus optional prefix. Its async read,
+read-into, write, replace, exists, list, and delete functions copy submission
+strings/options up front, keep destination buffers caller-owned until Aio
+completion, and return listing paths relative to the store prefix. C zero values
+remain documented as unset, while `ropendal_store_read_options_t.has_offset` and
+`has_size` make valid zero offsets/sizes explicit for downstream structs.
+
 ### Byte-store full-object cache
 
-Status: `implemented for synchronous R byte stores`
+Status: `implemented for synchronous and Aio R byte stores`
 
 `store_cache(store, cache_dir, validate)` wraps a `byte_store()` in an explicit
 local cache rooted in an OpenDAL `fs` store. The cache stores complete key

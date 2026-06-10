@@ -79,6 +79,38 @@ ropendal_fs_release(fs);
 ropendal_error_release(err);
 ```
 
+## Prefix-scoped byte stores
+
+Downstream native packages that work with chunk keys can open a byte-store view
+instead of rebuilding prefixes manually:
+
+```c
+ropendal_store_options_t store_opts = {
+  .struct_size = sizeof(store_opts),
+  .prefix = "array.zarr"
+};
+ropendal_store_t *store = NULL;
+ropendal_store_open(fs, &store_opts, &store, &err);
+
+uint8_t dst[4096];
+ropendal_store_read_options_t read_opts = {
+  .struct_size = sizeof(read_opts),
+  .key = "c/0/0",
+  .has_offset = 1,
+  .offset = 0,
+  .has_size = 1,
+  .size = sizeof(dst)
+};
+ropendal_store_read_into_aio(store, &read_opts, dst, sizeof(dst), &aio, &err);
+ropendal_aio_wait(aio, -1, &err);
+
+ropendal_aio_release(aio);
+ropendal_store_release(store);
+```
+
+Store operations are still async-first and byte-only. They do not know about
+Zarr, VCF, serializers, codecs, or R objects.
+
 ## Why this exists
 
 Downstream packages can perform byte-oriented async operations without going through
