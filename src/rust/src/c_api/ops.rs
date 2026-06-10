@@ -1,5 +1,4 @@
 use std::os::raw::{c_char, c_void};
-use std::ptr;
 
 use futures::{StreamExt, stream};
 use opendal::options::{DeleteOptions, ListOptions, ReadOptions};
@@ -9,6 +8,7 @@ use crate::ops::{ReadTuning, WriteTuning, write_bytes_with};
 use crate::path::normalize_user_path;
 use crate::r_values::copy_buffer_to_slice;
 
+use super::aio::c_submit_handle;
 use super::{
     AioCallback, CEntrySet, CErrorInfo, CReadvResultSet, CReadvTaskResult, c_error_from_opendal,
     c_str, set_c_error,
@@ -267,21 +267,12 @@ pub unsafe extern "C" fn ropendal_read_into_aio(
     let callback = opt.callback;
     let userdata_addr = opt.userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match c_read_into_task(op, task, params, "read_into").await {
+        match c_read_into_task(op, task, params, "read_into").await {
             Ok(n) => COutcome::Nread(n),
             Err(info) => COutcome::Error(info),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    *out = Box::into_raw(Box::new(ropendal_aio {
-        refs: std::sync::atomic::AtomicUsize::new(1),
-        runtime,
-        handle: std::sync::Mutex::new(Some(handle)),
-        cached: std::sync::Mutex::new(None),
-    }));
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -336,18 +327,15 @@ pub unsafe extern "C" fn ropendal_read_aio(
     } else {
         None
     };
+    let callback = opt.callback;
+    let userdata_addr = opt.userdata as usize;
     let handle = runtime.spawn(async move {
         match c_read_bytes_with(op, path.clone(), offset, size, params).await {
             Ok(bytes) => COutcome::Bytes(bytes.to_vec()),
             Err(e) => COutcome::Error(c_error_from_opendal(e, "read", &path)),
         }
     });
-    *out = Box::into_raw(Box::new(ropendal_aio {
-        refs: std::sync::atomic::AtomicUsize::new(1),
-        runtime,
-        handle: std::sync::Mutex::new(Some(handle)),
-        cached: std::sync::Mutex::new(None),
-    }));
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -425,18 +413,15 @@ fn c_submit_write(
         let op = native.op.clone();
         let runtime = native.runtime.clone();
         let operation_owned = operation.to_string();
+        let callback = opt.callback;
+        let userdata_addr = opt.userdata as usize;
         let handle = runtime.spawn(async move {
             match write_bytes_with(op, path.clone(), bytes, create_only, append, tuning).await {
                 Ok(_) => COutcome::Unit,
                 Err(e) => COutcome::Error(c_error_from_opendal(e, &operation_owned, &path)),
             }
         });
-        *out = Box::into_raw(Box::new(ropendal_aio {
-            refs: std::sync::atomic::AtomicUsize::new(1),
-            runtime,
-            handle: std::sync::Mutex::new(Some(handle)),
-            cached: std::sync::Mutex::new(None),
-        }));
+        c_submit_handle(runtime, handle, out, callback, userdata_addr);
         0
     }
 }
@@ -475,21 +460,6 @@ pub unsafe extern "C" fn ropendal_append_aio(
     err: *mut *mut ropendal_error,
 ) -> i32 {
     c_submit_write(fs, opts, src, src_len, out, err, false, true, "append")
-}
-
-fn submit_handle(
-    runtime: std::sync::Arc<tokio::runtime::Runtime>,
-    handle: tokio::task::JoinHandle<COutcome>,
-    out: *mut *mut ropendal_aio,
-) {
-    unsafe {
-        *out = Box::into_raw(Box::new(ropendal_aio {
-            refs: std::sync::atomic::AtomicUsize::new(1),
-            runtime,
-            handle: std::sync::Mutex::new(Some(handle)),
-            cached: std::sync::Mutex::new(None),
-        }));
-    }
 }
 
 fn invalid_ptr_error(err: *mut *mut ropendal_error, operation: &str) -> i32 {
@@ -573,16 +543,12 @@ where
         let runtime = native.runtime.clone();
         let userdata_addr = userdata as usize;
         let handle = runtime.spawn(async move {
-            let result = match op_fn(op, path.clone()).await {
+            match op_fn(op, path.clone()).await {
                 Ok(_) => COutcome::Unit,
                 Err(e) => COutcome::Error(c_error_from_opendal(e, operation, &path)),
-            };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
             }
-            result
         });
-        submit_handle(runtime, handle, out);
+        c_submit_handle(runtime, handle, out, callback, userdata_addr);
         0
     }
 }
@@ -628,16 +594,12 @@ pub unsafe extern "C" fn ropendal_stat_aio(
     let runtime = native.runtime.clone();
     let userdata_addr = userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match op.stat(&path).await {
+        match op.stat(&path).await {
             Ok(meta) => COutcome::Entry(CEntrySet::one(&path, &meta)),
             Err(e) => COutcome::Error(c_error_from_opendal(e, "stat", &path)),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -682,16 +644,12 @@ pub unsafe extern "C" fn ropendal_exists_aio(
     let runtime = native.runtime.clone();
     let userdata_addr = userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match op.exists(&path).await {
+        match op.exists(&path).await {
             Ok(value) => COutcome::Bool(value),
             Err(e) => COutcome::Error(c_error_from_opendal(e, "exists", &path)),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -759,7 +717,7 @@ pub unsafe extern "C" fn ropendal_ls_aio(
     let handle = runtime.spawn(async move {
         let mut list_opts = ListOptions::default();
         list_opts.recursive = recursive;
-        let result = match op.list_options(&path, list_opts).await {
+        match op.list_options(&path, list_opts).await {
             Ok(entries) => {
                 let mut values = entries
                     .iter()
@@ -777,13 +735,9 @@ pub unsafe extern "C" fn ropendal_ls_aio(
                 COutcome::Entries(CEntrySet::from_entries(values))
             }
             Err(e) => COutcome::Error(c_error_from_opendal(e, "ls", &path)),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -839,16 +793,12 @@ pub unsafe extern "C" fn ropendal_delete_aio(
     let handle = runtime.spawn(async move {
         let mut opts = DeleteOptions::default();
         opts.recursive = recursive;
-        let result = match op.delete_options(&path, opts).await {
+        match op.delete_options(&path, opts).await {
             Ok(_) => COutcome::Unit,
             Err(e) => COutcome::Error(c_error_from_opendal(e, "delete", &path)),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -919,16 +869,12 @@ pub unsafe extern "C" fn ropendal_copy_aio(
         let runtime = native.runtime.clone();
         let userdata_addr = userdata as usize;
         let handle = runtime.spawn(async move {
-            let result = match op.copy(&from_path, &to_path).await {
+            match op.copy(&from_path, &to_path).await {
                 Ok(_) => COutcome::Unit,
                 Err(e) => COutcome::Error(c_error_from_opendal(e, "copy", &from_path)),
-            };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
             }
-            result
         });
-        submit_handle(runtime, handle, out);
+        c_submit_handle(runtime, handle, out, callback, userdata_addr);
         0
     }
 }
@@ -1000,16 +946,12 @@ pub unsafe extern "C" fn ropendal_rename_aio(
         let runtime = native.runtime.clone();
         let userdata_addr = userdata as usize;
         let handle = runtime.spawn(async move {
-            let result = match op.rename(&from_path, &to_path).await {
+            match op.rename(&from_path, &to_path).await {
                 Ok(_) => COutcome::Unit,
                 Err(e) => COutcome::Error(c_error_from_opendal(e, "rename", &from_path)),
-            };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
             }
-            result
         });
-        submit_handle(runtime, handle, out);
+        c_submit_handle(runtime, handle, out, callback, userdata_addr);
         0
     }
 }
@@ -1140,13 +1082,9 @@ pub unsafe extern "C" fn ropendal_readv_aio(
             .buffer_unordered(concurrency)
             .collect::<Vec<_>>()
             .await;
-        let result = COutcome::Readv(CReadvResultSet::from_task_results(values));
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
-        }
-        result
+        COutcome::Readv(CReadvResultSet::from_task_results(values))
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -1261,12 +1199,8 @@ pub unsafe extern "C" fn ropendal_readv_into_aio(
             .buffer_unordered(concurrency)
             .collect::<Vec<_>>()
             .await;
-        let result = COutcome::Readv(CReadvResultSet::from_task_results(values));
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
-        }
-        result
+        COutcome::Readv(CReadvResultSet::from_task_results(values))
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }

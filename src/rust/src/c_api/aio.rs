@@ -1,9 +1,53 @@
 use std::ptr;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use super::{CErrorInfo, set_c_error};
+use super::{AioCallback, CErrorInfo, set_c_error};
 use super::{COutcome, ropendal_aio, ropendal_entry, ropendal_error, ropendal_readv_result};
+
+pub(crate) fn c_submit_handle(
+    runtime: Arc<tokio::runtime::Runtime>,
+    handle: tokio::task::JoinHandle<COutcome>,
+    out: *mut *mut ropendal_aio,
+    callback: AioCallback,
+    userdata_addr: usize,
+) {
+    let aio = Box::into_raw(Box::new(ropendal_aio {
+        refs: std::sync::atomic::AtomicUsize::new(1),
+        runtime,
+        handle: std::sync::Mutex::new(Some(handle)),
+        cached: std::sync::Mutex::new(None),
+    }));
+    unsafe {
+        *out = aio;
+    }
+    if callback.is_some() {
+        unsafe {
+            c_aio_retain(aio);
+        }
+        let aio_addr = aio as usize;
+        std::thread::spawn(move || {
+            let aio = aio_addr as *mut ropendal_aio;
+            loop {
+                let ready = unsafe { c_aio_ready(aio).unwrap_or(true) };
+                if ready {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            unsafe {
+                let _ = c_aio_finish(aio);
+            }
+            if let Some(cb) = callback {
+                cb(aio, userdata_addr as *mut std::os::raw::c_void);
+            }
+            unsafe {
+                c_aio_release_ref(aio);
+            }
+        });
+    }
+}
 
 pub(crate) unsafe fn c_aio_finish(aio: *mut ropendal_aio) -> Result<COutcome, CErrorInfo> {
     if aio.is_null() {
@@ -135,13 +179,9 @@ pub unsafe extern "C" fn ropendal_aio_wait(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_aio_cancel(aio: *mut ropendal_aio) {
-    if !aio.is_null() {
-        let mut cached = (*aio).cached.lock().unwrap();
-        if cached.is_none() {
-            if let Some(handle) = &*(*aio).handle.lock().unwrap() {
-                handle.abort();
-            }
-            *cached = Some(COutcome::Cancelled);
+    if !aio.is_null() && (*aio).cached.lock().unwrap().is_none() {
+        if let Some(handle) = &*(*aio).handle.lock().unwrap() {
+            handle.abort();
         }
     }
 }

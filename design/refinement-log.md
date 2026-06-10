@@ -612,3 +612,22 @@ compares parent size and modification time before using a cached object;
 `store_replace()`, `store_delete()`, or `store_cache_clear()` invalidates them.
 Range-aware block caching, eviction, and service-specific validators such as
 ETag/version are future work.
+
+### Native C Aio callback arguments
+
+Status: `implemented`
+
+C Aio callbacks now receive the completed `ropendal_aio_t *` instead of a null
+placeholder. The callback pointer is borrowed and does not transfer ownership;
+the implementation retains the Aio for the callback worker, waits until the task
+is terminal without blocking `ropendal_aio_poll()` or finite-timeout waits, caches
+the result with the same finish path as `ropendal_aio_wait()`, invokes the
+callback, and then releases the temporary reference. Cancellation requests abort
+the Tokio task but do not cache a terminal cancellation value until the task has
+quiesced, so callbacks/monitors do not report completion while caller-owned
+buffers might still be touched by an aborting read-into task. Callback userdata
+must remain valid until the callback runs, even if the caller releases its public
+Aio handle earlier. Callbacks may run on worker threads and remain completion
+notifications only: downstream callers must not call R's C API from them and
+should inspect results via the normal Aio wait/poll/result accessors or hand off
+to their own main-thread scheduler.

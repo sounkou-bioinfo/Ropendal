@@ -111,7 +111,7 @@ GitHub Actions jobs:
 | opaque `ropendal_fs_t` / `ropendal_aio_t` | yes | yes | no | yes | roundtrip test |
 | `ropendal_fs_open()` | yes | yes | no | yes | local `fs` roundtrip |
 | `ropendal_fs_from_uri()` | yes | yes | no | yes | local `fs://` roundtrip |
-| async `read_aio()` | yes | yes | no | yes | borrowed byte result roundtrip |
+| async `read_aio()` | yes | yes | no | yes | borrowed byte result roundtrip; installed C roundtrip also verifies callbacks receive the completed Aio pointer and delayed callback cancellation preserves timeout/cancel semantics |
 | async `read_into_aio()` | yes | yes | no | yes | caller buffer roundtrip |
 | async `readv_aio()` | yes | yes | no | yes | installed-library roundtrip returns flattened borrowed bytes plus per-request success/failure details |
 | async `readv_into_aio()` | yes | yes | no | yes | installed-library roundtrip fills multiple caller-owned range buffers and checks per-request success/failure result details |
@@ -120,7 +120,7 @@ GitHub Actions jobs:
 | `append_aio()` | yes | partial | no | yes | local `fs` roundtrip; broader backend capability coverage remains service-dependent |
 | `stat_aio()` / `exists_aio()` / `ls_aio()` | yes | yes | no | yes | entry/bool/entries accessors exercised in installed-library roundtrip |
 | `cv` primitives | yes | yes | no | yes | installed C roundtrip covers alloc/value/signal/reset/timed wait plus Aio notify |
-| monitor primitives | yes | yes | no | yes | installed C roundtrip covers monitor create/add/read/release with retained Aio/CV lifetimes |
+| callbacks / monitor primitives | yes | yes | no | yes | installed C roundtrip covers callbacks with completed Aio pointer, callback cancellation on delayed HTTP reads, plus monitor create/add/read/release with retained Aio/CV lifetimes |
 | per-request read-vector result details | yes | yes | no | yes | `ropendal_readv_result_t` plus `ropendal_aio_result_readv()` for both `readv_aio()` and `readv_into_aio()` |
 | native byte codecs / byte handles | yes | yes | no | yes | `ropendal_codec_encode()`, `ropendal_codec_decode()`, `ropendal_bytes_data()`, `ropendal_bytes_len()`, and `ropendal_bytes_release()` roundtrip gzip bytes without R API |
 | opaque `ropendal_store_t` lifecycle | yes | yes | no | yes | `ropendal_store_open()`, retain, and release create a prefix-scoped byte-store view over an existing filesystem handle |

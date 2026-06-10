@@ -1,5 +1,4 @@
 use std::os::raw::{c_char, c_void};
-use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -10,6 +9,7 @@ use crate::ops::{ReadTuning, WriteTuning, write_bytes_with};
 use crate::path::normalize_user_path;
 use crate::r_values::copy_buffer_to_slice;
 
+use super::aio::c_submit_handle;
 use super::{
     AioCallback, CEntrySet, CErrorInfo, COutcome, CStoreBackend, CStoreCacheValidate,
     c_error_from_opendal, c_str, ropendal_aio, ropendal_error, ropendal_fs, ropendal_store,
@@ -54,21 +54,6 @@ fn invalid_ptr_error(err: *mut *mut ropendal_error, operation: &str) -> i32 {
         ),
     );
     2
-}
-
-fn submit_handle(
-    runtime: std::sync::Arc<tokio::runtime::Runtime>,
-    handle: tokio::task::JoinHandle<COutcome>,
-    out: *mut *mut ropendal_aio,
-) {
-    unsafe {
-        *out = Box::into_raw(Box::new(ropendal_aio {
-            refs: AtomicUsize::new(1),
-            runtime,
-            handle: std::sync::Mutex::new(Some(handle)),
-            cached: std::sync::Mutex::new(None),
-        }));
-    }
 }
 
 fn c_optional_usize(value: usize) -> Option<usize> {
@@ -729,17 +714,12 @@ pub unsafe extern "C" fn ropendal_store_read_aio(
     let callback = opt.callback;
     let userdata_addr = opt.userdata as usize;
     let handle = runtime.spawn(async move {
-        let result =
-            match store_read_backend(backend, &key, offset, size, tuning, "store_read").await {
-                Ok(bytes) => COutcome::Bytes(bytes),
-                Err(info) => COutcome::Error(info),
-            };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
+        match store_read_backend(backend, &key, offset, size, tuning, "store_read").await {
+            Ok(bytes) => COutcome::Bytes(bytes),
+            Err(info) => COutcome::Error(info),
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -825,12 +805,9 @@ pub unsafe extern "C" fn ropendal_store_read_into_aio(
                     }
                     Err(info) => COutcome::Error(info),
                 };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
-            }
             result
         });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -885,12 +862,9 @@ fn submit_store_write(
                 Ok(_) => COutcome::Unit,
                 Err(info) => COutcome::Error(info),
             };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
-            }
             result
         });
-        submit_handle(runtime, handle, out);
+        c_submit_handle(runtime, handle, out, callback, userdata_addr);
         0
     }
 }
@@ -946,16 +920,12 @@ pub unsafe extern "C" fn ropendal_store_exists_aio(
     let backend = (*store).backend.clone();
     let userdata_addr = userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match store_exists_backend(backend, &key, "store_exists").await {
+        match store_exists_backend(backend, &key, "store_exists").await {
             Ok(v) => COutcome::Bool(v),
             Err(info) => COutcome::Error(info),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -1004,12 +974,9 @@ pub unsafe extern "C" fn ropendal_store_ls_aio(
                     Ok(entries) => COutcome::Entries(entries),
                     Err(info) => COutcome::Error(info),
                 };
-            if let Some(cb) = callback {
-                cb(ptr::null_mut(), userdata_addr as *mut c_void);
-            }
             result
         });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }
 
@@ -1041,15 +1008,11 @@ pub unsafe extern "C" fn ropendal_store_delete_aio(
     let callback = opt.callback;
     let userdata_addr = opt.userdata as usize;
     let handle = runtime.spawn(async move {
-        let result = match store_delete_backend(backend, &key, recursive, "store_delete").await {
+        match store_delete_backend(backend, &key, recursive, "store_delete").await {
             Ok(_) => COutcome::Unit,
             Err(info) => COutcome::Error(info),
-        };
-        if let Some(cb) = callback {
-            cb(ptr::null_mut(), userdata_addr as *mut c_void);
         }
-        result
     });
-    submit_handle(runtime, handle, out);
+    c_submit_handle(runtime, handle, out, callback, userdata_addr);
     0
 }

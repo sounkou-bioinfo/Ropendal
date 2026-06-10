@@ -52,7 +52,11 @@
  *
  * Callbacks and notifications may run on worker threads. They MUST NOT call R's
  * C API unless the caller has independently arranged a safe handoff to R's main
- * thread. Treat callbacks as completion notifications only; inspect results via
+ * thread. Callback aio arguments are borrowed pointers to the completed Aio and
+ * do not transfer ownership. Registering a callback retains the Aio internally
+ * until the callback has run, so callback userdata must remain valid until that
+ * callback runs even if the caller releases its Aio handle earlier. Treat
+ * callbacks as completion notifications only; inspect results via
  * ropendal_aio_wait(), ropendal_aio_poll(), and the result accessors.
  */
 

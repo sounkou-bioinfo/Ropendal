@@ -25,6 +25,12 @@ C calls mirror the package’s async behavior:
 - `ropendal_aio_wait()` / monitor helpers for completion,
 - explicit status codes plus optional error objects for operation errors.
 
+Submission callbacks, when supplied in option structs, receive a borrowed pointer
+to the completed `ropendal_aio_t`. Registering a callback retains the Aio until
+callback delivery, so callback userdata must remain valid until the callback has
+run. They may run on worker threads; treat them as notifications only and do not
+call R's C API from them.
+
 ## Usage from another R package
 
 A downstream package uses the normal R package mechanism to get the header:
