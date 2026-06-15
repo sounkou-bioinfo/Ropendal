@@ -3,7 +3,7 @@ use std::sync::Once;
 
 use opendal::Buffer;
 use savvy::ffi::SEXP;
-use savvy::{Sexp, savvy};
+use savvy::{RawSexp, Sexp, savvy};
 
 use crate::r_values::{buffer_to_raw_sexp, real_scalar};
 
@@ -93,6 +93,46 @@ fn opendal_bytes_as_raw(bytes: Sexp) -> savvy::Result<savvy::Sexp> {
         return Err(savvy::Error::new("expected OpendalBytes"));
     };
     buffer_to_raw_sexp(buffer).map(|x| x.into())
+}
+
+#[savvy]
+fn opendal_bytes_from_raw(data: RawSexp) -> savvy::Result<savvy::Sexp> {
+    opendal_bytes_to_sexp(Buffer::from(data.to_vec()))
+}
+
+#[savvy]
+fn opendal_bytes_slice(bytes: Sexp, offset: f64, size: Option<f64>) -> savvy::Result<savvy::Sexp> {
+    let Some(buffer) = buffer_from_opendal_bytes_sexp(&bytes)? else {
+        return Err(savvy::Error::new("expected OpendalBytes"));
+    };
+    let len = buffer.len();
+    let start = numeric_byte_count(offset, "offset")?;
+    let requested = match size {
+        Some(value) => Some(numeric_byte_count(value, "size")?),
+        None => None,
+    };
+    if start >= len {
+        return opendal_bytes_to_sexp(Buffer::new());
+    }
+    let end = match requested {
+        Some(n) => start.saturating_add(n).min(len),
+        None => len,
+    };
+    opendal_bytes_to_sexp(buffer.slice(start..end))
+}
+
+fn numeric_byte_count(value: f64, name: &str) -> savvy::Result<usize> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 {
+        return Err(savvy::Error::new(format!(
+            "{name} must be a non-negative whole number"
+        )));
+    }
+    if value > usize::MAX as f64 {
+        return Err(savvy::Error::new(format!(
+            "{name} is too large for this platform"
+        )));
+    }
+    Ok(value as usize)
 }
 
 pub(crate) fn opendal_bytes_to_sexp(buffer: Buffer) -> savvy::Result<savvy::Sexp> {

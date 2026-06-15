@@ -12,7 +12,7 @@
 #'   credential_config credential_summary runtime_config layer_concurrent_limit layer_timeout
 #'   opt opt<- serial_config codec_config serialize_raw deserialize_raw
 #'   fs_info fs_capabilities fs_normalize_path byte_ranges fs_read fs_read_aio
-#'   fs_read_bytes fs_read_bytes_aio as.raw.OpendalBytes length.OpendalBytes
+#'   fs_read_bytes fs_read_bytes_aio opendal_bytes_slice as.raw.OpendalBytes length.OpendalBytes
 #'   fs_read_iter read_iter_next read_iter_collect fs_ls_iter fs_walk_iter ls_iter_next
 #'   ls_iter_collect walk_iter_next walk_iter_collect fs_seek fs_tell fs_write fs_write_aio
 #'   fs_replace fs_replace_aio fs_append fs_append_aio fs_write_iter
@@ -184,6 +184,7 @@
 #' fs_read_bytes_aio(fs, path, offset = 0, size = NULL, end = NULL,
 #'                   result = c("auto", "flat", "nested"), batch_concurrency = NULL,
 #'                   read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+#' opendal_bytes_slice(x, offset = 0, size = NULL, end = NULL)
 #' \method{as.raw}{OpendalBytes}(x)
 #' \method{length}{OpendalBytes}(x)
 #' fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
@@ -285,6 +286,10 @@
 #' same vector/list `path`, `offset`, `size`, and `end` shapes as direct calls.
 #' Request objects default to `result = "flat"`, which is convenient for
 #' row-oriented index tables.
+#'
+#' `opendal_bytes_slice()` returns another immutable `OpendalBytes` handle for a
+#' byte subrange without first materializing the complete handle as an R raw
+#' vector. `offset` is zero-based and `end` is exclusive, matching read ranges.
 #' @return Filesystem handles, raw vectors, `OpendalBytes` handles,
 #'   deserialized R objects, metadata lists, logical results, Aio handles, or
 #'   classed error values depending on the operation and mode.
@@ -1161,6 +1166,37 @@ fs_read_bytes_aio <- function(fs, path, offset = 0, size = NULL, end = NULL,
     chunk_size,
     coalesce_gap
   ), materializer = function(value) .ropendal_name_byte_ranges(value, request, args$result))
+}
+
+opendal_bytes_from_raw_generated <- opendal_bytes_from_raw
+opendal_bytes_slice_generated <- opendal_bytes_slice
+
+opendal_bytes_from_raw <- function(x) {
+  if (!is.raw(x)) stop("x must be a raw vector", call. = FALSE)
+  opendal_bytes_wrap(opendal_bytes_from_raw_generated(x))
+}
+
+#' @export
+#' @noRd
+opendal_bytes_slice <- function(x, offset = 0, size = NULL, end = NULL) {
+  if (!inherits(x, "OpendalBytes")) stop("x must be an OpendalBytes handle", call. = FALSE)
+  if (!is.null(size) && !is.null(end)) stop("use only one of size or end", call. = FALSE)
+  offset <- .ropendal_check_byte_count(offset, "offset")
+  if (!is.null(end)) {
+    end <- .ropendal_check_byte_count(end, "end")
+    size <- max(0, end - offset)
+  } else if (!is.null(size)) {
+    size <- .ropendal_check_byte_count(size, "size")
+  }
+  opendal_bytes_wrap(opendal_bytes_slice_generated(opendal_bytes_unwrap(x), offset, size))
+}
+
+.ropendal_check_byte_count <- function(value, name) {
+  if (!is.numeric(value) || length(value) != 1L || is.na(value) || !is.finite(value) ||
+    value < 0 || value != floor(value)) {
+    stop(name, " must be a non-negative whole number", call. = FALSE)
+  }
+  value
 }
 
 #' @export

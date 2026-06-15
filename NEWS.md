@@ -13,7 +13,8 @@
 - Reads: `fs_read()` / `fs_read_bytes()` now support multiple ranges from one
   path and list-of-ranges shapes across multiple paths, while preserving ordered
   flat or nested results. `byte_ranges()` adds a request-object form for
-  index-heavy readers.
+  index-heavy readers, and `opendal_bytes_slice()` derives subrange
+  `OpendalBytes` handles without first materializing full R raw vectors.
 - Byte stores: `byte_store()` and `store_*()` helpers provide a small
   store-relative key-to-bytes adapter for Zarr-like chunk layouts. `store_read()`
   is now bytes-first for `OpendalBytes`/ALTREP-compatible flows, async `store_*_aio()`

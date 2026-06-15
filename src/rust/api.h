@@ -1,5 +1,7 @@
 SEXP savvy_opendal_bytes_as_raw__ffi(SEXP c_arg__bytes);
+SEXP savvy_opendal_bytes_from_raw__ffi(SEXP c_arg__data);
 SEXP savvy_opendal_bytes_len__ffi(SEXP c_arg__bytes);
+SEXP savvy_opendal_bytes_slice__ffi(SEXP c_arg__bytes, SEXP c_arg__offset, SEXP c_arg__size);
 SEXP savvy_opendal_codec_decode__ffi(SEXP c_arg__name, SEXP c_arg__data);
 SEXP savvy_opendal_codec_encode__ffi(SEXP c_arg__name, SEXP c_arg__data);
 

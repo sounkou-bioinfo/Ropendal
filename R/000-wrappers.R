@@ -43,8 +43,18 @@ NULL
 }
 
 
+`opendal_bytes_from_raw` <- function(`data`) {
+  .Call(savvy_opendal_bytes_from_raw__impl, `data`)
+}
+
+
 `opendal_bytes_len` <- function(`bytes`) {
   .Call(savvy_opendal_bytes_len__impl, `bytes`)
+}
+
+
+`opendal_bytes_slice` <- function(`bytes`, `offset`, `size` = NULL) {
+  .Call(savvy_opendal_bytes_slice__impl, `bytes`, `offset`, `size`)
 }
 
 

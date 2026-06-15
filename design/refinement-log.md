@@ -652,3 +652,14 @@ adapter mutate the parent store and invalidate the affected key's block entries;
 recursive deletes conservatively clear the adapter's block namespace. This is
 intentionally conservative while the higher R cache interface and eviction policy
 are still being designed. There is no hidden cache beneath ordinary `fs_read()`.
+
+### OpendalBytes slicing before ALTREP
+
+Status: `implemented as a Rust-backed handle primitive`
+
+`opendal_bytes_slice(x, offset, size/end)` returns another immutable
+`OpendalBytes` handle for a subrange of an existing byte handle. The slice is
+created in Rust from OpenDAL's `Buffer::slice()` and does not first materialize
+the complete payload into an R raw vector. This is a stepping stone toward the
+future ALTREP raw facade: callers can keep range composition in the byte-handle
+layer, while `as.raw()` remains the explicit materialization boundary.

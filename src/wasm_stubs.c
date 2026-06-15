@@ -29,8 +29,20 @@ SEXP savvy_opendal_bytes_as_raw__ffi(SEXP c_arg__bytes) {
     return ropendal_wasm_savvy_error();
 }
 
+SEXP savvy_opendal_bytes_from_raw__ffi(SEXP c_arg__data) {
+    (void)c_arg__data;
+    return ropendal_wasm_savvy_error();
+}
+
 SEXP savvy_opendal_bytes_len__ffi(SEXP c_arg__bytes) {
     (void)c_arg__bytes;
+    return ropendal_wasm_savvy_error();
+}
+
+SEXP savvy_opendal_bytes_slice__ffi(SEXP c_arg__bytes, SEXP c_arg__offset, SEXP c_arg__size) {
+    (void)c_arg__bytes;
+    (void)c_arg__offset;
+    (void)c_arg__size;
     return ropendal_wasm_savvy_error();
 }
 

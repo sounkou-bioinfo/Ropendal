@@ -31,6 +31,7 @@
 \alias{fs_read_aio}
 \alias{fs_read_bytes}
 \alias{fs_read_bytes_aio}
+\alias{opendal_bytes_slice}
 \alias{as.raw.OpendalBytes}
 \alias{length.OpendalBytes}
 \alias{fs_read_iter}
@@ -138,6 +139,7 @@ fs_read_bytes(fs, path, offset = 0, size = NULL, end = NULL,
 fs_read_bytes_aio(fs, path, offset = 0, size = NULL, end = NULL,
                   result = c("auto", "flat", "nested"), batch_concurrency = NULL,
                   read_concurrency = NULL, chunk_size = NULL, coalesce_gap = NULL)
+opendal_bytes_slice(x, offset = 0, size = NULL, end = NULL)
 \method{as.raw}{OpendalBytes}(x)
 \method{length}{OpendalBytes}(x)
 fs_read_iter(fs, path, chunk_size, offset = 0, size = NULL,
@@ -436,4 +438,8 @@ Pass it as the \code{path} argument to \code{fs_read()}, \code{fs_read_aio()},
 same vector/list \code{path}, \code{offset}, \code{size}, and \code{end} shapes as direct calls.
 Request objects default to \code{result = "flat"}, which is convenient for
 row-oriented index tables.
+
+\code{opendal_bytes_slice()} returns another immutable \code{OpendalBytes} handle for a
+byte subrange without first materializing the complete handle as an R raw
+vector. \code{offset} is zero-based and \code{end} is exclusive, matching read ranges.
 }
