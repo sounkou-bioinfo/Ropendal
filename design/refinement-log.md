@@ -631,3 +631,24 @@ Aio handle earlier. Callbacks may run on worker threads and remain completion
 notifications only: downstream callers must not call R's C API from them and
 should inspect results via the normal Aio wait/poll/result accessors or hand off
 to their own main-thread scheduler.
+
+### Native C fixed-size block cache adapter
+
+Status: `implemented for the native byte-store C API`
+
+`ropendal_store_block_cache_open(parent, cache, opts, out, err)` adds the first
+range-aware cache layer below R. Like `ropendal_store_cache_open()`, it accepts
+uncached parent and cache stores and returns another opaque `ropendal_store_t`.
+Unlike the full-object cache, reads through this adapter are split into fixed-size
+byte blocks (default 8 MiB when the C option struct is zero-initialized) and
+assembled back into the requested range. Complete reads are also served through
+blocks after a parent stat determines object length.
+
+The block cache remains deliberately explicit: callers choose the cache store,
+block size, and validation strategy. `LAST_MODIFIED_SIZE` compares each cached
+block against the current parent object metadata; `NONE` trusts cached blocks
+until invalidation. Writes/replaces/deletes submitted through the block-cache
+adapter mutate the parent store and invalidate the affected key's block entries;
+recursive deletes conservatively clear the adapter's block namespace. This is
+intentionally conservative while the higher R cache interface and eviction policy
+are still being designed. There is no hidden cache beneath ordinary `fs_read()`.

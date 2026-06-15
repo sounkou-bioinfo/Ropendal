@@ -131,7 +131,7 @@ Coverage:
 - pure C `ropendal_fs_open()` and `ropendal_fs_from_uri()` lifecycle contract
 - `ropendal_codec_encode()` / `ropendal_codec_decode()` plus `ropendal_bytes_*()` cover R-free native byte codec transforms
 - `ropendal_write_aio()`, `ropendal_replace_aio()`, `ropendal_append_aio()`, `ropendal_read_aio()`, `ropendal_readv_aio()`, `ropendal_read_into_aio()`, and `ropendal_readv_into_aio()` cover borrowed byte results and caller-owned buffers
-- `ropendal_store_open()`, `ropendal_store_cache_open()`, `ropendal_store_read_aio()`, `ropendal_store_read_into_aio()`, `ropendal_store_write_aio()`, `ropendal_store_replace_aio()`, `ropendal_store_exists_aio()`, `ropendal_store_ls_aio()`, and `ropendal_store_delete_aio()` cover prefix-scoped native byte-store/cache operations and caller-owned buffers, including cache fill, validation refresh, and mutation invalidation
+- `ropendal_store_open()`, `ropendal_store_cache_open()`, `ropendal_store_block_cache_open()`, `ropendal_store_read_aio()`, `ropendal_store_read_into_aio()`, `ropendal_store_write_aio()`, `ropendal_store_replace_aio()`, `ropendal_store_exists_aio()`, `ropendal_store_ls_aio()`, and `ropendal_store_delete_aio()` cover prefix-scoped native byte-store/cache operations and caller-owned buffers, including full-object and fixed-size block cache fill, validation refresh, range assembly, and mutation invalidation
 - `ropendal_exists_aio()` plus `ropendal_aio_result_bool()`
 - `ropendal_stat_aio()` plus `ropendal_aio_result_entry()`
 - `ropendal_ls_aio()` plus `ropendal_aio_result_entries()`

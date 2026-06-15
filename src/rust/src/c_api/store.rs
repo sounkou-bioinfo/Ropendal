@@ -13,12 +13,14 @@ use super::aio::c_submit_handle;
 use super::{
     AioCallback, CEntrySet, CErrorInfo, COutcome, CStoreBackend, CStoreCacheValidate,
     c_error_from_opendal, c_str, ropendal_aio, ropendal_error, ropendal_fs, ropendal_store,
-    ropendal_store_cache_options, ropendal_store_delete_options, ropendal_store_ls_options,
-    ropendal_store_options, ropendal_store_read_options, ropendal_store_write_options, set_c_error,
+    ropendal_store_block_cache_options, ropendal_store_cache_options,
+    ropendal_store_delete_options, ropendal_store_ls_options, ropendal_store_options,
+    ropendal_store_read_options, ropendal_store_write_options, set_c_error,
 };
 
 const STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE: i32 = 0;
 const STORE_CACHE_VALIDATE_NONE: i32 = 1;
+const STORE_BLOCK_CACHE_DEFAULT_BLOCK_SIZE: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StoreMeta {
@@ -137,6 +139,30 @@ fn parse_store_key(
     }
 }
 
+fn cache_validate_from_value(
+    value: i32,
+    operation: &str,
+    err: *mut *mut ropendal_error,
+) -> Result<CStoreCacheValidate, i32> {
+    match value {
+        STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE => Ok(CStoreCacheValidate::LastModifiedSize),
+        STORE_CACHE_VALIDATE_NONE => Ok(CStoreCacheValidate::None),
+        other => {
+            set_c_error(
+                err,
+                c_error(
+                    2,
+                    "InvalidArgument",
+                    format!("unknown store cache validation mode: {other}"),
+                    operation,
+                    "",
+                ),
+            );
+            Err(2)
+        }
+    }
+}
+
 fn cache_validate_from_options(
     opts: *const ropendal_store_cache_options,
     err: *mut *mut ropendal_error,
@@ -145,28 +171,49 @@ fn cache_validate_from_options(
         if opts.is_null() {
             return Ok(CStoreCacheValidate::LastModifiedSize);
         }
-        match (*opts).validate {
-            STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE => Ok(CStoreCacheValidate::LastModifiedSize),
-            STORE_CACHE_VALIDATE_NONE => Ok(CStoreCacheValidate::None),
-            other => {
-                set_c_error(
-                    err,
-                    c_error(
-                        2,
-                        "InvalidArgument",
-                        format!("unknown store cache validation mode: {other}"),
-                        "store_cache_open",
-                        "",
-                    ),
-                );
-                Err(2)
-            }
+        cache_validate_from_value((*opts).validate, "store_cache_open", err)
+    }
+}
+
+fn block_cache_options_from_options(
+    opts: *const ropendal_store_block_cache_options,
+    err: *mut *mut ropendal_error,
+) -> Result<(u64, CStoreCacheValidate), i32> {
+    unsafe {
+        if opts.is_null() {
+            return Ok((
+                STORE_BLOCK_CACHE_DEFAULT_BLOCK_SIZE,
+                CStoreCacheValidate::LastModifiedSize,
+            ));
         }
+        let block_size = if (*opts).block_size == 0 {
+            STORE_BLOCK_CACHE_DEFAULT_BLOCK_SIZE
+        } else {
+            (*opts).block_size
+        };
+        if block_size > usize::MAX as u64 {
+            set_c_error(
+                err,
+                c_error(
+                    2,
+                    "InvalidArgument",
+                    "block_size is too large for this platform",
+                    "store_block_cache_open",
+                    "",
+                ),
+            );
+            return Err(2);
+        }
+        let validate = cache_validate_from_value((*opts).validate, "store_block_cache_open", err)?;
+        Ok((block_size, validate))
     }
 }
 
 fn backend_is_cached(backend: &Arc<CStoreBackend>) -> bool {
-    matches!(backend.as_ref(), CStoreBackend::Cached { .. })
+    matches!(
+        backend.as_ref(),
+        CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. }
+    )
 }
 
 fn direct_parts(
@@ -175,7 +222,7 @@ fn direct_parts(
 ) -> Result<(Arc<crate::common::NativeFs>, String), CErrorInfo> {
     match backend.as_ref() {
         CStoreBackend::Direct { native, prefix } => Ok((native.clone(), prefix.clone())),
-        CStoreBackend::Cached { .. } => Err(c_error(
+        CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => Err(c_error(
             1,
             "Unexpected",
             "internal cached store recursion is unsupported",
@@ -350,7 +397,9 @@ async fn store_exists_backend(
 ) -> Result<bool, CErrorInfo> {
     match backend.as_ref() {
         CStoreBackend::Direct { .. } => direct_exists(backend, key, operation).await,
-        CStoreBackend::Cached { parent, .. } => direct_exists(parent.clone(), key, operation).await,
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            direct_exists(parent.clone(), key, operation).await
+        }
     }
 }
 
@@ -366,7 +415,7 @@ async fn store_list_backend(
         CStoreBackend::Direct { .. } => {
             direct_list(backend, key, recursive, limit, start_after, operation).await
         }
-        CStoreBackend::Cached { parent, .. } => {
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
             direct_list(
                 parent.clone(),
                 key,
@@ -495,6 +544,221 @@ async fn clear_cache(cache: Arc<CStoreBackend>) {
     let _ = direct_delete(cache, "meta/", true, "store_cache_clear").await;
 }
 
+fn cache_block_key(key: &str, block_size: u64, index: u64) -> String {
+    format!("blocks/{block_size}/{}/{index:016x}.bin", hex_key(key))
+}
+
+fn cache_block_meta_key(key: &str, block_size: u64, index: u64) -> String {
+    format!("block_meta/{block_size}/{}/{index:016x}.txt", hex_key(key))
+}
+
+async fn invalidate_block_cache_key(cache: Arc<CStoreBackend>, key: &str, block_size: u64) {
+    let key_hex = hex_key(key);
+    let block_prefix = format!("blocks/{block_size}/{key_hex}/");
+    let meta_prefix = format!("block_meta/{block_size}/{key_hex}/");
+    let _ = direct_delete(
+        cache.clone(),
+        &block_prefix,
+        true,
+        "store_block_cache_invalidate",
+    )
+    .await;
+    let _ = direct_delete(cache, &meta_prefix, true, "store_block_cache_invalidate").await;
+}
+
+async fn clear_block_cache(cache: Arc<CStoreBackend>) {
+    let _ = direct_delete(cache.clone(), "blocks/", true, "store_block_cache_clear").await;
+    let _ = direct_delete(cache, "block_meta/", true, "store_block_cache_clear").await;
+}
+
+async fn block_cache_entry_valid(
+    cache: Arc<CStoreBackend>,
+    cache_key: &str,
+    meta_key: &str,
+    current: &StoreMeta,
+    validate: CStoreCacheValidate,
+) -> bool {
+    match direct_exists(cache.clone(), cache_key, "store_block_cache_exists").await {
+        Ok(true) => {}
+        _ => return false,
+    }
+    if validate == CStoreCacheValidate::None {
+        return true;
+    }
+    let cached_meta = match direct_read_bytes(
+        cache,
+        meta_key,
+        0,
+        None,
+        ReadTuning::default(),
+        "store_block_cache_meta",
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    decode_meta(&cached_meta).is_some_and(|cached| cached == *current)
+}
+
+async fn read_block_cached(
+    parent: Arc<CStoreBackend>,
+    cache: Arc<CStoreBackend>,
+    key: &str,
+    current: &StoreMeta,
+    block_size: u64,
+    block_index: u64,
+    validate: CStoreCacheValidate,
+    tuning: ReadTuning,
+    operation: &str,
+) -> Result<Vec<u8>, CErrorInfo> {
+    let cache_key = cache_block_key(key, block_size, block_index);
+    let meta_key = cache_block_meta_key(key, block_size, block_index);
+    let block_start = block_index.saturating_mul(block_size);
+    let block_end = block_start.saturating_add(block_size).min(current.size);
+    let block_len = block_end.saturating_sub(block_start);
+    let expected_len = usize::try_from(block_len).map_err(|_| {
+        c_error(
+            2,
+            "InvalidArgument",
+            "cached block length is too large for this platform",
+            operation,
+            key,
+        )
+    })?;
+    if block_cache_entry_valid(cache.clone(), &cache_key, &meta_key, current, validate).await {
+        if let Ok(bytes) = direct_read_bytes(
+            cache.clone(),
+            &cache_key,
+            0,
+            None,
+            ReadTuning::default(),
+            operation,
+        )
+        .await
+        {
+            if bytes.len() == expected_len {
+                return Ok(bytes);
+            }
+        }
+    }
+
+    let bytes =
+        direct_read_bytes(parent, key, block_start, Some(block_len), tuning, operation).await?;
+    if bytes.len() != expected_len {
+        return Err(c_error(
+            1,
+            "Unexpected",
+            "parent block read returned an unexpected length",
+            operation,
+            key,
+        ));
+    }
+    let _ = direct_write_bytes(
+        cache.clone(),
+        &cache_key,
+        bytes.clone(),
+        false,
+        WriteTuning::default(),
+        "store_block_cache_fill",
+    )
+    .await;
+    let _ = direct_write_bytes(
+        cache,
+        &meta_key,
+        encode_meta(current),
+        false,
+        WriteTuning::default(),
+        "store_block_cache_meta",
+    )
+    .await;
+    Ok(bytes)
+}
+
+async fn store_block_cache_read(
+    parent: Arc<CStoreBackend>,
+    cache: Arc<CStoreBackend>,
+    key: &str,
+    offset: u64,
+    size: Option<u64>,
+    tuning: ReadTuning,
+    validate: CStoreCacheValidate,
+    block_size: u64,
+    operation: &str,
+) -> Result<Vec<u8>, CErrorInfo> {
+    let current = direct_stat(parent.clone(), key, operation).await?;
+    let requested_end = match size {
+        Some(n) => offset.saturating_add(n).min(current.size),
+        None => current.size,
+    };
+    if offset >= requested_end {
+        return Ok(Vec::new());
+    }
+    let cap = usize::try_from(requested_end.saturating_sub(offset)).map_err(|_| {
+        c_error(
+            2,
+            "InvalidArgument",
+            "requested range is too large for this platform",
+            operation,
+            key,
+        )
+    })?;
+    let mut out = Vec::with_capacity(cap);
+    let first_block = offset / block_size;
+    let last_block = (requested_end - 1) / block_size;
+    for block_index in first_block..=last_block {
+        let block = read_block_cached(
+            parent.clone(),
+            cache.clone(),
+            key,
+            &current,
+            block_size,
+            block_index,
+            validate,
+            tuning,
+            operation,
+        )
+        .await?;
+        let block_start = block_index.saturating_mul(block_size);
+        let copy_start = offset.max(block_start).saturating_sub(block_start);
+        let copy_end = requested_end
+            .min(block_start.saturating_add(block_size))
+            .saturating_sub(block_start);
+        let copy_start = usize::try_from(copy_start).map_err(|_| {
+            c_error(
+                2,
+                "InvalidArgument",
+                "cached block offset is too large for this platform",
+                operation,
+                key,
+            )
+        })?;
+        let copy_end = usize::try_from(copy_end).map_err(|_| {
+            c_error(
+                2,
+                "InvalidArgument",
+                "cached block end is too large for this platform",
+                operation,
+                key,
+            )
+        })?;
+        if copy_start >= copy_end {
+            continue;
+        }
+        if copy_end > block.len() {
+            return Err(c_error(
+                1,
+                "Unexpected",
+                "cached block was shorter than the requested slice",
+                operation,
+                key,
+            ));
+        }
+        out.extend_from_slice(&block[copy_start..copy_end]);
+    }
+    Ok(out)
+}
+
 async fn store_read_backend(
     backend: Arc<CStoreBackend>,
     key: &str,
@@ -535,6 +799,25 @@ async fn store_read_backend(
             fill_cache(parent.clone(), cache.clone(), key, &bytes).await;
             Ok(bytes)
         }
+        CStoreBackend::BlockCached {
+            parent,
+            cache,
+            validate,
+            block_size,
+        } => {
+            store_block_cache_read(
+                parent.clone(),
+                cache.clone(),
+                key,
+                offset,
+                size,
+                tuning,
+                *validate,
+                *block_size,
+                operation,
+            )
+            .await
+        }
     }
 }
 
@@ -555,6 +838,16 @@ async fn store_write_backend(
             invalidate_cache_key(cache.clone(), key).await;
             Ok(())
         }
+        CStoreBackend::BlockCached {
+            parent,
+            cache,
+            block_size,
+            ..
+        } => {
+            direct_write_bytes(parent.clone(), key, bytes, create_only, tuning, operation).await?;
+            invalidate_block_cache_key(cache.clone(), key, *block_size).await;
+            Ok(())
+        }
     }
 }
 
@@ -572,6 +865,20 @@ async fn store_delete_backend(
                 clear_cache(cache.clone()).await;
             } else {
                 invalidate_cache_key(cache.clone(), key).await;
+            }
+            Ok(())
+        }
+        CStoreBackend::BlockCached {
+            parent,
+            cache,
+            block_size,
+            ..
+        } => {
+            direct_delete(parent.clone(), key, recursive, operation).await?;
+            if recursive {
+                clear_block_cache(cache.clone()).await;
+            } else {
+                invalidate_block_cache_key(cache.clone(), key, *block_size).await;
             }
             Ok(())
         }
@@ -664,6 +971,46 @@ pub unsafe extern "C" fn ropendal_store_cache_open(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn ropendal_store_block_cache_open(
+    parent: *mut ropendal_store,
+    cache: *mut ropendal_store,
+    opts: *const ropendal_store_block_cache_options,
+    out: *mut *mut ropendal_store,
+    err: *mut *mut ropendal_error,
+) -> i32 {
+    if parent.is_null() || cache.is_null() || out.is_null() {
+        return invalid_ptr_error(err, "store_block_cache_open");
+    }
+    if backend_is_cached(&(*parent).backend) || backend_is_cached(&(*cache).backend) {
+        set_c_error(
+            err,
+            c_error(
+                2,
+                "InvalidArgument",
+                "store_block_cache_open expects uncached parent and cache stores",
+                "store_block_cache_open",
+                "",
+            ),
+        );
+        return 2;
+    }
+    let (block_size, validate) = match block_cache_options_from_options(opts, err) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    *out = Box::into_raw(Box::new(ropendal_store {
+        refs: AtomicUsize::new(1),
+        backend: Arc::new(CStoreBackend::BlockCached {
+            parent: (*parent).backend.clone(),
+            cache: (*cache).backend.clone(),
+            validate,
+            block_size,
+        }),
+    }));
+    0
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ropendal_store_retain(store: *mut ropendal_store) {
     if !store.is_null() {
         (*store).refs.fetch_add(1, Ordering::Relaxed);
@@ -695,12 +1042,14 @@ pub unsafe extern "C" fn ropendal_store_read_aio(
     };
     let native = match (*store).backend.as_ref() {
         CStoreBackend::Direct { native, .. } => native.clone(),
-        CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-            CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { .. } => {
-                return invalid_ptr_error(err, "store_read");
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            match parent.as_ref() {
+                CStoreBackend::Direct { native, .. } => native.clone(),
+                CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                    return invalid_ptr_error(err, "store_read");
+                }
             }
-        },
+        }
     };
     let runtime = native.runtime.clone();
     let backend = (*store).backend.clone();
@@ -755,12 +1104,14 @@ pub unsafe extern "C" fn ropendal_store_read_into_aio(
     }
     let native = match (*store).backend.as_ref() {
         CStoreBackend::Direct { native, .. } => native.clone(),
-        CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-            CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { .. } => {
-                return invalid_ptr_error(err, "store_read_into");
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            match parent.as_ref() {
+                CStoreBackend::Direct { native, .. } => native.clone(),
+                CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                    return invalid_ptr_error(err, "store_read_into");
+                }
             }
-        },
+        }
     };
     let runtime = native.runtime.clone();
     let backend = (*store).backend.clone();
@@ -837,10 +1188,14 @@ fn submit_store_write(
         };
         let native = match (*store).backend.as_ref() {
             CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-                CStoreBackend::Direct { native, .. } => native.clone(),
-                CStoreBackend::Cached { .. } => return invalid_ptr_error(err, operation),
-            },
+            CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+                match parent.as_ref() {
+                    CStoreBackend::Direct { native, .. } => native.clone(),
+                    CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                        return invalid_ptr_error(err, operation);
+                    }
+                }
+            }
         };
         let runtime = native.runtime.clone();
         let backend = (*store).backend.clone();
@@ -911,10 +1266,14 @@ pub unsafe extern "C" fn ropendal_store_exists_aio(
     };
     let native = match (*store).backend.as_ref() {
         CStoreBackend::Direct { native, .. } => native.clone(),
-        CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-            CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { .. } => return invalid_ptr_error(err, "store_exists"),
-        },
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            match parent.as_ref() {
+                CStoreBackend::Direct { native, .. } => native.clone(),
+                CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                    return invalid_ptr_error(err, "store_exists");
+                }
+            }
+        }
     };
     let runtime = native.runtime.clone();
     let backend = (*store).backend.clone();
@@ -954,10 +1313,14 @@ pub unsafe extern "C" fn ropendal_store_ls_aio(
     };
     let native = match (*store).backend.as_ref() {
         CStoreBackend::Direct { native, .. } => native.clone(),
-        CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-            CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { .. } => return invalid_ptr_error(err, "store_ls"),
-        },
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            match parent.as_ref() {
+                CStoreBackend::Direct { native, .. } => native.clone(),
+                CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                    return invalid_ptr_error(err, "store_ls");
+                }
+            }
+        }
     };
     let runtime = native.runtime.clone();
     let backend = (*store).backend.clone();
@@ -998,10 +1361,14 @@ pub unsafe extern "C" fn ropendal_store_delete_aio(
     };
     let native = match (*store).backend.as_ref() {
         CStoreBackend::Direct { native, .. } => native.clone(),
-        CStoreBackend::Cached { parent, .. } => match parent.as_ref() {
-            CStoreBackend::Direct { native, .. } => native.clone(),
-            CStoreBackend::Cached { .. } => return invalid_ptr_error(err, "store_delete"),
-        },
+        CStoreBackend::Cached { parent, .. } | CStoreBackend::BlockCached { parent, .. } => {
+            match parent.as_ref() {
+                CStoreBackend::Direct { native, .. } => native.clone(),
+                CStoreBackend::Cached { .. } | CStoreBackend::BlockCached { .. } => {
+                    return invalid_ptr_error(err, "store_delete");
+                }
+            }
+        }
     };
     let runtime = native.runtime.clone();
     let backend = (*store).backend.clone();

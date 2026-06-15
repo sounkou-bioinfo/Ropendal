@@ -31,6 +31,7 @@ expect_match(header_text, "ropendal_codec_decode")
 expect_match(header_text, "ropendal_bytes_release")
 expect_match(header_text, "ropendal_store_open")
 expect_match(header_text, "ropendal_store_cache_open")
+expect_match(header_text, "ropendal_store_block_cache_open")
 expect_match(header_text, "ropendal_store_read_into_aio")
 expect_match(header_text, "ropendal_store_replace_aio")
 expect_match(header_text, "ropendal_store_delete_aio")
@@ -57,6 +58,7 @@ if (length(cc_candidates) > 0L) {
     '  ropendal_kv_t kv = {0};',
     '  ropendal_store_options_t store_opts = {0};',
     '  ropendal_store_cache_options_t store_cache_opts = {0};',
+    '  ropendal_store_block_cache_options_t store_block_cache_opts = {0};',
     '  ropendal_store_read_options_t store_read_opts = {0};',
     '  ropendal_store_write_options_t store_write_opts = {0};',
     '  ropendal_store_ls_options_t store_ls_opts = {0};',
@@ -78,10 +80,14 @@ if (length(cc_candidates) > 0L) {
     '  ropendal_status_t (*codec_fn)(const char *, const uint8_t *, size_t, ropendal_bytes_t **, ropendal_error_t **) = ropendal_codec_decode;',
     '  ropendal_status_t (*store_open_fn)(ropendal_fs_t *, const ropendal_store_options_t *, ropendal_store_t **, ropendal_error_t **) = ropendal_store_open;',
     '  ropendal_status_t (*store_cache_open_fn)(ropendal_store_t *, ropendal_store_t *, const ropendal_store_cache_options_t *, ropendal_store_t **, ropendal_error_t **) = ropendal_store_cache_open;',
+    '  ropendal_status_t (*store_block_cache_open_fn)(ropendal_store_t *, ropendal_store_t *, const ropendal_store_block_cache_options_t *, ropendal_store_t **, ropendal_error_t **) = ropendal_store_block_cache_open;',
     '  kv.struct_size = sizeof kv;',
     '  store_opts.struct_size = sizeof store_opts;',
     '  store_cache_opts.struct_size = sizeof store_cache_opts;',
     '  store_cache_opts.validate = ROPENDAL_STORE_CACHE_VALIDATE_NONE;',
+    '  store_block_cache_opts.struct_size = sizeof store_block_cache_opts;',
+    '  store_block_cache_opts.block_size = 4096;',
+    '  store_block_cache_opts.validate = ROPENDAL_STORE_CACHE_VALIDATE_NONE;',
     '  store_read_opts.struct_size = sizeof store_read_opts;',
     '  store_write_opts.struct_size = sizeof store_write_opts;',
     '  store_ls_opts.struct_size = sizeof store_ls_opts;',
@@ -96,9 +102,9 @@ if (length(cc_candidates) > 0L) {
     '  delete_opts.struct_size = sizeof delete_opts;',
     '  entry.struct_size = sizeof entry;',
     '  event.struct_size = sizeof event;',
-    '  (void)kv; (void)store; (void)store_opts; (void)store_cache_opts; (void)store_read_opts;',
+    '  (void)kv; (void)store; (void)store_opts; (void)store_cache_opts; (void)store_block_cache_opts; (void)store_read_opts;',
     '  (void)store_write_opts; (void)store_ls_opts; (void)store_delete_opts;',
-    '  (void)store_open_fn; (void)store_cache_open_fn;',
+    '  (void)store_open_fn; (void)store_cache_open_fn; (void)store_block_cache_open_fn;',
     '  (void)read_opts; (void)read_req; (void)read_into_req;',
     '  (void)readv_opts; (void)readv_result; (void)write_opts; (void)ls_opts; (void)delete_opts;',
     '  (void)entry; (void)event; (void)byte_ptr; (void)byte_len; (void)codec_fn;',

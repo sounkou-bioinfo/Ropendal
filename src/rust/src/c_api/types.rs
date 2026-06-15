@@ -35,6 +35,13 @@ pub struct ropendal_store_cache_options {
 }
 
 #[repr(C)]
+pub struct ropendal_store_block_cache_options {
+    pub(crate) struct_size: usize,
+    pub(crate) block_size: u64,
+    pub(crate) validate: i32,
+}
+
+#[repr(C)]
 pub struct ropendal_store_read_options {
     pub(crate) struct_size: usize,
     pub(crate) key: *const c_char,
@@ -497,6 +504,12 @@ pub(crate) enum CStoreBackend {
         parent: Arc<CStoreBackend>,
         cache: Arc<CStoreBackend>,
         validate: CStoreCacheValidate,
+    },
+    BlockCached {
+        parent: Arc<CStoreBackend>,
+        cache: Arc<CStoreBackend>,
+        validate: CStoreCacheValidate,
+        block_size: u64,
     },
 }
 

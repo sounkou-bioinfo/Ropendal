@@ -136,8 +136,24 @@ ropendal_store_cache_options_t cache_policy = {
 ropendal_store_cache_open(store, cache, &cache_policy, &cached, &err);
 ```
 
-Partial reads bypass this first cache layer; it is intended for chunk-key layouts
-where each key is already a reasonable cache unit.
+Partial reads bypass this first full-object cache layer; it is intended for
+chunk-key layouts where each key is already a reasonable cache unit.
+
+Native code that needs range-aware caching can opt into fixed-size block caching
+instead:
+
+```c
+ropendal_store_block_cache_options_t block_policy = {
+  .struct_size = sizeof(block_policy),
+  .block_size = 8 * 1024 * 1024,
+  .validate = ROPENDAL_STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE
+};
+ropendal_store_t *block_cached = NULL;
+ropendal_store_block_cache_open(store, cache, &block_policy, &block_cached, &err);
+```
+
+The block cache is still explicit and byte-only: callers provide the cache store,
+choose the block size, and keep format semantics above the store layer.
 
 ## Why this exists
 
