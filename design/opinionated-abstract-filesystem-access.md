@@ -514,11 +514,12 @@ read-into, existence, listing, and delete operations for downstream packages
 that need caller-owned buffers without R raw vectors. Native callers can also
 wrap parent/cache stores with `ropendal_store_cache_open()` for explicit
 full-object caching or `ropendal_store_block_cache_open()` for explicit fixed-size
-range block caching. An explicit `store_cache()` wrapper adds a local
-full-object cache for complete chunk-key reads; the R-facing range/block cache
-interface remains intentionally unsettled while invalidation and eviction policy
-are designed. Store reads are bytes-first and return `OpendalBytes` by default
-so ALTREP-compatible materialization and C consumers can stay below R raw-vector
+range block caching. R wrappers expose `store_cache()` for local full-object
+chunk-key reads and `store_block_cache()` for local fixed-size scalar
+`result = "auto"` store-range reads; vectorized/non-auto shapes bypass the block
+cache. Eviction/readahead policy remains intentionally unsettled and explicit.
+Store reads are bytes-first and return `OpendalBytes` by default so
+ALTREP-compatible materialization and C consumers can stay below R raw-vector
 copies.
 
 Current shape:
@@ -579,6 +580,6 @@ adapters can live on top.
 6. Add read-only `fs_zip()` over any range-readable parent filesystem.
 7. Add `ropendal_fs_zip()` to the C API.
 8. Add `byte_store()` / `chunk_store()` with vectorized store operations (`byte_store()` implemented for R sync and Aio byte operations; `ropendal_store_t` implemented for native C byte operations).
-9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` and `ropendal_store_cache_open()` implement explicit full-object caches for byte stores; `ropendal_store_block_cache_open()` implements the first native fixed-size range block cache, with R-facing eviction/readahead policy still future work).
+9. Add explicit memory/file block cache adapter once invalidation is designed (`store_cache()` and `ropendal_store_cache_open()` implement explicit full-object caches for byte stores; `ropendal_store_block_cache_open()` and `store_block_cache()` implement fixed-size range block caches, with eviction/readahead policy still future work).
 10. Build targeted integrations: BioC range readers, Arrow/Parquet, and Zarr-like
     chunk stores (pure-R Zarr-like and indexed VCF-like vignettes now demonstrate the substrate boundaries).

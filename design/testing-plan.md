@@ -83,7 +83,7 @@ Always run by default. Use `tempfile()` roots only. Coverage:
 - `fs_ls_iter()` empty-listing, paged listing, page `cursor`, `limit`, `start_after`, best-effort cursor filtering, explicit `prefetch`, and collect behavior
 - `fs_walk_iter()` recursive traversal pages/collection, iterator `limit`, and explicit `prefetch`
 - `byte_store()` / `store_*()` prefix isolation, bytes-first `OpendalBytes` reads, explicit raw reads, create-vs-replace behavior, async wrappers, listing path rewriting, deletion, escape rejection, and pure-R chunked-array layout access
-- `store_cache()` explicit local full-object cache behavior, validation and stale-cache modes, async read/fill, invalidation on sync/async mutation, range bypass, cache clearing, and pure-R chunked-array cache refresh
+- `store_cache()` explicit local full-object cache behavior and `store_block_cache()` explicit local fixed-size block cache behavior, validation and stale-cache modes, `validate = "none"` size refresh plus size-cycle/partial-miss invalidation, async read/fill and raw materialization, invalidation on sync/async mutation, block range assembly, whole-request corrupted cache-payload repair, unsupported-shape bypass, cache clearing, and pure-R chunked-array cache refresh
 - mkdir/delete/copy/rename
 - declarative capability profiles: classed values, supported operations, implementation source, and unsupported-operation error values (local `fs` shape implemented)
 

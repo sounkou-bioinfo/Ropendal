@@ -4,6 +4,7 @@
 \alias{byte-store}
 \alias{byte_store}
 \alias{store_cache}
+\alias{store_block_cache}
 \alias{store_cache_clear}
 \alias{store_read}
 \alias{store_read_aio}
@@ -24,6 +25,13 @@ byte_store(fs, prefix = "")
 store_cache(
   store,
   cache_dir = tools::R_user_dir("Ropendal", "cache"),
+  validate = c("last_modified_size", "none")
+)
+
+store_block_cache(
+  store,
+  cache_dir = tools::R_user_dir("Ropendal", "cache"),
+  block_size = 8 * 1024^2,
   validate = c("last_modified_size", "none")
 )
 
@@ -122,13 +130,19 @@ store_delete_aio(store, key, recursive = FALSE, batch_concurrency = NULL)
 
 \item{prefix}{Root-relative filesystem prefix used as the store root.}
 
-\item{store}{Byte store object returned by \code{byte_store()} or \code{store_cache()}.}
+\item{store}{Byte store object returned by \code{byte_store()}, \code{store_cache()},
+or \code{store_block_cache()}.}
 
-\item{cache_dir}{Local directory used by \code{store_cache()}.}
+\item{cache_dir}{Local directory used by \code{store_cache()} or
+\code{store_block_cache()}.}
 
 \item{validate}{Cache validation strategy. \code{"last_modified_size"} compares
-parent object size and modification time before using a cached value;
-\code{"none"} trusts cached objects until explicit invalidation.}
+parent object size and modification time before using a cached value.
+\code{"none"} skips modification-time checks; block caches still stat the
+parent to bound ranges and refresh when cached block metadata has a
+different object size.}
+
+\item{block_size}{Fixed block size in bytes for \code{store_block_cache()}.}
 
 \item{key}{Store-relative object key or keys.}
 
@@ -160,8 +174,8 @@ concurrency.}
 \item{start_after}{Optional store-relative listing continuation marker.}
 }
 \value{
-\code{byte_store()} and \code{store_cache()} return byte-store objects. Store
-operations return the corresponding filesystem values with paths rewritten
+\code{byte_store()}, \code{store_cache()}, and \code{store_block_cache()} return
+byte-store objects. Store operations return the corresponding filesystem values with paths rewritten
 relative to the store root for listings.
 }
 \description{
@@ -177,8 +191,12 @@ deserializers, codecs, and format parsers belong above it.
 
 \code{store_cache()} wraps a byte store in an explicit local full-object cache. It
 is useful for chunked layouts where each key is already a small block. Partial
-byte-range reads and non-default read shaping bypass this first cache layer;
-future block caches can add range-aware eviction and readahead.
+byte-range reads and non-default read shaping bypass this first cache layer.
+\code{store_block_cache()} wraps a byte store in an explicit fixed-size block cache
+for scalar complete or range reads with \code{result = "auto"} while keeping
+format semantics above the store layer. Vectorized ranges, vectorized keys,
+and non-auto result shapes bypass this cache adapter and read from the parent
+store directly.
 }
 \examples{
 root <- tempfile("ropendal-store-")

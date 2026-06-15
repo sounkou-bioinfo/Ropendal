@@ -573,6 +573,8 @@ async fn clear_block_cache(cache: Arc<CStoreBackend>) {
 
 async fn block_cache_entry_valid(
     cache: Arc<CStoreBackend>,
+    key: &str,
+    block_size: u64,
     cache_key: &str,
     meta_key: &str,
     current: &StoreMeta,
@@ -582,11 +584,8 @@ async fn block_cache_entry_valid(
         Ok(true) => {}
         _ => return false,
     }
-    if validate == CStoreCacheValidate::None {
-        return true;
-    }
     let cached_meta = match direct_read_bytes(
-        cache,
+        cache.clone(),
         meta_key,
         0,
         None,
@@ -596,24 +595,30 @@ async fn block_cache_entry_valid(
     .await
     {
         Ok(v) => v,
-        Err(_) => return false,
+        Err(_) => {
+            invalidate_block_cache_key(cache, key, block_size).await;
+            return false;
+        }
     };
-    decode_meta(&cached_meta).is_some_and(|cached| cached == *current)
+    let Some(cached) = decode_meta(&cached_meta) else {
+        invalidate_block_cache_key(cache, key, block_size).await;
+        return false;
+    };
+    let matches = cached.size == current.size
+        && (validate == CStoreCacheValidate::None || cached.last_modified == current.last_modified);
+    if !matches {
+        invalidate_block_cache_key(cache, key, block_size).await;
+    }
+    matches
 }
 
-async fn read_block_cached(
-    parent: Arc<CStoreBackend>,
-    cache: Arc<CStoreBackend>,
-    key: &str,
+fn block_len_for(
     current: &StoreMeta,
     block_size: u64,
     block_index: u64,
-    validate: CStoreCacheValidate,
-    tuning: ReadTuning,
     operation: &str,
-) -> Result<Vec<u8>, CErrorInfo> {
-    let cache_key = cache_block_key(key, block_size, block_index);
-    let meta_key = cache_block_meta_key(key, block_size, block_index);
+    key: &str,
+) -> Result<(u64, usize), CErrorInfo> {
     let block_start = block_index.saturating_mul(block_size);
     let block_end = block_start.saturating_add(block_size).min(current.size);
     let block_len = block_end.saturating_sub(block_start);
@@ -626,23 +631,24 @@ async fn read_block_cached(
             key,
         )
     })?;
-    if block_cache_entry_valid(cache.clone(), &cache_key, &meta_key, current, validate).await {
-        if let Ok(bytes) = direct_read_bytes(
-            cache.clone(),
-            &cache_key,
-            0,
-            None,
-            ReadTuning::default(),
-            operation,
-        )
-        .await
-        {
-            if bytes.len() == expected_len {
-                return Ok(bytes);
-            }
-        }
-    }
+    Ok((block_len, expected_len))
+}
 
+async fn read_block_parent(
+    parent: Arc<CStoreBackend>,
+    cache: Arc<CStoreBackend>,
+    key: &str,
+    current: &StoreMeta,
+    block_size: u64,
+    block_index: u64,
+    tuning: ReadTuning,
+    operation: &str,
+) -> Result<Vec<u8>, CErrorInfo> {
+    let cache_key = cache_block_key(key, block_size, block_index);
+    let meta_key = cache_block_meta_key(key, block_size, block_index);
+    let block_start = block_index.saturating_mul(block_size);
+    let (block_len, expected_len) =
+        block_len_for(current, block_size, block_index, operation, key)?;
     let bytes =
         direct_read_bytes(parent, key, block_start, Some(block_len), tuning, operation).await?;
     if bytes.len() != expected_len {
@@ -706,19 +712,78 @@ async fn store_block_cache_read(
     let mut out = Vec::with_capacity(cap);
     let first_block = offset / block_size;
     let last_block = (requested_end - 1) / block_size;
-    for block_index in first_block..=last_block {
-        let block = read_block_cached(
-            parent.clone(),
+    let block_indices: Vec<u64> = (first_block..=last_block).collect();
+    let mut all_valid = true;
+    for &block_index in &block_indices {
+        let cache_key = cache_block_key(key, block_size, block_index);
+        let meta_key = cache_block_meta_key(key, block_size, block_index);
+        if !block_cache_entry_valid(
             cache.clone(),
             key,
-            &current,
             block_size,
-            block_index,
+            &cache_key,
+            &meta_key,
+            &current,
             validate,
-            tuning,
-            operation,
         )
-        .await?;
+        .await
+        {
+            all_valid = false;
+            break;
+        }
+    }
+
+    let mut cached_blocks = Vec::with_capacity(block_indices.len());
+    if all_valid {
+        for &block_index in &block_indices {
+            let cache_key = cache_block_key(key, block_size, block_index);
+            let (_, expected_len) =
+                block_len_for(&current, block_size, block_index, operation, key)?;
+            match direct_read_bytes(
+                cache.clone(),
+                &cache_key,
+                0,
+                None,
+                ReadTuning::default(),
+                operation,
+            )
+            .await
+            {
+                Ok(bytes) if bytes.len() == expected_len => {
+                    cached_blocks.push((block_index, bytes));
+                }
+                _ => {
+                    all_valid = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    let blocks: Vec<(u64, Vec<u8>)> = if all_valid {
+        cached_blocks
+    } else {
+        if validate == CStoreCacheValidate::None {
+            invalidate_block_cache_key(cache.clone(), key, block_size).await;
+        }
+        let mut parent_blocks = Vec::with_capacity(block_indices.len());
+        for &block_index in &block_indices {
+            let block = read_block_parent(
+                parent.clone(),
+                cache.clone(),
+                key,
+                &current,
+                block_size,
+                block_index,
+                tuning,
+                operation,
+            )
+            .await?;
+            parent_blocks.push((block_index, block));
+        }
+        parent_blocks
+    };
+    for (block_index, block) in blocks {
         let block_start = block_index.saturating_mul(block_size);
         let copy_start = offset.max(block_start).saturating_sub(block_start);
         let copy_end = requested_end

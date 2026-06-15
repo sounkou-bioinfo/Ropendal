@@ -646,8 +646,9 @@ blocks after a parent stat determines object length.
 
 The block cache remains deliberately explicit: callers choose the cache store,
 block size, and validation strategy. `LAST_MODIFIED_SIZE` compares each cached
-block against the current parent object metadata; `NONE` trusts cached blocks
-until invalidation. Writes/replaces/deletes submitted through the block-cache
+block against the current parent object metadata; `NONE` skips modification-time
+checks but still refreshes when cached block metadata has a different object
+size. Writes/replaces/deletes submitted through the block-cache
 adapter mutate the parent store and invalidate the affected key's block entries;
 recursive deletes conservatively clear the adapter's block namespace. This is
 intentionally conservative while the higher R cache interface and eviction policy
@@ -663,3 +664,34 @@ created in Rust from OpenDAL's `Buffer::slice()` and does not first materialize
 the complete payload into an R raw vector. This is a stepping stone toward the
 future ALTREP raw facade: callers can keep range composition in the byte-handle
 layer, while `as.raw()` remains the explicit materialization boundary.
+
+### R-facing fixed-size store block cache
+
+Status: `implemented for scalar store reads`
+
+`store_block_cache(store, cache_dir, block_size, validate)` adds an explicit
+R-level block-cache wrapper over `byte_store()`. The cache is byte-only and uses
+a local OpenDAL `fs` cache store. Scalar complete or byte-range reads with
+`result = "auto"` are split into fixed-size blocks, cached as `OpendalBytes`,
+and assembled back into either `OpendalBytes` or raw results.
+Vectorized/non-auto shapes currently fall through to the parent store rather
+than adding hidden policy. If any block in a requested range is missing,
+stale, or has a corrupt payload length, the R and native adapters refill the
+whole requested block set rather than assembling mixed cache/parent versions.
+
+Validation mirrors the native cache choices: `last_modified_size` refreshes when
+parent size/mtime changes, while `none` skips modification-time checks but still
+uses the parent stat needed to bound ranges and refreshes cached block entries
+whose stored object size differs from the current size. A cached block metadata
+mismatch invalidates that object's whole block namespace so old blocks cannot be
+resurrected after size cycles. In `none` mode, partial cache misses and corrupt
+payload lengths also invalidate the key before refill to avoid assembling mixed
+object versions. Cached payload lengths are checked before assembly; corrupted
+or stale-length blocks are refetched as a whole requested block set rather than
+silently assembled. Mutations through the wrapper invalidate the
+affected object's block namespace; recursive deletes clear the block cache.
+Async R reads submit the planned cache-hit or parent-fill read as an Aio and
+perform cache fill/materialization on the R main thread after collection. Rare
+repair fallbacks for cache payloads that disappear or become corrupt between
+planning and collection may perform a synchronous parent refill on the R thread;
+the native C block-cache adapter keeps that repair path inside the native Aio.
